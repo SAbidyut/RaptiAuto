@@ -224,16 +224,16 @@ const MODULES = [
     doLow: (v) => v < 10, draw: () => circle(5, -44, 4.5, { fill: '#e5e7eb' }) + circle(15, -44, 4.5, { fill: '#111' }),
   },
   {
-    type: 'line-sensor', name: 'Line Tracking Sensor (TCRT5000)', tags: ['line', 'follower', 'tcrt5000', 'robot', 'black'], key: 'black', label: 'Surface', type: 'toggle', unit: '', def: 0, digitalOnly: true, toggleLabel: 'Black line under sensor',
+    type: 'line-sensor', name: 'Line Tracking Sensor (TCRT5000)', tags: ['line', 'follower', 'tcrt5000', 'robot', 'black'], key: 'black', label: 'Surface', ctl: 'toggle', unit: '', def: 0, digitalOnly: true, toggleLabel: 'Black line under sensor',
     desc: 'OUT goes HIGH over a black line (no reflection) and LOW over white.',
     doHigh: (v) => !!v, draw: () => rect(2, -50, 16, 9, { fill: '#111', rx: 2 }) + circle(6, -45.5, 2.5, { fill: '#60a5fa' }) + circle(14, -45.5, 2.5, { fill: '#1e293b' }),
   },
   {
-    type: 'hall-sensor', name: 'Hall Effect Sensor (KY-003)', tags: ['hall', 'magnet', 'magnetic', 'a3144'], key: 'magnet', label: 'Magnet nearby', type: 'toggle', def: 0, digitalOnly: true,
+    type: 'hall-sensor', name: 'Hall Effect Sensor (KY-003)', tags: ['hall', 'magnet', 'magnetic', 'a3144'], key: 'magnet', label: 'Magnet nearby', ctl: 'toggle', def: 0, digitalOnly: true,
     desc: 'OUT goes LOW when a magnet is near.', doLow: (v) => !!v, draw: () => rect(6, -46, 8, 8, { fill: '#111', rx: 1 }),
   },
   {
-    type: 'vibration-sensor', name: 'Vibration Sensor (SW-420)', tags: ['vibration', 'shake', 'knock', 'sw-420'], key: 'shake', label: 'Shake!', type: 'button', def: 0, digitalOnly: true,
+    type: 'vibration-sensor', name: 'Vibration Sensor (SW-420)', tags: ['vibration', 'shake', 'knock', 'sw-420'], key: 'shake', label: 'Shake!', ctl: 'button', def: 0, digitalOnly: true,
     desc: 'OUT goes HIGH while the module is vibrating.', doHigh: (v) => !!v, draw: () => rect(3, -50, 14, 10, { fill: 'url(#silver)', rx: 4 }),
   },
   {
@@ -248,9 +248,9 @@ for (const m of MODULES) {
   const pins = m.digitalOnly ? pinRow(['VCC', 'GND', 'DO']) : m.analogOnly ? pinRow(['VCC', 'GND', 'AO']) : pinRow(['VCC', 'GND', 'DO', 'AO']);
   const ids = pins.map((p) => p.id);
   const W = Math.max(40, (pins.length - 1) * 10 + 20);
-  const ctl = m.type === 'line-sensor' || m.type === 'hall-sensor'
+  const ctl = m.ctl === 'toggle'
     ? { key: m.key, label: m.toggleLabel || m.label, type: 'toggle', default: 0 }
-    : m.type === 'vibration-sensor'
+    : m.ctl === 'button'
       ? { key: m.key, label: m.label, type: 'button', icon: 'bolt' }
       : { key: m.key, label: m.label, min: m.min, max: m.max, step: m.max > 1000 ? 10 : m.max <= 30 ? 0.5 : 1, unit: m.unit, default: m.def };
   register({
