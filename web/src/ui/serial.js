@@ -22,9 +22,9 @@ export class SerialMonitor {
     this.tabMon = h('button', { class: 'seg active', html: `${icon('terminal', 17)}<span>Monitor</span>`, onclick: () => this.setMode('monitor') });
     this.tabPlot = h('button', { class: 'seg', html: `${icon('chart', 17)}<span>Plotter</span>`, onclick: () => this.setMode('plotter') });
     const segs = h('div', { class: 'segmented' }, this.tabMon, this.tabPlot);
-    this.btnAuto = h('button', { class: 'chip active', onclick: () => { this.autoscroll = !this.autoscroll; this.btnAuto.classList.toggle('active', this.autoscroll); } }, 'Auto-scroll');
-    this.btnTime = h('button', { class: 'chip', onclick: () => { this.timestamps = !this.timestamps; this.btnTime.classList.toggle('active', this.timestamps); this.redraw(); } }, 'Time');
-    const clear = h('button', { class: 'icon-btn', title: 'Clear', html: icon('eraser', 20), onclick: () => this.clear() });
+    this.btnAuto = h('button', { class: 'icon-btn sm toggle-ic active', title: 'Auto-scroll', html: icon('arrowDown', 19), onclick: () => { this.autoscroll = !this.autoscroll; this.btnAuto.classList.toggle('active', this.autoscroll); } });
+    this.btnTime = h('button', { class: 'icon-btn sm toggle-ic', title: 'Timestamps', html: icon('clock', 19), onclick: () => { this.timestamps = !this.timestamps; this.btnTime.classList.toggle('active', this.timestamps); this.redraw(); } });
+    const clear = h('button', { class: 'icon-btn sm', title: 'Clear', html: icon('eraser', 19), onclick: () => this.clear() });
     tb.append(segs, h('div', { class: 'grow' }), this.btnAuto, this.btnTime, clear);
 
     this.out = h('pre', { class: 'serial-out' });

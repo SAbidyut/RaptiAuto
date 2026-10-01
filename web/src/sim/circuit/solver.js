@@ -297,3 +297,88 @@ export class Mosfet {
 
 /** Controlled source helper: a VSource whose value is driven by part logic (e.g. comparator output). */
 export class LogicOut extends VSource {}
+
+/**
+ * Switch whose state is decided from node voltages inside the solver iteration
+ * (relay contacts, analog switches). predicate(V) -> boolean.
+ */
+export class ControlledSwitch {
+  constructor(a, b, predicate, ron = 0.05) {
+    this.a = a; this.b = b; this.predicate = predicate; this.ron = ron;
+    this.closed = false;
+    this.nonlinear = true;
+    this.i = 0;
+  }
+  stamp(s) { s.g(this.a, this.b, this.closed ? 1 / this.ron : G_OFF); }
+  update(V, it) {
+    const c = !!this.predicate(V);
+    if (c !== this.closed && it < 45) { this.closed = c; return true; }
+    return false;
+  }
+  measure(V) { this.i = (vAt(V, this.a) - vAt(V, this.b)) * (this.closed ? 1 / this.ron : G_OFF); }
+}
+
+/**
+ * Push-pull output stage (motor drivers, logic outputs). decide(V) -> 1 (drive to vpos), 0 (drive to vneg), null (high-Z).
+ * The supply rails are nodes, so the driver only works when it is powered.
+ */
+export class HalfBridge {
+  constructor(out, vpos, vneg, decide, { r = 1.5, drop = 1.0 } = {}) {
+    this.out = out; this.vpos = vpos; this.vneg = vneg; this.decide = decide; this.r = r; this.drop = drop;
+    this.state = null;
+    this.nonlinear = true;
+    this.i = 0;
+    this.a = out; this.b = -2; // for activity bookkeeping
+  }
+  stamp(s) {
+    const g = 1 / this.r;
+    if (this.state === 1) {
+      // out follows vpos minus a saturation drop: stamp as Thevenin between out and vpos
+      s.vs(this.out, this.vpos, -this.drop, g);
+    } else if (this.state === 0) {
+      s.vs(this.out, this.vneg, this.drop * 0.5, g);
+    } else s.g(this.out, this.vneg, G_OFF);
+  }
+  update(V, it) {
+    const st = this.decide(V);
+    const ns = st === null || st === undefined ? null : st ? 1 : 0;
+    if (ns !== this.state && it < 45) { this.state = ns; return true; }
+    return false;
+  }
+  measure(V) {
+    const g = 1 / this.r;
+    if (this.state === 1) this.i = ((vAt(V, this.vpos) - this.drop) - vAt(V, this.out)) * g;
+    else if (this.state === 0) this.i = ((vAt(V, this.vneg) + this.drop * 0.5) - vAt(V, this.out)) * g;
+    else this.i = 0;
+  }
+}
+
+export { vAt };
+
+/**
+ * Voltage source whose value is computed from the node voltages inside the solver iteration
+ * (sensor outputs that depend on their supply, logic outputs of powered chips).
+ * fn(V) -> volts (relative to `ref`) or null for high impedance.
+ */
+export class DependentSource {
+  constructor(out, ref, fn, r = 100) {
+    this.p = out; this.n = ref; this.fn = fn; this.r = r;
+    this.v = null;
+    this.nonlinear = true;
+    this.i = 0;
+  }
+  stamp(s) {
+    if (this.v === null) s.g(this.p, this.n, G_OFF);
+    else s.vs(this.p, this.n, this.v, 1 / this.r);
+  }
+  update(V, it) {
+    let nv = this.fn(V);
+    if (nv !== null && !Number.isFinite(nv)) nv = 0;
+    const changed = nv === null ? this.v !== null : this.v === null || Math.abs(nv - this.v) > 1e-4;
+    if (changed && it < 45) { this.v = nv; return true; }
+    return false;
+  }
+  measure(V) {
+    this.i = this.v === null ? 0 : (this.v - (vAt(V, this.p) - vAt(V, this.n))) / this.r;
+  }
+}

@@ -9,6 +9,17 @@ import { makeLibraries } from './libs/index.js';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
+function timeMacros() {
+  const d = new Date();
+  const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const p = (n) => String(n).padStart(2, '0');
+  return {
+    __DATE__: JSON.stringify(`${M[d.getMonth()]} ${String(d.getDate()).padStart(2, ' ')} ${d.getFullYear()}`),
+    __TIME__: JSON.stringify(`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`),
+    __FILE__: '"sketch.ino"',
+  };
+}
+
 export class SimEngine {
   constructor(project, opts = {}) {
     this.project = project;
@@ -197,7 +208,7 @@ export class SimEngine {
     this.runner = new SketchRunner({
       code: this.project.code,
       board,
-      macros: board.macros,
+      macros: { ...board.macros, ...timeMacros() },
       natives: (rt) => {
         const n = makeCore(rt, engine, board);
         makeLibraries(n, rt, engine, board);
@@ -711,6 +722,44 @@ export class SimEngine {
       }
     }
     return out;
+  }
+
+  /** Part runtimes with pin `pinId` (or any pin) on node `node`. */
+  partsOnNode(node, filter = null, pinId = null) {
+    if (node < 0) return [];
+    const out = [];
+    for (const rt of this.parts.values()) {
+      if (rt === this.boardRt) continue;
+      if (filter && !filter(rt)) continue;
+      for (const pin of pinsOf(rt.part)) {
+        if (pinId && pin.id !== pinId) continue;
+        if (this.nodeOf(rt.part.id, pin.id) === node) { out.push({ rt, pin: pin.id }); break; }
+      }
+    }
+    return out;
+  }
+
+  /** Servo pulse output on a pin (Servo library). us = null detaches. */
+  setServo(p, us) {
+    const st = this.pin(p);
+    if (!st) return;
+    if (us === null) { st.servoUs = null; st.pwm = null; st.out = 0; this.outputChanged(st); return; }
+    st.mode = 1;
+    st.tone = null;
+    st.servoUs = us;
+    st.pwm = Math.max(0.0001, Math.min(0.9999, us / 20000));
+    this.outputChanged(st);
+  }
+
+  /** WS2812 data burst on a pin (NeoPixel library). */
+  sendWs2812(p, colors) {
+    const st = this.pin(p);
+    if (!st) return 0;
+    if (st.mode !== 1) { st.mode = 1; this.outputChanged(st); }
+    const targets = this.partsOnPin(p, (rt) => !!rt.ws2812, 'DIN');
+    for (const t of targets) t.rt.ws2812(colors);
+    this.dirty = true;
+    return targets.length;
   }
 
   /** Is the given pin of a part connected to MCU pin p? */

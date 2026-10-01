@@ -1,5 +1,5 @@
 // Project editor screen: circuit canvas + code editor + serial monitor + simulation control.
-import { getDef, newId, partProps, worldBox } from '../components/registry.js';
+import { getDef, newId, partProps, worldBox, defaultProps } from '../components/registry.js';
 import { saveProject, exportJSON } from '../store.js';
 import { SimEngine } from '../sim/engine.js';
 import { CircuitCanvas } from './canvas.js';
@@ -262,7 +262,7 @@ export class Editor {
   placePartNow(def) {
     const r = this.canvasHost.getBoundingClientRect();
     const [cx, cy] = this.canvas.screenToWorld(r.left + r.width / 2, r.top + r.height * 0.45);
-    const box = def.box;
+    const box = typeof def.box === 'function' ? def.box(defaultProps(def)) : def.box;
     const w = box[2] - box[0], hh = box[3] - box[1];
     const x = Math.round((cx - w / 2 - box[0]) / 10) * 10, y = Math.round((cy - hh / 2 - box[1]) / 10) * 10;
     const part = { id: newId('p'), type: def.type, x, y, rot: 0, props: {} };

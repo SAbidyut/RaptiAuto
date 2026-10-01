@@ -323,6 +323,11 @@ export class Compiler {
       for (const list of s.methods.values()) all.push(...list);
       all.push(...s.ctors);
     }
+    const blockingMethods = new Set(BLOCKING_NAMES);
+    for (const cls of Object.values(this.natives.classes)) {
+      for (const [m, meta] of Object.entries(cls.methods || {})) if (meta && meta.gen) blockingMethods.add(m);
+    }
+    for (const [name, meta] of Object.entries(this.natives.functions)) if (meta && meta.gen) blockingMethods.add(name);
     const userNames = new Set(this.funcs.keys());
     for (const s of this.structs.values()) for (const k of s.methods.keys()) userNames.add(k);
     const visit = (n, fi) => {
@@ -338,7 +343,7 @@ export class Compiler {
             else if (this.natives.functions[c.name]) { if (this.natives.functions[c.name].gen) fi.direct = true; }
             else fi.direct = true; // calling a variable / unknown -> conservative
           } else if (c.kind === 'Member') {
-            if (BLOCKING_NAMES.has(c.name)) fi.direct = true;
+            if (blockingMethods.has(c.name)) fi.direct = true;
             if (userNames.has(c.name)) fi.calls.add(c.name);
           } else fi.direct = true;
           break;
@@ -433,6 +438,11 @@ export class Compiler {
     if (nat.functions[name]) return { kind: 'native', name, meta: nat.functions[name] };
     if (/^B[01]{1,8}$/.test(name)) return { kind: 'const', value: parseInt(name.slice(1), 2), type: this.T.int };
     if (name.includes('::')) {
+      const k = name.lastIndexOf('::');
+      const clsName = name.slice(0, k), member = name.slice(k + 2);
+      const nc = nat.classes[clsName];
+      if (nc && nc.statics && nc.statics[member]) return { kind: 'native', name: member, meta: nc.statics[member] };
+      if (nc && nc.constants && nc.constants[member] !== undefined) return { kind: 'const', value: nc.constants[member], type: this.T.int };
       const short = name.split('::').pop();
       if (short !== name) return this.lookup(short, ctx);
     }
@@ -707,6 +717,8 @@ export class Compiler {
     if (fi.gen && !block.gen) {
       const fn = block.fn;
       fi.run = function* (f) { return fn(f); };
+    } else if (!fi.gen && block.gen) {
+      throw this.err(`internal: '${fi.name}' contains a blocking call that was not detected — please report this sketch`, d);
     } else {
       fi.run = block.fn;
     }

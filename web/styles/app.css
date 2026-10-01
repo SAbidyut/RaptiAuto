@@ -118,7 +118,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .home-top { display: flex; align-items: center; gap: 4px; padding: calc(10px + var(--safe-t)) 12px 10px 16px; background: linear-gradient(180deg, rgba(7, 11, 22, .96), rgba(7, 11, 22, .8)); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); z-index: 2; }
 .home-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 14px 0 calc(24px + var(--safe-b)); scroll-behavior: smooth; }
 .hero { position: relative; margin: 2px 14px 6px; border-radius: 26px; overflow: hidden; border: 1px solid rgba(34, 211, 238, .18); background: radial-gradient(120% 90% at 100% 0%, rgba(139, 92, 246, .35), transparent 55%), radial-gradient(90% 80% at 0% 100%, rgba(34, 211, 238, .25), transparent 60%), linear-gradient(160deg, #101a36, #0b1226); box-shadow: 0 20px 50px -20px rgba(34, 211, 238, .25); }
-.hero-bg { position: absolute; inset: 0; opacity: .9; }
+.hero-bg { position: absolute; inset: 0; opacity: .55; }
 .hero-bg svg { width: 100%; height: 100%; }
 .hero-flow path { animation: heroFlow 3.2s linear infinite; }
 @keyframes heroFlow { from { stroke-dashoffset: 400; } to { stroke-dashoffset: 0; } }
@@ -324,8 +324,11 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .serial-empty p { margin: 6px 0 0; color: var(--muted); font-weight: 600; }
 .serial-empty code { font-family: var(--mono); color: #a5f3fc; }
 .serial-inrow { display: flex; gap: 8px; padding: 8px 8px calc(8px); border-top: 1px solid var(--line); background: rgba(10, 16, 32, .9); }
-.serial-input { font-family: var(--mono); height: 44px; }
-.serial-inrow .select { flex-shrink: 0; width: 104px; height: 44px; }
+.serial-input { font-family: var(--mono); height: 44px; flex: 1; min-width: 0; }
+.toggle-ic { color: var(--dim); }
+.toggle-ic.active { color: var(--accent); background: rgba(34, 211, 238, .12); }
+.serial-inrow .select { flex-shrink: 0; width: 98px; height: 44px; font-size: 13px; }
+.serial-inrow .btn-icon { flex-shrink: 0; }
 .plot-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 8px; }
 .serial-plot { flex: 1; width: 100%; min-height: 0; border-radius: 14px; background: radial-gradient(circle at 50% 0%, #0f1a36, #080d1c); border: 1px solid var(--line); }
 .plot-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 4px 0; font-size: 12.5px; color: var(--muted); }
@@ -476,3 +479,5 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
   .ex-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
   .about-scroll { max-width: 760px; margin: 0 auto; width: 100%; }
 }
+.bz-anim { animation: bzPulse .35s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes bzPulse { from { opacity: .35; } to { opacity: 1; } }

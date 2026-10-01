@@ -120,11 +120,11 @@ function unoR3Art() {
   s += rect(46, 175, 14, 16, { fill: '#222', rx: 1 }) + rect(48, 171, 10, 4, { fill: '#bbb' });
   s += smdParts([[100, 50, 5, 3], [100, 57, 5, 3], [108, 106, 5, 3, '#c49a5b'], [150, 108, 5, 3], [160, 108, 5, 3, '#c49a5b'], [230, 140, 3, 5], [236, 140, 3, 5]]);
   s += boardLeds(128, 32 + 22, true);
-  s += onLed(243, 64);
-  s += g(text(0, 0, '∞', { size: 34, fill: '#eafcff', weight: 700 }) , { tr: 'translate(166 82)' });
-  s += text(196, 74, 'UNO', { size: 26, fill: '#eafcff', weight: 800, anchor: 'start', ls: 1 });
-  s += text(197, 94, 'ARDUINO', { size: 7, fill: '#eafcff', weight: 700, anchor: 'start', ls: 1.6 });
-  s += text(197, 104, 'R3', { size: 6, fill: '#eafcff', weight: 700, anchor: 'start' });
+  s += onLed(250, 44);
+  s += g(text(0, 0, '∞', { size: 30, fill: '#eafcff', weight: 700 }), { tr: 'translate(160 82)' });
+  s += text(180, 74, 'UNO', { size: 24, fill: '#eafcff', weight: 800, anchor: 'start', ls: 1 });
+  s += text(181, 92, 'ARDUINO', { size: 6.5, fill: '#eafcff', weight: 700, anchor: 'start', ls: 1.6 });
+  s += text(181, 101, 'R3', { size: 6, fill: '#eafcff', weight: 700, anchor: 'start' });
   return s;
 }
 
@@ -134,7 +134,7 @@ function unoR4Art(wifi) {
   s += chipQFP(wifi ? 108 : 150, wifi ? 140 : 128, 32, { pins: 14, label: 'RA4M1' });
   s += smdParts([[60, 110, 6, 4], [60, 118, 6, 4, '#c49a5b'], [190, 150, 5, 3], [200, 150, 5, 3], [72, 82, 8, 6, '#333']]);
   s += boardLeds(128, 54, true);
-  s += onLed(243, 64);
+  s += onLed(250, 44);
   if (wifi) {
     // ESP32-S3 module
     s += rect(34, 62, 46, 40, { fill: 'url(#silver)', rx: 1.5, stroke: '#7d828a', sw: 0.6 });
@@ -148,11 +148,11 @@ function unoR4Art(wifi) {
       }
     }
     s += `<g class="mx-glow" filter="url(#glow)"></g>`;
-    s += text(196, 76, 'UNO', { size: 24, fill: '#eafcff', weight: 800, anchor: 'start' });
-    s += text(196, 95, 'R4 WiFi', { size: 8, fill: '#eafcff', weight: 700, anchor: 'start' });
+    s += text(186, 76, 'UNO', { size: 22, fill: '#eafcff', weight: 800, anchor: 'start' });
+    s += text(187, 94, 'R4 WiFi', { size: 8, fill: '#eafcff', weight: 700, anchor: 'start' });
   } else {
-    s += text(190, 76, 'UNO', { size: 24, fill: '#eafcff', weight: 800, anchor: 'start' });
-    s += text(190, 95, 'R4 MINIMA', { size: 7.5, fill: '#eafcff', weight: 700, anchor: 'start' });
+    s += text(180, 76, 'UNO', { size: 22, fill: '#eafcff', weight: 800, anchor: 'start' });
+    s += text(181, 94, 'R4 MINIMA', { size: 7.5, fill: '#eafcff', weight: 700, anchor: 'start' });
   }
   return s;
 }
@@ -162,8 +162,8 @@ function leonardoArt() {
   s += rect(-6, 36, 26, 22, { fill: 'url(#silver)', rx: 2, stroke: '#7b818a', sw: 0.6 }) + rect(-6, 42, 5, 10, { fill: '#30343a' });
   s += powerJack() + resetButton(30, 16);
   s += chipQFP(150, 125, 30, { pins: 11, label: 'ATmega32U4' });
-  s += boardLeds(128, 54, true) + onLed(243, 64);
-  s += text(186, 78, 'LEONARDO', { size: 13, fill: '#eafcff', weight: 800, anchor: 'start' });
+  s += boardLeds(128, 54, true) + onLed(250, 44);
+  s += text(180, 78, 'LEONARDO', { size: 13, fill: '#eafcff', weight: 800, anchor: 'start' });
   return s;
 }
 
