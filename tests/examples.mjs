@@ -6,6 +6,11 @@ import { pinsOf, getDef } from '../web/src/components/registry.js';
 
 const filter = process.argv[2];
 
+const part = (eng, id) => eng.parts.get(id);
+const lcdRow = (eng, id, r) => { const d = part(eng, id).visual.dev; return Array.from({ length: d.cols || 16 }, (_, c) => String.fromCharCode(d.charAt(c, r) ?? 32)).join('').trimEnd(); };
+const lit = (eng, id) => part(eng, id).visual.b > 0.2;
+const expect = (cond, msg) => (cond ? true : msg);
+
 /** Keypad presses: each key held for 120 ms, one every 250 ms. */
 function keys(pid, seq, t0) {
   const a = {};
@@ -25,28 +30,28 @@ const CHECKS = {
   'mpu6050-tilt': { ms: 1500, serial: ['Pitch'] },
   'joystick': { ms: 1200, serial: ['X:'] },
   'plant-watering': { ms: 2500, act: { 500: ['soil', 'moist', 10] }, serial: ['Pump ON'] },
-  'lcd-i2c-hello': { ms: 1500 },
-  'lcd-parallel': { ms: 1500 },
-  'oled-graphics': { ms: 3000 },
-  'tm1637-counter': { ms: 1500 },
-  'max7219-matrix': { ms: 2000 },
+  'lcd-i2c-hello': { ms: 1500, check: (e) => expect(lcdRow(e, 'lcd', 0) === 'Hello RaptiAuto!' && lcdRow(e, 'lcd', 1).startsWith('Uptime: 00:0'), `lcd="${lcdRow(e, 'lcd', 0)}|${lcdRow(e, 'lcd', 1)}"`) },
+  'lcd-parallel': { ms: 1500, check: (e) => expect(lcdRow(e, 'lcd', 0) === 'I \x00 Arduino \x01' && lcdRow(e, 'lcd', 1).startsWith('Count: '), `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0))}`) },
+  'oled-graphics': { ms: 3000, check: (e) => { const n = part(e, 'oled').visual.dev.fb.reduce((a, b) => a + b, 0); return expect(n > 300, 'oled px=' + n); } },
+  'tm1637-counter': { ms: 2300, check: (e) => { const s = part(e, 'tm').visual.dev.segs; return expect(s[0] === 0x3f && s[3] === 0x5b, 'segs=' + s.slice(0, 4).map((x) => x.toString(16))); } },
+  'max7219-matrix': { ms: 500, check: (e) => { const r = part(e, 'mx').visual.devs[0].rows; return expect(r[1] === 0x66 && r[7] === 0x18, 'rows=' + Array.from(r)); } },
   'seven-segment': { ms: 2500 },
-  'neopixel-ring': { ms: 1500 },
-  'r4-matrix': { ms: 2000 },
-  'weather-station': { ms: 4500 },
+  'neopixel-ring': { ms: 1500, check: (e) => { const px = part(e, 'ring').visual.px; return expect(new Set(px).size > 8 && px.every((c) => c > 0), 'px=' + px.slice(0, 4)); } },
+  'r4-matrix': { ms: 500, check: (e) => { const m = part(e, 'uno').visual.matrix; const n = m.filter(Boolean).length; return expect(n === 18, 'matrix on=' + n); } },
+  'weather-station': { ms: 4500, check: (e) => expect(lcdRow(e, 'lcd', 0).startsWith('24.0') && lcdRow(e, 'lcd', 1) === 'Comfortable :)', `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0) + '|' + lcdRow(e, 'lcd', 1))}`) },
   'keypad-lock': { ms: 2500, act: keys('kp', '1234#', 300), serial: ['Access granted'] },
-  'servo-sweep': { ms: 2500 },
-  'servo-knob': { ms: 1500 },
-  'stepper-28byj': { ms: 3000 },
-  'stepper-a4988': { ms: 3000 },
-  'relay-lamp': { ms: 2500, serial: ['Lamp ON'] },
-  'l298n-motor': { ms: 2500 },
+  'servo-sweep': { ms: 1500, check: (e) => expect(part(e, 'servo').visual.angle > 120, 'angle=' + part(e, 'servo').visual.angle) },
+  'servo-knob': { ms: 1500, act: { 200: ['pot', 'knob', 0.25] }, check: (e) => expect(Math.abs(part(e, 'servo').visual.angle - 45) < 4, 'angle=' + part(e, 'servo').visual.angle) },
+  'stepper-28byj': { ms: 1500, check: (e) => expect(Math.abs(part(e, 'stepper').visual.angle - 90) < 2, 'angle=' + part(e, 'stepper').visual.angle) },
+  'stepper-a4988': { ms: 3000, check: (e) => expect(part(e, 'stepper').visual.angle !== 0, 'angle=0') },
+  'relay-lamp': { ms: 1000, serial: ['Lamp ON'], check: (e) => expect(part(e, 'lamp').visual.b > 0.9, 'lamp b=' + part(e, 'lamp').visual.b) },
+  'l298n-motor': { ms: 1500, check: (e) => expect(part(e, 'motor').visual.rpm > 1000, 'rpm=' + part(e, 'motor').visual.rpm) },
   'transistor-motor': { ms: 2000 },
-  'shift-register': { ms: 2000 },
+  'shift-register': { ms: 2000, serial: ['Value: 1100'] },
   'buzzer-melody': { ms: 3000 },
   'ir-remote': { ms: 2000, act: { 600: ['ir', 'ir', 0x0c] }, serial: ['Button'] },
-  'rotary-encoder': { ms: 1500, serial: ['Position'] },
-  'rtc-clock': { ms: 2500 },
+  'rotary-encoder': { ms: 1500, act: { 300: ['enc', 'rotate', 1], 500: ['enc', 'rotate', 1], 700: ['enc', 'rotate', -1] }, serial: ['Position: 2', 'Position: 1'] },
+  'rtc-clock': { ms: 2500, check: (e) => expect(/^\w{3} \d\d\/\d\d\/20\d\d$/.test(lcdRow(e, 'lcd', 0)) && /^ {4}\d\d:\d\d:\d\d$/.test(lcdRow(e, 'lcd', 1)), `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0) + '|' + lcdRow(e, 'lcd', 1))}`) },
 };
 
 let failures = 0;
