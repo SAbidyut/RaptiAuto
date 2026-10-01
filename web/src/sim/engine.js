@@ -179,7 +179,19 @@ export class SimEngine {
   // ------------------------------------------------------------------ lifecycle
   start() {
     this.build();
-    if (!this.board) return { ok: false, error: { message: 'Add a microcontroller board (e.g. Arduino Uno) to run code.' } };
+    if (!this.board) {
+      // electronics-only circuit: no sketch, just the circuit in (virtual) real time
+      this.rt = { t: 0, queueIsr() {} };
+      this.runner = null;
+      this.running = true;
+      this.paused = false;
+      this.lastWall = null;
+      this.lastIntegrate = 0;
+      this.dirty = true;
+      this.ensureSolved();
+      for (const p of this.parts.values()) if (p.started) p.started();
+      return { ok: true, noBoard: true, warnings: [] };
+    }
     const engine = this;
     const board = this.board;
     this.runner = new SketchRunner({
@@ -230,7 +242,9 @@ export class SimEngine {
     this.changesThisFrame = 0;
     this.processEvents();
     const t0 = now();
-    const status = this.runner.step(target, 14);
+    let status = 'ok';
+    if (this.runner) status = this.runner.step(target, 14);
+    else rt.t = target;
     const busy = now() - t0;
     this.processEvents();
     this.integrateTo(rt.t);
@@ -245,13 +259,57 @@ export class SimEngine {
     }
     this.stats.simTime = rt.t;
     this.stats.busy = busy;
+    this.computeActivity();
     if (status === 'error') {
       this.stop();
-      if (this.opts.onError) this.opts.onError(this.runner.error);
+      if (this.opts.onError) this.opts.onError(this.runner && this.runner.error);
     } else if (status === 'done') {
       this.stop();
     }
     return status;
+  }
+
+  /** Per-node current magnitude (A), used to animate current flow on wires. */
+  computeActivity() {
+    const n = this.solver.n;
+    if (!this.nodeActivity || this.nodeActivity.length !== n) this.nodeActivity = new Float64Array(n);
+    const act = this.nodeActivity;
+    act.fill(0);
+    const add = (node, i) => { if (node >= 0 && node < n) act[node] += i; };
+    for (const el of this.solver.elements) {
+      const i = Math.abs(el.iAvg ?? el.i ?? 0);
+      if (i < 1e-6 && !el.ic) continue;
+      if (el.a !== undefined && el.b !== undefined) { add(el.a, i); add(el.b, i); }
+      else if (el.p !== undefined) { add(el.p, i); add(el.n, i); }
+      else if (el.k !== undefined) { add(el.a, i); add(el.k, i); }
+      else if (el.c !== undefined) { const ic = Math.abs(el.ic || 0), ib = Math.abs(el.ib || 0); add(el.c, ic); add(el.e, ic + ib); add(el.b, ib); }
+      else if (el.d !== undefined) { add(el.d, i); add(el.s, i); }
+    }
+    for (let k = 0; k < n; k++) act[k] *= 0.5;
+  }
+
+  /** +1 if current visually flows from wire.from to wire.to, -1 otherwise. */
+  flowDirection(w) {
+    const node = this.nodeOf(w.from.part, w.from.pin);
+    const high = node >= 0 && this.vAvg(node) - this.vAvg(this.gnd) > 0.6;
+    const isSrc = (ref) => {
+      const part = this.partById(ref.part);
+      const def = part && getDef(part.type);
+      return !!(def && (def.board || def.type.startsWith('battery') || def.type === 'power-supply'));
+    };
+    const fromSrc = isSrc(w.from), toSrc = isSrc(w.to);
+    if (fromSrc && !toSrc) return high ? 1 : -1;
+    if (toSrc && !fromSrc) return high ? -1 : 1;
+    return high ? 1 : -1;
+  }
+
+  /** Forward a UI interaction to a part runtime. */
+  input(partId, key, value, extra) {
+    const rt = this.parts.get(partId);
+    if (!rt || !rt.input) return;
+    if (this.running) this.integrateTo(this.time());
+    rt.input(key, value, extra);
+    this.dirty = true;
   }
 
   // ------------------------------------------------------------------ events & watchers
