@@ -25,7 +25,7 @@ const exe = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 
 const errors = [];
-async function newPage(w = 390, h = 844) {
+async function newPage(w = +process.env.VW || 390, h = +process.env.VH || 844) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`); });

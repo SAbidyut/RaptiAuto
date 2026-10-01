@@ -69,7 +69,7 @@ export class CircuitCanvas {
     this.svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !this.pointers.size) this.hideTip(); });
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), opts);
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.ro = new ResizeObserver(() => this.applyView());
+    this.ro = new ResizeObserver(() => { if (this.autoFit) this.fit(false); else this.applyView(); });
     this.ro.observe(this.host);
   }
 
@@ -121,8 +121,13 @@ export class CircuitCanvas {
     const r = this.host.getBoundingClientRect();
     if (!r.width || !r.height) { requestAnimationFrame(() => this.fit(animate, pad)); return; }
     const [x0, y0, x1, y1] = this.contentBox();
-    const z = Math.max(0.15, Math.min(4, Math.min((r.width - pad * 2) / (x1 - x0 || 1), (r.height - pad * 2) / (y1 - y0 || 1))));
-    const target = { z, x: r.width / 2 - ((x0 + x1) / 2) * z, y: r.height / 2 - ((y0 + y1) / 2) * z };
+    // Keep the content clear of the floating tool column on the right.
+    const tools = this.host.parentElement && this.host.parentElement.querySelector('.side-tools');
+    const tw = tools && tools.offsetParent ? tools.getBoundingClientRect().width + 8 : 0;
+    const w = Math.max(80, r.width - tw);
+    const z = Math.max(0.15, Math.min(4, Math.min((w - pad * 2) / (x1 - x0 || 1), (r.height - pad * 2) / (y1 - y0 || 1))));
+    const target = { z, x: w / 2 - ((x0 + x1) / 2) * z, y: r.height / 2 - ((y0 + y1) / 2) * z };
+    this.autoFit = true;
     this.animateTo(target, animate);
   }
 
@@ -146,12 +151,14 @@ export class CircuitCanvas {
     const z = Math.max(0.12, Math.min(10, this.view.z * f));
     const k = z / this.view.z;
     const px = cx - r.left, py = cy - r.top;
+    this.autoFit = false;
     this.view = { z, x: px - (px - this.view.x) * k, y: py - (py - this.view.y) * k };
     this.applyView();
   }
 
   onWheel(e) {
     e.preventDefault();
+    this.autoFit = false;
     if (e.ctrlKey || Math.abs(e.deltaY) > 0) {
       if (e.ctrlKey || e.deltaMode === 1 || Math.abs(e.deltaY) >= 50) this.zoomBy(Math.exp(-e.deltaY * 0.0022), e.clientX, e.clientY);
       else { this.view.x -= e.deltaX; this.view.y -= e.deltaY; this.applyView(); }
@@ -496,6 +503,7 @@ export class CircuitCanvas {
       const r = this.svg.getBoundingClientRect();
       const k = z / p.view.z;
       const px = p.mx - r.left, py = p.my - r.top;
+      this.autoFit = false;
       this.view = { z, x: px - (px - p.view.x) * k + (mx - p.mx), y: py - (py - p.view.y) * k + (my - p.my) };
       this.applyView();
       return;
@@ -526,6 +534,7 @@ export class CircuitCanvas {
     if (!d.dragging) return;
     const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
     if (d.dragging === 'pan') {
+      this.autoFit = false;
       this.view = { ...this.view, x: d.view.x + (e.clientX - d.sx), y: d.view.y + (e.clientY - d.sy) };
       this.applyView();
       if (this.wiring) this.updateWiringCursor(e);
@@ -649,6 +658,7 @@ export class CircuitCanvas {
     let dx = 0, dy = 0;
     if (e.clientX < r.left + m) dx = 8; else if (e.clientX > r.right - m) dx = -8;
     if (e.clientY < r.top + m) dy = 8; else if (e.clientY > r.bottom - m) dy = -8;
+    this.autoFit = false;
     if (dx || dy) { this.view.x += dx; this.view.y += dy; this.applyView(); }
   }
 
@@ -877,6 +887,7 @@ export class CircuitCanvas {
       d.dragging = 'pan';
     }
     if (d.dragging === 'pan') {
+      this.autoFit = false;
       this.view = { ...this.view, x: d.view.x + (e.clientX - d.sx), y: d.view.y + (e.clientY - d.sy) };
       this.applyView();
     }
