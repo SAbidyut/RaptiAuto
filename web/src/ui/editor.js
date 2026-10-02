@@ -155,13 +155,28 @@ export class Editor {
       this.wide = wide;
       this.root.classList.toggle('wide', wide);
     }
-    const split = wide && (this.fullscreen ? this.settings.splitFs === true : this.settings.split !== false);
+    // Full screen + running: circuit and Serial Monitor together (side by side in landscape,
+    // stacked in portrait). Stopped: one panel at a time. The code tab always gets the whole screen.
+    const runsplit = this.fullscreen && !!this.engine && this.tab !== 'code';
+    if (runsplit !== this.runsplit) {
+      this.runsplit = runsplit;
+      this.root.classList.toggle('runsplit', runsplit);
+      if (runsplit) {
+        this.setBadge('serial', false);
+        requestAnimationFrame(() => { this.serial.redraw(); if (this.serial.mode === 'plotter') this.serial.drawPlot(); });
+      }
+      requestAnimationFrame(() => this.canvas.applyView());
+    }
+    const split = wide && !runsplit && (this.fullscreen ? this.settings.splitFs === true : this.settings.split !== false);
     if (split !== this.split) {
       this.split = split;
       this.root.classList.toggle('split', split);
       requestAnimationFrame(() => this.canvas.applyView());
     }
     for (const b of this.root.querySelectorAll('.split-toggle')) b.classList.toggle('on', split);
+    for (const b of this.fsBar.querySelectorAll('[data-tab]')) {
+      b.classList.toggle('active', b.dataset.tab === this.tab || (runsplit && b.dataset.tab !== 'code'));
+    }
   }
 
   toggleSplit() {
@@ -178,7 +193,7 @@ export class Editor {
     this.root.classList.remove('tab-circuit', 'tab-code', 'tab-serial');
     this.root.classList.add('tab-' + t);
     for (const b of this.nav.children) b.classList.toggle('active', b.dataset.tab === t);
-    for (const b of this.fsBar.querySelectorAll('[data-tab]')) b.classList.toggle('active', b.dataset.tab === t);
+    this.updateLayout();
     if (t === 'serial') { this.setBadge('serial', false); this.serial.redraw(); if (this.serial.mode === 'plotter') this.serial.drawPlot(); }
     if (t === 'circuit') requestAnimationFrame(() => this.canvas.applyView());
     if (t !== 'code') document.activeElement && document.activeElement.blur && document.activeElement.blur();
@@ -495,7 +510,7 @@ export class Editor {
     this.serial.clear();
     this.audio.resume();
     const engine = new SimEngine(this.project, {
-      onSerial: (port, text) => { this.serial.write(text); if (this.tab !== 'serial') this.setBadge('serial', true); },
+      onSerial: (port, text) => { this.serial.write(text); if (this.tab !== 'serial' && !this.runsplit) this.setBadge('serial', true); },
       onWarning: (msg) => this.addWarning(msg),
       onError: (err) => this.runtimeError(err),
       onSound: (id, freq, vol) => this.audio.set(id, freq, this.settings.sound === false ? 0 : vol),
@@ -531,7 +546,8 @@ export class Editor {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
-    if (this.tab === 'code' && !this.split) this.setTab('circuit');
+    if (this.tab === 'code' && (this.fullscreen || !this.split)) this.setTab('circuit');
+    this.updateLayout();
   }
 
   stop() {
@@ -548,6 +564,7 @@ export class Editor {
     this.fsRun.innerHTML = icon('play', 20);
     this.fsRun.classList.remove('running');
     this.status.classList.add('hidden');
+    this.updateLayout();
     this.stale.classList.add('hidden');
     Native.keepScreenOn(false);
   }

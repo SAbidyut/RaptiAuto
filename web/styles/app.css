@@ -227,7 +227,22 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .fs-btn.fs-run { color: #4ade80; }
 .fs-btn.fs-run.running { color: #f87171; background: rgba(239, 68, 68, .14); }
 /* one panel in full screen: code and serial start right of the tool rail so nothing hides under it */
-.editor.fs:not(.split) .pane-code, .editor.fs:not(.split) .pane-serial { padding-left: calc(62px + var(--safe-l)); }
+.editor.fs:not(.split):not(.runsplit) .pane-code, .editor.fs:not(.split):not(.runsplit) .pane-serial { padding-left: calc(62px + var(--safe-l)); }
+
+/* full screen while running: circuit + Serial Monitor together (row in landscape, column in portrait) */
+.editor.fs.runsplit .ed-main { display: flex; flex-direction: row; }
+.editor.fs.runsplit .pane { position: relative; inset: auto; display: none; min-width: 0; min-height: 0; }
+.editor.fs.runsplit .pane-circuit, .editor.fs.runsplit .pane-serial { display: flex; }
+.editor.fs.runsplit .pane-circuit { flex: 1.45; border-right: 1px solid var(--line2); }
+.editor.fs.runsplit .pane-serial { flex: 1; }
+.editor.wide.runsplit .fs-btn.split-toggle { display: none !important; }
+.editor.fs.runsplit .sim-status { left: calc(100% * 1.45 / 2.45 / 2); }
+@media (orientation: portrait) {
+  .editor.fs.runsplit .ed-main { flex-direction: column; }
+  .editor.fs.runsplit .pane-circuit { flex: 1.35; border-right: 0; border-bottom: 1px solid var(--line2); }
+  .editor.fs.runsplit .pane-serial { padding-top: 0; }
+  .editor.fs.runsplit .sim-status { left: 50%; }
+}
 .editor.fs .pane-code, .editor.fs .pane-serial { padding-top: var(--safe-t); padding-right: var(--safe-r); }
 .editor.fs .tool-fs { display: none; }
 .editor.kb .ed-nav { display: none; }
@@ -645,5 +660,5 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
   .editor.fs .side-tools { top: calc(8px + var(--safe-t)); }
   .editor.fs .fs-bar { gap: 2px; padding: 4px; top: calc(8px + var(--safe-t)); }
   .fs-btn { width: 38px; height: 38px; }
-  .editor.fs:not(.split) .pane-code, .editor.fs:not(.split) .pane-serial { padding-left: calc(54px + var(--safe-l)); }
+  .editor.fs:not(.split):not(.runsplit) .pane-code, .editor.fs:not(.split):not(.runsplit) .pane-serial { padding-left: calc(54px + var(--safe-l)); }
 }

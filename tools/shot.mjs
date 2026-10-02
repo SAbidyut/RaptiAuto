@@ -65,6 +65,15 @@ const scenarios = {
     await page.screenshot({ path: join(outDir, 'fs-split.png') });
     await page.click('.fs-btn.split-toggle'); // restore the default for later scenarios
   },
+  async fsrun(page, id = 'knight-rider', ms = 1500) {
+    // full screen, run (circuit + serial together), then stop (one panel again)
+    await scenarios.example(page, id);
+    await page.evaluate(() => window.__rapti.editor.setFullscreen(true)); await sleep(400);
+    await page.click('.fs-btn.fs-run'); await sleep(+ms);
+    await page.screenshot({ path: join(outDir, `fsrun-${id}.png`) });
+    await page.click('.fs-btn.fs-run'); await sleep(600);
+    await page.screenshot({ path: join(outDir, `fsstop-${id}.png`) });
+  },
   async back(page) {
     // open an example, toggle full screen, go back to the menu: layout must be unchanged
     await scenarios.example(page, 'blink');

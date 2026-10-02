@@ -69,8 +69,23 @@ export class CircuitCanvas {
     this.svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !this.pointers.size) this.hideTip(); });
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), opts);
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.ro = new ResizeObserver(() => { if (this.autoFit) this.fit(false); else this.applyView(); });
+    this.ro = new ResizeObserver(() => this.onResize());
     this.ro.observe(this.host);
+  }
+
+  /** Re-fit when auto-fitting; otherwise keep the point at the centre of the view in place. */
+  onResize() {
+    const r = this.host.getBoundingClientRect();
+    if (!r.width || !r.height) return; // hidden pane
+    if (this.autoFit) this.fit(false);
+    else {
+      if (this.lastSize) {
+        this.view.x += (r.width - this.lastSize.w) / 2;
+        this.view.y += (r.height - this.lastSize.h) / 2;
+      }
+      this.applyView();
+    }
+    this.lastSize = { w: r.width, h: r.height };
   }
 
   get project() { return this.ed.project; }
