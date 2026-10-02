@@ -53,6 +53,18 @@ const scenarios = {
     await page.click(`.lib-card >> nth=${n}`); await sleep(600);
     await page.screenshot({ path: join(outDir, `part-${n}.png`) });
   },
+  async fs(page, tab = 'circuit', tag = '') {
+    // full screen with one tab active (run the example first so the circuit is alive)
+    await scenarios.example(page, 'knight-rider');
+    await page.evaluate((t) => { const e = window.__rapti.editor; e.setFullscreen(true); e.setTab(t); }, tab); await sleep(700);
+    await page.screenshot({ path: join(outDir, `fs-${tab}${tag}.png`) });
+  },
+  async fssplit(page) {
+    await scenarios.fs(page, 'code');
+    await page.click('.fs-btn.split-toggle'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'fs-split.png') });
+    await page.click('.fs-btn.split-toggle'); // restore the default for later scenarios
+  },
   async back(page) {
     // open an example, toggle full screen, go back to the menu: layout must be unchanged
     await scenarios.example(page, 'blink');

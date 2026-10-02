@@ -203,12 +203,19 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .nav-tab.active::before { content: ''; position: absolute; top: -4px; width: 28px; height: 3px; border-radius: 3px; background: var(--grad); }
 .badge { position: absolute; top: 5px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 
-/* wide / landscape: circuit + code side by side */
-.editor.wide .ed-main { display: flex; }
-.editor.wide .pane { position: relative; inset: auto; display: flex; }
-.editor.wide .pane-circuit { flex: 1.25; border-right: 1px solid var(--line); }
-.editor.wide .pane-code, .editor.wide .pane-serial { flex: 1; display: none; }
-.editor.wide.tab-circuit .pane-code, .editor.wide.tab-code .pane-code, .editor.wide.tab-serial .pane-serial { display: flex; }
+/* wide / landscape "split": circuit + code side by side (toggle with .split-toggle) */
+.editor.split .ed-main { display: flex; }
+.editor.split .pane { position: relative; inset: auto; display: flex; }
+.editor.split .pane-circuit { flex: 1.25; border-right: 1px solid var(--line); }
+.editor.split .pane-code, .editor.split .pane-serial { flex: 1; display: none; }
+.editor.split.tab-circuit .pane-code, .editor.split.tab-code .pane-code, .editor.split.tab-serial .pane-serial { display: flex; }
+.split-toggle { display: none !important; }
+.editor.wide .nav-tab.split-toggle { display: flex !important; flex: 0 0 76px; }
+.editor.wide .fs-btn.split-toggle { display: grid !important; }
+.split-toggle.on { color: var(--accent) !important; }
+.fs-btn.split-toggle.on { background: rgba(34, 211, 238, .12); }
+.fs-bar .split-toggle { margin-top: 4px; position: relative; }
+.fs-bar .split-toggle::before { content: ''; position: absolute; top: -6px; left: 8px; right: 8px; height: 1px; background: var(--line2); }
 
 /* fullscreen */
 .fs-bar { display: none; }
@@ -219,8 +226,9 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .fs-btn.active { color: var(--accent); background: rgba(34, 211, 238, .12); }
 .fs-btn.fs-run { color: #4ade80; }
 .fs-btn.fs-run.running { color: #f87171; background: rgba(239, 68, 68, .14); }
-.editor.fs .pane-code .code-bar { padding-left: 64px; }
-.editor.fs .serial-toolbar { padding-left: 64px; }
+/* one panel in full screen: code and serial start right of the tool rail so nothing hides under it */
+.editor.fs:not(.split) .pane-code, .editor.fs:not(.split) .pane-serial { padding-left: calc(62px + var(--safe-l)); }
+.editor.fs .pane-code, .editor.fs .pane-serial { padding-top: var(--safe-t); padding-right: var(--safe-r); }
 .editor.fs .tool-fs { display: none; }
 .editor.kb .ed-nav { display: none; }
 
@@ -625,4 +633,17 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
   .qa-grid { grid-template-columns: repeat(6, 1fr); }
   .board-list { grid-template-columns: 1fr 1fr; }
   .page > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+}
+
+/* short screens (phone in landscape): compact circuit tools so every button stays reachable */
+@media (max-height: 520px) {
+  .side-tools { gap: 2px; padding: 4px; top: 8px; }
+  .tool { width: 34px; height: 34px; border-radius: 10px; }
+  .tool svg { width: 18px; height: 18px; }
+  .tool-sep { margin: 2px 4px; }
+  .fab-main { width: 52px; height: 52px; border-radius: 18px; bottom: 12px; right: calc(60px + var(--safe-r)); }
+  .editor.fs .side-tools { top: calc(8px + var(--safe-t)); }
+  .editor.fs .fs-bar { gap: 2px; padding: 4px; top: calc(8px + var(--safe-t)); }
+  .fs-btn { width: 38px; height: 38px; }
+  .editor.fs:not(.split) .pane-code, .editor.fs:not(.split) .pane-serial { padding-left: calc(54px + var(--safe-l)); }
 }

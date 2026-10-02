@@ -74,9 +74,10 @@ export const GUIDE = [
     icon: 'fullscreen', title: 'Full-screen mode',
     html: ul(
       'Tap the <b>full-screen</b> button in the side toolbar (or above the code). The phone\'s status and navigation bars hide and the circuit or code uses the whole display.',
-      'Exit with the small button at the top-left or the phone\'s <b>Back</b> button.',
-      'Turn the phone sideways: on wide screens the circuit and the code appear side by side.',
-    ),
+      'In full screen each job gets the <b>whole display</b>: switch between circuit, code and serial with the tool rail on the left.',
+      'Exit with the top button of the rail or the phone\'s <b>Back</b> button.',
+      'Turn the phone sideways (landscape): the circuit and the code can appear side by side. The <b>Split</b> button turns that on or off — in normal view and in full screen.',
+    ) + tip('For the biggest workspace, turn the phone sideways and tap full screen.'),
   },
   {
     icon: 'warning', title: 'Real electronics lessons',

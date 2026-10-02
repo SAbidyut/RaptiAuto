@@ -121,12 +121,20 @@ export class CircuitCanvas {
     const r = this.host.getBoundingClientRect();
     if (!r.width || !r.height) { requestAnimationFrame(() => this.fit(animate, pad)); return; }
     const [x0, y0, x1, y1] = this.contentBox();
-    // Keep the content clear of the floating tool column on the right.
+    // Keep the content clear of the floating tool column on the right and, in full screen,
+    // of the tool rail on the left.
     const tools = this.host.parentElement && this.host.parentElement.querySelector('.side-tools');
     const tw = tools && tools.offsetParent ? tools.getBoundingClientRect().width + 8 : 0;
-    const w = Math.max(80, r.width - tw);
+    const editor = this.host.closest('.editor');
+    const rail = editor && editor.querySelector('.fs-bar');
+    let lw = 0;
+    if (rail && rail.offsetParent) {
+      const b = rail.getBoundingClientRect();
+      if (b.left < r.left + 40 && b.right > r.left) lw = b.right - r.left + 8;
+    }
+    const w = Math.max(80, r.width - tw - lw);
     const z = Math.max(0.15, Math.min(4, Math.min((w - pad * 2) / (x1 - x0 || 1), (r.height - pad * 2) / (y1 - y0 || 1))));
-    const target = { z, x: w / 2 - ((x0 + x1) / 2) * z, y: r.height / 2 - ((y0 + y1) / 2) * z };
+    const target = { z, x: lw + w / 2 - ((x0 + x1) / 2) * z, y: r.height / 2 - ((y0 + y1) / 2) * z };
     this.autoFit = true;
     this.animateTo(target, animate);
   }

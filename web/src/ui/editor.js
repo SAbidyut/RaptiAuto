@@ -75,7 +75,8 @@ export class Editor {
 
     // bottom nav
     const tab = (id, ic, label) => h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span><i class="badge hidden"></i>` });
-    this.nav = h('nav', { class: 'ed-nav' }, tab('circuit', 'circuit', 'Circuit'), tab('code', 'code', 'Code'), tab('serial', 'terminal', 'Serial'));
+    this.nav = h('nav', { class: 'ed-nav' }, tab('circuit', 'circuit', 'Circuit'), tab('code', 'code', 'Code'), tab('serial', 'terminal', 'Serial'),
+      h('button', { class: 'nav-tab split-toggle', title: 'Side by side', onclick: () => this.toggleSplit(), html: `${icon('columns', 22)}<span>Split</span>` }));
 
     // status bar (simulation)
     this.status = h('div', { class: 'sim-status hidden' });
@@ -86,7 +87,8 @@ export class Editor {
       this.fsRun = h('button', { class: 'fs-btn fs-run', html: icon('play', 20), onclick: () => this.toggleRun() }),
       h('button', { class: 'fs-btn', 'data-tab': 'circuit', html: icon('circuit', 20), onclick: () => this.setTab('circuit') }),
       h('button', { class: 'fs-btn', 'data-tab': 'code', html: icon('code', 20), onclick: () => this.setTab('code') }),
-      h('button', { class: 'fs-btn', 'data-tab': 'serial', html: icon('terminal', 20), onclick: () => this.setTab('serial') }));
+      h('button', { class: 'fs-btn', 'data-tab': 'serial', html: icon('terminal', 20), onclick: () => this.setTab('serial') }),
+      h('button', { class: 'fs-btn split-toggle', title: 'Side by side', 'aria-label': 'Side by side', html: icon('columns', 20), onclick: () => this.toggleSplit() }));
 
     this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar);
     this.stale = h('div', { class: 'stale-banner hidden', html: `${icon('restart', 16)}<span>Code changed — restart to apply</span>`, onclick: () => this.restart() });
@@ -136,23 +138,42 @@ export class Editor {
     if (this.fullscreen) { this.setFullscreen(false); this.unback = pushBack(() => this.onBackInEditor()); return; }
     if (this.canvas.wiring) { this.canvas.cancelWiring(); this.unback = pushBack(() => this.onBackInEditor()); return; }
     if (this.canvas.selection) { this.canvas.select(null); this.unback = pushBack(() => this.onBackInEditor()); return; }
-    if (this.tab !== 'circuit' && !this.wide) { this.setTab('circuit'); this.unback = pushBack(() => this.onBackInEditor()); return; }
+    if (this.tab !== 'circuit' && !this.split) { this.setTab('circuit'); this.unback = pushBack(() => this.onBackInEditor()); return; }
     this.unback = null;
     this.leave();
   }
 
+  /**
+   * Wide screens (landscape) can show the circuit and the code side by side ("split").
+   * Normal landscape defaults to split; full screen defaults to one panel at a time so each
+   * job gets the whole display. Both choices are remembered (settings.split / settings.splitFs).
+   */
   updateLayout() {
     const r = this.root.getBoundingClientRect();
     const wide = r.width >= 760 && r.width > r.height * 1.05;
     if (wide !== this.wide) {
       this.wide = wide;
       this.root.classList.toggle('wide', wide);
-      if (wide && this.tab === 'circuit') this.root.classList.add('tab-code-also');
     }
+    const split = wide && (this.fullscreen ? this.settings.splitFs === true : this.settings.split !== false);
+    if (split !== this.split) {
+      this.split = split;
+      this.root.classList.toggle('split', split);
+      requestAnimationFrame(() => this.canvas.applyView());
+    }
+    for (const b of this.root.querySelectorAll('.split-toggle')) b.classList.toggle('on', split);
+  }
+
+  toggleSplit() {
+    if (this.fullscreen) this.settings.splitFs = !this.split;
+    else this.settings.split = !this.split;
+    this.app.saveSettings();
+    this.updateLayout();
+    Native.vibrate(8);
+    toast(this.split ? 'Circuit and code side by side' : 'One panel at a time — full width');
   }
 
   setTab(t) {
-    if (this.wide && t === 'code' && this.tab === 'circuit') { /* both visible */ }
     this.tab = t;
     this.root.classList.remove('tab-circuit', 'tab-code', 'tab-serial');
     this.root.classList.add('tab-' + t);
@@ -173,6 +194,7 @@ export class Editor {
   setFullscreen(on) {
     this.fullscreen = on;
     this.root.classList.toggle('fs', on);
+    this.updateLayout();
     Native.setImmersive(on);
     Native.vibrate(8);
     setTimeout(() => this.canvas.applyView(), 60);
@@ -509,7 +531,7 @@ export class Editor {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
-    if (this.tab === 'code' && !this.wide) this.setTab('circuit');
+    if (this.tab === 'code' && !this.split) this.setTab('circuit');
   }
 
   stop() {
