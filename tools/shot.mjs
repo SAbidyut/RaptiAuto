@@ -37,7 +37,30 @@ async function newPage(w = +process.env.VW || 390, h = +process.env.VH || 844) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const scenarios = {
-  async home(page) { await page.screenshot({ path: join(outDir, 'home.png') }); await page.evaluate(() => document.querySelector('.home-scroll').scrollTo(0, 700)); await sleep(300); await page.screenshot({ path: join(outDir, 'home2.png') }); await page.evaluate(() => document.querySelector('.home-scroll').scrollTo(0, 1500)); await sleep(300); await page.screenshot({ path: join(outDir, 'home3.png') }); },
+  async home(page) {
+    await page.screenshot({ path: join(outDir, 'home.png') });
+    await page.evaluate(() => document.querySelector('.page').scrollTo(0, 650)); await sleep(300);
+    await page.screenshot({ path: join(outDir, 'home2.png') });
+  },
+  async page(page, id = 'projects', scroll = 0) {
+    await page.evaluate((id) => window.__rapti.home.go(id), id); await sleep(500);
+    if (+scroll) { await page.evaluate((y) => document.querySelector('.page').scrollTo(0, y), +scroll); await sleep(300); }
+    await page.screenshot({ path: join(outDir, `page-${id}${+scroll ? '-' + scroll : ''}.png`) });
+  },
+  async drawer(page) { await page.click('.app-bar .icon-btn[aria-label="Menu"]'); await sleep(500); await page.screenshot({ path: join(outDir, 'drawer.png') }); },
+  async part(page, n = 3) {
+    await scenarios.page(page, 'components');
+    await page.click(`.lib-card >> nth=${n}`); await sleep(600);
+    await page.screenshot({ path: join(outDir, `part-${n}.png`) });
+  },
+  async back(page) {
+    // open an example, toggle full screen, go back to the menu: layout must be unchanged
+    await scenarios.example(page, 'blink');
+    await page.click('.tool-fs'); await sleep(400);
+    await page.click('.fs-btn'); await sleep(300);
+    await page.evaluate(() => window.__rapti.editor.leave()); await sleep(600);
+    await page.screenshot({ path: join(outDir, 'back-home.png') });
+  },
   async example(page, id = 'led-resistor') {
     await page.evaluate((id) => {
       const app = window.__rapti;
@@ -70,7 +93,7 @@ const scenarios = {
     await sleep(400);
     await page.screenshot({ path: join(outDir, `zoom-${id}${run ? '-run' : ''}.png`) });
   },
-  async about(page) { await page.click('.home-top .icon-btn[aria-label="About"]'); await sleep(600); await page.screenshot({ path: join(outDir, 'about.png') }); await page.evaluate(() => document.querySelector('.about-scroll').scrollTo(0, 800)); await sleep(300); await page.screenshot({ path: join(outDir, 'about2.png') }); },
+  async about(page) { await scenarios.page(page, 'about'); await scenarios.page(page, 'about', 900); },
 };
 
 const list = wanted.length ? wanted : Object.keys(scenarios);

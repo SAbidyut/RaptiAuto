@@ -98,6 +98,7 @@ public class MainActivity extends Activity {
             @Override
             public void onGlobalLayout() {
                 handleKeyboard();
+                sendInsets();
             }
         });
 
@@ -129,6 +130,7 @@ public class MainActivity extends Activity {
 
         @Override
         public void onPageFinished(WebView view, String url) {
+            lastInsets = "";
             sendInsets();
         }
     }
@@ -433,24 +435,54 @@ public class MainActivity extends Activity {
         }, 250);
     }
 
+    private String lastInsets = "";
+
+    /**
+     * Tells the page how far system bars / the display cutout overlap the WebView, in CSS px.
+     * Measured against the WebView's real position on screen, so it is 0 whenever the window
+     * already lays the WebView out below the status bar (e.g. right after leaving immersive mode).
+     */
     private void sendInsets() {
+        if (web == null) return;
         float d = getResources().getDisplayMetrics().density;
         int top = 0, bottom = 0, left = 0, right = 0;
         try {
-            WindowInsets wi = getWindow().getDecorView().getRootWindowInsets();
-            if (wi != null && immersive) {
-                Object cut = wi.getClass().getMethod("getDisplayCutout").invoke(wi);
-                if (cut != null) {
-                    top = (Integer) cut.getClass().getMethod("getSafeInsetTop").invoke(cut);
-                    bottom = (Integer) cut.getClass().getMethod("getSafeInsetBottom").invoke(cut);
-                    left = (Integer) cut.getClass().getMethod("getSafeInsetLeft").invoke(cut);
-                    right = (Integer) cut.getClass().getMethod("getSafeInsetRight").invoke(cut);
+            View decor = getWindow().getDecorView();
+            WindowInsets wi = decor.getRootWindowInsets();
+            if (wi != null) {
+                int st = 0, sb = 0, sl = 0, sr = 0;
+                if (!immersive) {
+                    // With hidden bars LAYOUT_STABLE still reports their size, so only use them when shown.
+                    st = wi.getSystemWindowInsetTop();
+                    sb = wi.getSystemWindowInsetBottom();
+                    sl = wi.getSystemWindowInsetLeft();
+                    sr = wi.getSystemWindowInsetRight();
                 }
+                try {
+                    Object cut = wi.getClass().getMethod("getDisplayCutout").invoke(wi);
+                    if (cut != null) {
+                        st = Math.max(st, (Integer) cut.getClass().getMethod("getSafeInsetTop").invoke(cut));
+                        sb = Math.max(sb, (Integer) cut.getClass().getMethod("getSafeInsetBottom").invoke(cut));
+                        sl = Math.max(sl, (Integer) cut.getClass().getMethod("getSafeInsetLeft").invoke(cut));
+                        sr = Math.max(sr, (Integer) cut.getClass().getMethod("getSafeInsetRight").invoke(cut));
+                    }
+                } catch (Exception ignored) {
+                }
+                int[] loc = new int[2];
+                web.getLocationOnScreen(loc);
+                int sw = decor.getWidth(), sh = decor.getHeight();
+                top = Math.max(0, st - loc[1]);
+                left = Math.max(0, sl - loc[0]);
+                right = Math.max(0, sr - (sw - (loc[0] + web.getWidth())));
+                bottom = Math.max(0, sb - (sh - (loc[1] + web.getHeight())));
             }
         } catch (Exception ignored) {
         }
-        js("RaptiApp.onNativeInsets(" + Math.round(top / d) + "," + Math.round(right / d) + ","
-                + Math.round(bottom / d) + "," + Math.round(left / d) + "," + immersive + ")");
+        String args = Math.round(top / d) + "," + Math.round(right / d) + ","
+                + Math.round(bottom / d) + "," + Math.round(left / d) + "," + immersive;
+        if (args.equals(lastInsets)) return;
+        lastInsets = args;
+        js("RaptiApp.onNativeInsets(" + args + ")");
     }
 
     /** Keeps the WebView above the soft keyboard, also in immersive mode where adjustResize is ignored. */

@@ -1,9 +1,8 @@
 // Application shell: screen routing, settings, Android lifecycle hooks.
 import { loadSettings, saveSettings, saveProject } from '../store.js';
-import { installNativeCallbacks } from '../native.js';
-import { Home } from './home.js';
+import { installNativeCallbacks, Native } from '../native.js';
+import { Shell } from './shell.js';
 import { Editor } from './editor.js';
-import { About } from './about.js';
 import { popBack, toast } from './widgets.js';
 import { SHARED_DEFS } from '../components/draw.js';
 
@@ -11,9 +10,9 @@ export class App {
   constructor(root) {
     this.root = root;
     this.settings = loadSettings();
-    this.home = null;
+    Native.haptics = this.settings.haptics !== false;
+    this.home = null; // the menu shell (Home, Projects, Examples, … pages)
     this.editor = null;
-    this.about = null;
     installNativeCallbacks(this);
     // shared SVG gradients / filters used by every component drawing
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -36,13 +35,12 @@ export class App {
 
   showHome() {
     if (this.editor) { this.editor.unmount(); this.editor = null; }
-    if (!this.home) this.home = new Home(this);
+    if (!this.home) this.home = new Shell(this);
     if (!this.home.root.isConnected) this.home.mount(this.root);
     else this.home.refreshProjects();
   }
 
   openProject(p) {
-    if (this.about) this.closeAbout(true);
     if (this.home) this.home.unmount();
     if (this.editor) this.editor.unmount();
     this.editor = new Editor(this, p);
@@ -50,18 +48,8 @@ export class App {
   }
 
   showAbout() {
-    if (this.about) return;
-    this.about = new About(this);
-    this.about.mount(this.root);
-  }
-
-  closeAbout(immediate = false) {
-    const a = this.about;
-    if (!a) return;
-    this.about = null;
-    if (immediate) { a.unmount(); return; }
-    a.root.classList.remove('in');
-    setTimeout(() => a.unmount(), 260);
+    this.showHome();
+    this.home.go('about');
   }
 
   /** Android back button. Returns true if handled (false lets the app close). */

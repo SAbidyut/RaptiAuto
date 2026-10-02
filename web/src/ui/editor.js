@@ -476,7 +476,7 @@ export class Editor {
       onSerial: (port, text) => { this.serial.write(text); if (this.tab !== 'serial') this.setBadge('serial', true); },
       onWarning: (msg) => this.addWarning(msg),
       onError: (err) => this.runtimeError(err),
-      onSound: (id, freq, vol) => this.audio.set(id, freq, vol),
+      onSound: (id, freq, vol) => this.audio.set(id, freq, this.settings.sound === false ? 0 : vol),
       onEeprom: () => this.save(),
     });
     const res = engine.start();

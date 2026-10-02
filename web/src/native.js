@@ -21,7 +21,11 @@ export const Native = {
 
   setOrientation(mode) { const n = N(); if (n) try { n.setOrientation(mode); } catch (e) { /* ignore */ } },
 
+  /** Haptic feedback on/off (Settings → Vibration). */
+  haptics: true,
+
   vibrate(ms = 12) {
+    if (!Native.haptics) return;
     const n = N();
     if (n) { try { n.vibrate(ms); } catch (e) { /* ignore */ } return; }
     if (navigator.vibrate) try { navigator.vibrate(ms); } catch (e) { /* ignore */ }
@@ -86,7 +90,7 @@ export const Native = {
   version() {
     const n = N();
     if (n) try { return n.getAppVersion(); } catch (e) { /* ignore */ }
-    return '1.0.0';
+    return '1.1.0';
   },
 
   exit() { const n = N(); if (n) try { n.exitApp(); } catch (e) { /* ignore */ } },
@@ -94,6 +98,7 @@ export const Native = {
 
 /** Callbacks invoked by the Android host. */
 export function installNativeCallbacks(app) {
+  if (N()) document.documentElement.classList.add('native-app');
   window.RaptiApp = {
     onBack: () => app.handleBack(),
     onNativeSaved: (ok, name) => { if (pendingSave) { const r = pendingSave; pendingSave = null; r(!!ok, name); } },
