@@ -12,6 +12,17 @@ import { icon } from './icons.js';
 import { Native } from '../native.js';
 import { AudioEngine } from './audio.js';
 
+/** True when the sketch prints to or reads from a serial port (comments and string literals are ignored). */
+export function sketchUsesSerial(code) {
+  // one pass, so whichever comes first wins ("http://…" in a string is not a comment)
+  const src = String(code || '').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, ' ');
+  // Only setting the port up (begin/end, waiting for it) is not "using" the Serial Monitor.
+  const used = src
+    .replace(/\bSerial(?:USB|\d)?\s*\.\s*(?:begin|end|setTimeout)\s*\([^)]*\)/g, ' ')
+    .replace(/!\s*Serial(?:USB|\d)?\b/g, ' ');
+  return /\bSerial(?:USB|\d)?\b/.test(used);
+}
+
 export class Editor {
   constructor(app, project) {
     this.app = app;
@@ -155,9 +166,10 @@ export class Editor {
       this.wide = wide;
       this.root.classList.toggle('wide', wide);
     }
-    // Full screen + running: circuit and Serial Monitor together (side by side in landscape,
-    // stacked in portrait). Stopped: one panel at a time. The code tab always gets the whole screen.
-    const runsplit = this.fullscreen && !!this.engine && this.tab !== 'code';
+    // Full screen + running a sketch that uses Serial: circuit and Serial Monitor together (side by
+    // side in landscape, stacked in portrait). Sketches without Serial keep the circuit alone.
+    // Stopped: one panel at a time. The code tab always gets the whole screen.
+    const runsplit = this.fullscreen && !!this.engine && this.tab !== 'code' && (this.usesSerial || this.serialSeen);
     if (runsplit !== this.runsplit) {
       this.runsplit = runsplit;
       this.root.classList.toggle('runsplit', runsplit);
@@ -508,9 +520,15 @@ export class Editor {
     this.errorBar.classList.add('hidden');
     this.warnings = [];
     this.serial.clear();
+    this.usesSerial = sketchUsesSerial(this.project.code);
+    this.serialSeen = false;
     this.audio.resume();
     const engine = new SimEngine(this.project, {
-      onSerial: (port, text) => { this.serial.write(text); if (this.tab !== 'serial' && !this.runsplit) this.setBadge('serial', true); },
+      onSerial: (port, text) => {
+        this.serial.write(text);
+        if (!this.serialSeen) { this.serialSeen = true; this.updateLayout(); } // serial used indirectly (e.g. via a #define)
+        if (this.tab !== 'serial' && !this.runsplit) this.setBadge('serial', true);
+      },
       onWarning: (msg) => this.addWarning(msg),
       onError: (err) => this.runtimeError(err),
       onSound: (id, freq, vol) => this.audio.set(id, freq, this.settings.sound === false ? 0 : vol),

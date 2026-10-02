@@ -369,7 +369,7 @@ export class Shell {
           h('div', { class: 'stepper' }, h('button', { class: 'icon-btn sm', 'aria-label': 'Smaller', html: icon('minus', 18), onclick: () => step(-1) }), fsVal, h('button', { class: 'icon-btn sm', 'aria-label': 'Bigger', html: icon('plus', 18), onclick: () => step(1) })))),
       group('Landscape & full screen',
         toggle('Side by side in landscape', 'Show circuit and code together when the phone is sideways', () => s.split !== false, (v) => { s.split = v; }, 'columns'),
-        toggle('Side by side in full screen', 'Off: one panel at a time. While running, circuit + Serial Monitor always show together', () => s.splitFs === true, (v) => { s.splitFs = v; }, 'fullscreen')),
+        toggle('Side by side in full screen', 'Off: one panel at a time. While running, sketches that use Serial show circuit + Serial Monitor together', () => s.splitFs === true, (v) => { s.splitFs = v; }, 'fullscreen')),
       group('Feedback',
         toggle('Sound', 'Play buzzers and speakers during simulation', () => s.sound !== false, (v) => { s.sound = v; }, 'bell'),
         toggle('Vibration', 'Short haptic feedback when wiring and pressing buttons', () => s.haptics !== false, (v) => { s.haptics = v; Native.haptics = v; }, 'hand')),

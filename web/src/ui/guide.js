@@ -75,7 +75,7 @@ export const GUIDE = [
     html: ul(
       'Tap the <b>full-screen</b> button in the side toolbar (or above the code). The phone\'s status and navigation bars hide and the circuit or code uses the whole display.',
       'In full screen each job gets the <b>whole display</b>: switch between circuit, code and serial with the tool rail on the left.',
-      'Press <b>Run</b> in full screen and the circuit and the <b>Serial Monitor</b> appear together: side by side in landscape, one above the other in portrait. Press <b>Stop</b> and you are back to one panel at a time.',
+      'Press <b>Run</b> in full screen and, if your sketch prints or reads with <code>Serial</code>, the circuit and the <b>Serial Monitor</b> appear together: side by side in landscape, one above the other in portrait. Sketches without Serial keep the whole screen for the circuit. Press <b>Stop</b> and you are back to one panel at a time.',
       'Exit with the top button of the rail or the phone\'s <b>Back</b> button.',
       'Turn the phone sideways (landscape): the circuit and the code can appear side by side. The <b>Split</b> button turns that on or off — in normal view and in full screen.',
     ) + tip('For the biggest workspace, turn the phone sideways and tap full screen.'),
