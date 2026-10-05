@@ -3,7 +3,7 @@
 import { h, toast, Sheet, confirmDialog } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
-import { LabScene } from '../three/scene.js';
+import { LabScene, NullScene } from '../three/scene.js';
 import { DEVICE_DEFS, CATEGORIES, devicePorts, deviceProps, compatible, findPort, wireColorFor, busName } from '../devices/defs.js';
 import { makeConn, labId, portUse, MAX_WIRES } from '../store.js';
 import { LabSystem } from '../sim/system.js';
@@ -28,7 +28,16 @@ export class PanelView {
     this.el = h('section', { class: 'panel-view' });
     this.host = h('div', { class: 'lab-3d-host' });
     this.el.appendChild(this.host);
-    this.scene = new LabScene(this.host, { quality: lab.settings.labQuality || 'high', hmiCanvas: lab.hmiCanvas, laptopCanvas: lab.laptopCanvas });
+    try {
+      this.scene = new LabScene(this.host, { quality: lab.settings.labQuality || 'high', hmiCanvas: lab.hmiCanvas, laptopCanvas: lab.laptopCanvas });
+    } catch (e) {
+      console.warn('3D unavailable', e);
+      this.scene = new NullScene(this.host);
+      this.host.appendChild(h('div', { class: 'empty-state lab-no3d' },
+        h('div', { class: 'empty-ic big', html: icon('cube', 36) }),
+        h('h2', {}, '3D is not available on this phone'),
+        h('p', {}, 'The 3D lab needs WebGL 2. Everything else works: use the wiring list (☰) to connect devices, and the Ladder, HMI, VFD and Monitor tabs.')));
+    }
     this.buildOverlay();
     const opts = { capture: true };
     this.host.addEventListener('pointerdown', (e) => this.onDown(e), opts);

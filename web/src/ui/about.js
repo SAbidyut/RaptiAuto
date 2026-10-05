@@ -75,6 +75,7 @@ export function aboutPage() {
       li('Real circuit physics: LEDs need resistors, shorts and overloads are detected'),
       li('Arduino C++ runs on-device — Serial Monitor & Plotter included'),
       li('Sensors, displays, motors, breadboards and 60+ parts with live animations'),
+      li('Delta PLC Lab in 3D: DVP PLC, DOP-107 HMI and MS300 VFD — wiring, ladder, HMI screens, Modbus'),
       li('Full-screen circuit and code editors made for touch')),
     h('p', { class: 'muted small' }, 'Information about RAPTI is taken from rapti.net.'));
 

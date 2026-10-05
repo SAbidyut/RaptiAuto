@@ -432,7 +432,7 @@ export class LabScene {
       this.scene.add(this.selBox);
       const def = DEVICE_DEFS[e.dev.type];
       const props = deviceProps(e.dev);
-      this.selLabel = labelSprite(def.category === 'field' && props.label ? `${def.short} · ${props.label}` : def.name);
+      this.selLabel = labelSprite(def.category === 'field' && props.label ? `${def.short} · ${props.label}` : def.name, { scale: 0.4 });
       const c = box.getCenter(new THREE.Vector3());
       this.selLabel.position.set(c.x, box.max.y + 22, c.z);
       this.scene.add(this.selLabel);
@@ -489,4 +489,37 @@ export class LabScene {
     this.dirty = true;
     return canvas.toDataURL('image/png');
   }
+}
+
+/** Stand-in used when WebGL 2 is not available: the rest of the lab keeps working. */
+export class NullScene {
+  constructor(host) {
+    this.host = host;
+    this.controls = { enabled: true };
+    this.renderer = { shadowMap: {} };
+    this.visible = true;
+    this.failed = true;
+  }
+  setProject(p) { this.project = p; }
+  setSystem(s) { this.system = s; }
+  setRunning() {}
+  syncDevices() {}
+  syncCables() {}
+  focus() {}
+  selectDevice() {}
+  selectCable() {}
+  setMarkers() {}
+  modelOf() { return null; }
+  portsNear() { return []; }
+  pickControl() { return null; }
+  pickDevice() { return null; }
+  pickCable() { return null; }
+  portWorld() { return null; }
+  getView() { return null; }
+  setView() {}
+  updateFlows() {}
+  resize() {}
+  snapshot() { throw new Error('no WebGL'); }
+  thumbnail() { return ''; }
+  dispose() {}
 }

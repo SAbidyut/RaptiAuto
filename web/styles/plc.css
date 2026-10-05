@@ -428,3 +428,4 @@
   .lab-mode .seg { height: 30px; font-size: 12px; }
   .panel-view .sel-bar { bottom: 44px; }
 }
+.lab-no3d { position: absolute; left: 16px; right: 70px; top: 70px; }

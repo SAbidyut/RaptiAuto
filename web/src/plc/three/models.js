@@ -705,7 +705,7 @@ function buildMotor(dev) {
   face.rotation.y = Math.PI / 2; face.position.x = 164.2;
   rot.add(shaft, key, disk, face);
   group.add(rot);
-  const label = labelSprite('0 rpm');
+  const label = labelSprite('0 rpm', { scale: 0.55, size: 30 });
   label.position.set(40, 250, 0);
   label.visible = false;
   group.add(label);

@@ -171,6 +171,69 @@ const scenarios = {
     const il = await page.evaluate(() => { const v = window.__rapti.lab.views.ladder; return JSON.stringify(v.compiled.il.map((r) => r.lines.map((l) => l.text))); });
     console.log('IL', il);
   },
+  async labhero(page, id = 'vfd-modbus-hmi', focus = 'overview') {
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(1500);
+    await page.click('.lab .run-btn'); await sleep(500);
+    await page.evaluate(() => {
+      const l = window.__rapti.lab; const s = l.sys;
+      for (let i = 0; i < 100; i++) s.step(20);
+      const b = l.project.devices.find((d) => d.type === 'pb' && (d.props.contact || 'NO') === 'NO');
+      if (b) { s.act(b.id, 'press', true); for (let i = 0; i < 10; i++) s.step(20); s.act(b.id, 'press', false); }
+      for (let i = 0; i < 400; i++) s.step(20);
+    });
+    await page.evaluate((f) => { const l = window.__rapti.lab; const t = f === 'overview' || f === 'panel' || f === 'console' ? f : (l.project.devices.find((d) => d.type === f || d.id === f) || {}).id; l.scene.focus(t || 'overview', false); }, focus);
+    await sleep(2500);
+    await page.screenshot({ path: join(outDir, `labhero-${id}-${focus}.png`) });
+  },
+  async labqa(page) {
+    await page.evaluate(() => window.__rapti.home.openLabExample('vfd-modbus-hmi')); await sleep(1500);
+    await page.click('.lab .run-btn'); await sleep(400);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 120; i++) s.step(20); });
+    // tap START on the HMI screen inside the 3D view
+    await page.evaluate(() => { const l = window.__rapti.lab; l.scene.focus(l.project.devices.find((d) => d.type === 'dop-107bv').id, false); }); await sleep(1500);
+    const pt = await page.evaluate(() => {
+      const l = window.__rapti.lab; const sc = l.scene; const hmi = l.project.devices.find((d) => d.type === 'dop-107bv');
+      const m = sc.modelOf(hmi.id); const scr = m.screen; scr.updateMatrixWorld(true);
+      // START button centre on the 800×480 screen: (137, 156) → local plane coords
+      const THREE = scr.position.constructor;
+      const u = 137 / 800, v = 1 - 156 / 480;
+      const local = new THREE(-77 + u * 154, -46.2 + v * 92.4, 0);
+      const w = scr.localToWorld(local);
+      return sc.toScreen([w.x, w.y, w.z]);
+    });
+    await page.mouse.move(pt.x, pt.y); await page.mouse.down(); await sleep(250);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 15; i++) s.step(20); });
+    await page.mouse.up();
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 300; i++) s.step(20); });
+    const st = await page.evaluate(() => { const l = window.__rapti.lab; const v = l.sys.byKind('vfd')[0].vfd; return { m0: l.sys.plc.cpu.M[0], f: v.f.toFixed(2) }; });
+    console.log('after 3D HMI START', JSON.stringify(st));
+    await sleep(800);
+    await page.screenshot({ path: join(outDir, 'labqa-hmi3d.png') });
+    // tap VFD MODE key in 3D
+    await page.evaluate(() => { const l = window.__rapti.lab; l.scene.focus(l.project.devices.find((d) => d.type === 'ms300').id, false); }); await sleep(1500);
+    const kp = await page.evaluate(() => { const l = window.__rapti.lab; const sc = l.scene; const vfd = l.project.devices.find((d) => d.type === 'ms300'); const m = sc.modelOf(vfd.id); const key = m.controls.find((c) => c.userData.control.key === 'MODE'); key.updateMatrixWorld(true); const w = key.getWorldPosition(key.position.clone()); return sc.toScreen([w.x, w.y, w.z]); });
+    await page.mouse.click(kp.x, kp.y); await sleep(300);
+    const mode = await page.evaluate(() => window.__rapti.lab.sys.byKind('vfd')[0].vfd.kp.mode);
+    console.log('VFD keypad mode after MODE tap:', mode);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 30; i++) s.step(20); }); await sleep(900);
+    await page.screenshot({ path: join(outDir, 'labqa-vfdkey.png') });
+    // comm log
+    await page.evaluate(() => window.__rapti.lab.setTab('monitor')); await sleep(500);
+    await page.click('.mv-seg .seg[data-s="log"]'); await sleep(400);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 20; i++) s.step(20); }); await sleep(900);
+    await page.screenshot({ path: join(outDir, 'labqa-commlog.png') });
+    // HMI designer
+    await page.evaluate(() => window.__rapti.lab.setTab('hmi')); await sleep(500);
+    await page.click('.hv-bar .seg[data-m="design"]'); await sleep(500);
+    const c = await page.evaluate(() => { const r = window.__rapti.lab.views.hmi.designCanvas.getBoundingClientRect(); return { x: r.left + r.width * 137 / 800, y: r.top + r.height * 156 / 480, k: r.width / 800 }; });
+    await page.mouse.click(c.x, c.y); await sleep(300);
+    await page.mouse.move(c.x, c.y); await page.mouse.down(); await page.mouse.move(c.x + 60 * c.k, c.y + 30 * c.k, { steps: 6 }); await page.mouse.up(); await sleep(400);
+    await page.screenshot({ path: join(outDir, 'labqa-hmidesign.png') });
+    // VFD tab param sheet
+    await page.evaluate(() => window.__rapti.lab.setTab('vfd')); await sleep(500);
+    await page.click('.vp-row >> text=01-12'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labqa-vfdparam.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);
@@ -185,6 +248,7 @@ for (const spec of list) {
   const page = await newPage();
   try {
     if (name === 'zoom') await scenarios.zoom(page, arg, arg2, arg3);
+    else if (name === 'labhero') await scenarios.labhero(page, arg, arg2);
     else await scenarios[name](page, arg, arg2 ? +arg2 : undefined);
   } catch (e) {
     errors.push(`[scenario ${spec}] ${e.message}`);
