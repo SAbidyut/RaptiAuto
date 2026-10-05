@@ -2,10 +2,11 @@
 // picking (ports, controls, devices, cables), camera focus animation and the render loop.
 import { THREE, canvasTexture, setMaxAnisotropy, labelSprite } from './kit.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { setupLights, buildEnvironment } from './environment.js';
+import { setupLights, buildEnvironment, buildDucts } from './environment.js';
 import { buildModel, disposeModel } from './models.js';
-import { buildCable, disposeCable, setCableFlow, setCableHighlight } from './cables.js';
+import { buildCable, buildPlainCable, disposeCable, setCableFlow, setCableHighlight } from './cables.js';
 import { layoutDevices, toWorld, dirToWorld } from '../devices/layout.js';
+import { routeLab } from '../devices/routing.js';
 import { DEVICE_DEFS, devicePorts, deviceProps } from '../devices/defs.js';
 import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
 
@@ -29,6 +30,7 @@ export class LabScene {
     this.host = host;
     this.quality = quality;
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    if (!renderer.getContext()) throw new Error('no WebGL');
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'low' ? 1 : 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -38,6 +40,16 @@ export class LabScene {
     renderer.shadowMap.autoUpdate = false;
     renderer.domElement.className = 'lab-3d';
     host.appendChild(renderer.domElement);
+    // a lost GPU context (driver reset, too many tabs, laptop GPU switch) must not freeze the lab:
+    // stop drawing, tell the lab (it shows the 2D schematic) and redraw everything once it is back
+    this.onLost = null;
+    renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; if (this.onLost) this.onLost(true); }, false);
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+      this.lost = false;
+      renderer.shadowMap.needsUpdate = true;
+      this.hmiDirty = true; this.laptopDirty = true; this.dirty = true;
+      if (this.onLost) this.onLost(false);
+    }, false);
     setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
     this.renderer = renderer;
     this.scene = new THREE.Scene();
@@ -61,6 +73,12 @@ export class LabScene {
     c.addEventListener('change', () => { this.dirty = true; });
     c.addEventListener('start', () => { this.anim = null; });
     this.controls = c;
+    // OrbitControls forgets a finger only on its pointerup; when the canvas loses the pointer
+    // without one (view hidden mid-drag, system gesture) it kept a phantom finger and every later
+    // one-finger drag was taken as a pinch — the 3D view seemed stuck
+    renderer.domElement.addEventListener('lostpointercapture', (e) => {
+      if (c._pointers && c._pointers.includes(e.pointerId)) { try { c._onPointerUp(e); } catch (err) { this.resetPointers(); } }
+    });
 
     this.hmiTexture = canvasTexture(8, 8, () => {});
     if (hmiCanvas) { this.hmiTexture.image = hmiCanvas; this.hmiTexture.userData.canvas = hmiCanvas; this.hmiTexture.needsUpdate = true; }
@@ -73,6 +91,8 @@ export class LabScene {
     this.cableGroup = new THREE.Group();
     this.markerGroup = new THREE.Group();
     this.scene.add(this.world, this.cableGroup, this.markerGroup);
+    this.ducts = null;
+    this.mains = null;
     this.env = null;
     this.envKey = '';
     this.raycaster = new THREE.Raycaster();
@@ -96,10 +116,41 @@ export class LabScene {
   resize() {
     const r = this.host.getBoundingClientRect();
     if (!r.width || !r.height) return;
-    this.renderer.setSize(r.width, r.height, false);
-    this.camera.aspect = r.width / r.height;
+    // setting the canvas size clears it, so only do it on a real change and draw again at once —
+    // otherwise the browser can show an empty frame (a flash / flicker on laptops)
+    const w = Math.round(r.width), h = Math.round(r.height), pr = this.renderer.getPixelRatio();
+    if (this.size && this.size.w === w && this.size.h === h && this.size.pr === pr) return;
+    this.size = { w, h, pr };
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.dirty = true;
+    if (this.visible !== false && !this.lost) this.render();
+  }
+
+  /** Forget every finger the orbit controls track (a new gesture starts from scratch). */
+  resetPointers() {
+    const c = this.controls;
+    if (!c._pointers || !c._pointers.length) return;
+    for (const id of c._pointers) { try { c.domElement.releasePointerCapture(id); } catch (e) { /* not captured */ } }
+    c._pointers.length = 0;
+    c._pointerPositions = {};
+    c.domElement.removeEventListener('pointermove', c._onPointerMove);
+    c.domElement.removeEventListener('pointerup', c._onPointerUp);
+    c.state = -1;
+  }
+
+  render() {
+    this.updateNear();
+    this.renderer.render(this.scene, this.camera);
+    this.dirty = false;
+  }
+
+  /** Keep the depth range tight around what is looked at (no z-fighting / shimmering far away). */
+  updateNear() {
+    const d = this.camera.position.distanceTo(this.controls.target);
+    const near = Math.max(4, Math.min(80, d * 0.045));
+    if (Math.abs(near - this.camera.near) > near * 0.08) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
   }
 
   dispose() {
@@ -108,6 +159,7 @@ export class LabScene {
     this.controls.dispose();
     for (const m of this.models.values()) disposeModel(m.model);
     for (const c of this.cables.values()) disposeCable(c);
+    this.setDucts(null);
     this.renderer.dispose();
     this.renderer.forceContextLoss && this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
@@ -168,17 +220,36 @@ export class LabScene {
   syncCables() {
     for (const c of this.cables.values()) { this.cableGroup.remove(c); disposeCable(c); }
     this.cables.clear();
+    // every wire through the ducts / around the bench, each on a track of its own (devices/routing.js)
+    let routed = { routes: new Map(), gaps: [], mains: null };
+    try { routed = routeLab(this.project, this.layout); } catch (e) { console.warn('cable routing failed', e); }
     for (const conn of this.project.conns) {
-      const a = this.portWorld(conn.a.dev, conn.a.port), b = this.portWorld(conn.b.dev, conn.b.port);
-      if (!a || !b) continue;
-      const cab = buildCable(conn, [a, b]);
+      const rt = routed.routes.get(conn.id);
+      if (!rt) continue;
+      const cab = buildCable(conn, rt);
       this.cables.set(conn.id, cab);
       this.cableGroup.add(cab);
     }
+    this.setDucts(routed);
     if (this.selConn) { const c = this.cables.get(this.selConn); if (c) setCableHighlight(c, true); }
     for (const id of this.multiConns || []) { const c = this.cables.get(id); if (c) setCableHighlight(c, true); }
     this.renderer.shadowMap.needsUpdate = true;
     this.dirty = true;
+  }
+
+  /** Slotted ducts (slots where the wires pass) and the MCB's mains cable. */
+  setDucts(routed) {
+    for (const k of ['ducts', 'mains']) {
+      const o = this[k];
+      if (!o) continue;
+      this.scene.remove(o);
+      o.traverse((m) => { if (m.isMesh && m.geometry) m.geometry.dispose(); });
+      this[k] = null;
+    }
+    if (!routed) return;
+    this.ducts = buildDucts(routed.gaps);
+    this.scene.add(this.ducts);
+    if (routed.mains) { this.mains = buildPlainCable(routed.mains.pts, routed.mains.r); this.scene.add(this.mains); }
   }
 
   portWorld(devId, portId) {
@@ -192,6 +263,7 @@ export class LabScene {
   // ------------------------------------------------------------------ frame
   tick(dt) {
     this.t += dt;
+    if (this.visible === false || this.lost) { this.lastRenderAt = 0; return; }
     const changed = this.controls.update();
     if (this.anim) this.stepAnim();
     let dirty = this.dirty || changed || !!this.anim;
@@ -213,12 +285,20 @@ export class LabScene {
     }
     if (this.hmiDirty) { this.hmiTexture.needsUpdate = true; this.hmiDirty = false; dirty = true; }
     if (this.laptopDirty) { this.laptopTexture.needsUpdate = true; this.laptopDirty = false; dirty = true; }
-    if (dirty && this.visible !== false) {
-      this.renderer.render(this.scene, this.camera);
-      this.dirty = false;
+    if (dirty) {
+      this.render();
       // frame-time sample (lets the lab fall back to 2D on slow phones)
-      const p = this.perf || (this.perf = { skip: 4, n: 0, sum: 0 });
-      if (p.skip > 0) p.skip--; else if (this.lastRenderAt) { p.n++; p.sum += Math.min(0.5, (this.lastNow - this.lastRenderAt) / 1000); }
+      const p = this.perf || (this.perf = { skip: 4, n: 0, sum: 0, an: 0, asum: 0 });
+      if (p.skip > 0) p.skip--; else if (this.lastRenderAt) {
+        const ft = Math.min(0.5, (this.lastNow - this.lastRenderAt) / 1000);
+        p.n++; p.sum += ft; p.an++; p.asum += ft;
+        // smooth instead of sharp: when frames take too long, draw fewer pixels (down to 1:1)
+        if (p.an >= 40) {
+          const pr = this.renderer.getPixelRatio();
+          if (p.asum / p.an > 1 / 28 && pr > 1.01) { this.renderer.setPixelRatio(Math.max(1, pr * 0.8)); this.size = null; this.resize(); }
+          p.an = 0; p.asum = 0;
+        }
+      }
       this.lastRenderAt = this.lastNow;
     } else this.lastRenderAt = 0;
   }
@@ -248,7 +328,7 @@ export class LabScene {
         if (portrait && e.place && e.place.zone !== 'console' && e.place.zone !== 'rail1' && e.place.zone !== 'rail2') continue;
         box.expandByObject(e.model.group);
       }
-      box.expandByPoint(new THREE.Vector3(-420, 0, 0)).expandByPoint(new THREE.Vector3(420, 700, 0));
+      box.expandByPoint(new THREE.Vector3(-480, 0, 0)).expandByPoint(new THREE.Vector3(480, 720, 0));
       dir = portrait ? new THREE.Vector3(0, 0.8, 0.95) : new THREE.Vector3(0, 0.5, 1);
       margin = portrait ? 0.98 : 1.04;
     } else if (target === 'console') {
@@ -256,7 +336,7 @@ export class LabScene {
       dir = new THREE.Vector3(0, 0.95, 0.75);
       margin = 1.18;
     } else if (target === 'panel') {
-      box.expandByPoint(new THREE.Vector3(-420, 60, 0)).expandByPoint(new THREE.Vector3(420, 660, 140));
+      box.expandByPoint(new THREE.Vector3(-470, 60, 0)).expandByPoint(new THREE.Vector3(470, 690, 140));
       dir = new THREE.Vector3(0, 0.12, 1);
       margin = 1.04;
     } else {
@@ -311,7 +391,7 @@ export class LabScene {
 
   /** Small JPEG of the current view (for the lab list). */
   snapshot(w = 240, h = 150) {
-    this.renderer.render(this.scene, this.camera);
+    this.render();
     const src = this.renderer.domElement;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -369,17 +449,28 @@ export class LabScene {
     return null;
   }
 
+  /** Screen polyline of a cable's centre line (client px). */
+  cableScreen(cab) {
+    const out = [];
+    const v = new THREE.Vector3();
+    const r = this.renderer.domElement.getBoundingClientRect();
+    for (const p of cab.userData.line) {
+      v.copy(p).project(this.camera);
+      if (v.z > 1) { out.push(null); continue; }
+      out.push([r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height]);
+    }
+    return out;
+  }
+
   /** Cable nearest to a screen point (within px). */
   pickCable(x, y, px = 16) {
+    this.camera.updateMatrixWorld();
     let best = null, bd = px;
     for (const [id, cab] of this.cables) {
-      const tube = cab.userData.tube;
-      const pos = tube.geometry.attributes.position;
-      const step = Math.max(1, Math.floor(pos.count / 120));
-      for (let i = 0; i < pos.count; i += step) {
-        const s = this.toScreen([pos.getX(i), pos.getY(i), pos.getZ(i)]);
-        if (s.behind) continue;
-        const d = Math.hypot(s.x - x, s.y - y);
+      const s = this.cableScreen(cab);
+      for (let i = 0; i < s.length - 1; i++) {
+        if (!s[i] || !s[i + 1]) continue;
+        const d = segDist2(x, y, s[i], s[i + 1]);
         if (d < bd) { bd = d; best = id; }
       }
     }
@@ -487,10 +578,7 @@ export class LabScene {
       if (!behind && boxInSelection(rect, { x0, y0, x1, y1 }, mode)) devs.push(id);
     }
     for (const [id, cab] of this.cables) {
-      const pos = cab.userData.tube.geometry.attributes.position;
-      const step = Math.max(1, Math.floor(pos.count / 60));
-      const pts = [];
-      for (let i = 0; i < pos.count; i += step) { const s = this.toScreen([pos.getX(i), pos.getY(i), pos.getZ(i)]); if (!s.behind) pts.push([s.x, s.y]); }
+      const pts = this.cableScreen(cab).filter(Boolean);
       if (polylineInSelection(rect, pts, mode)) conns.push(id);
     }
     return { devs, conns };
@@ -561,6 +649,13 @@ export class LabScene {
   }
 }
 
+function segDist2(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / l2)) : 0;
+  return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
+
 /** Stand-in used when WebGL 2 is not available: the rest of the lab keeps working. */
 export class NullScene {
   constructor(host) {
@@ -584,6 +679,7 @@ export class NullScene {
   zoomTo() {}
   zoomAt() {}
   setMarkers() {}
+  resetPointers() {}
   modelOf() { return null; }
   portsNear() { return []; }
   pickControl() { return null; }

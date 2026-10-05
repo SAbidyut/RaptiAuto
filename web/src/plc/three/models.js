@@ -3,7 +3,7 @@
 // in the device-local frame of devices/defs.js (mm, origin bottom-centre-back, +z = front).
 import {
   THREE, MAT, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
-  glowSprite, labelSprite, txt, rrect, deltaLogo, FONT, FONT_D, FONT_M,
+  glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M,
 } from './kit.js';
 import { DEVICE_DEFS, PLC_MODELS, devicePorts, deviceProps } from '../devices/defs.js';
 import { drawSegDisplay } from './sevenseg.js';
@@ -149,10 +149,10 @@ function buildHmi(dev, ctx) {
   B.build(group);
   // screen
   const screenTex = ctx.hmiTexture;
-  const scrMat = new THREE.MeshStandardMaterial({ color: 0x030405, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0, roughness: 0.18, metalness: 0.0 });
+  const scrMat = offsetMat(new THREE.MeshStandardMaterial({ color: 0x030405, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0, roughness: 0.18, metalness: 0.0 }), 2);
   scrMat.toneMapped = false;
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(154, 92.4), scrMat);
-  screen.position.set(0, 80, 46.1);
+  screen.position.set(0, 80, 46.9);
   control(screen, dev.id, 'hmi', { label: 'HMI touch screen' });
   group.add(screen);
   const print = decal(200, 146, (g, W, H) => {
@@ -161,7 +161,7 @@ function buildHmi(dev, ctx) {
     g.strokeStyle = 'rgba(255,255,255,.06)'; g.lineWidth = 0.6;
     rrect(g, 21.5, 146 - 80 - 47.7, 157, 95.4, 1.5); g.stroke();
   }, { ppm: 8 });
-  print.position.set(0, 73, 46.05);
+  print.position.set(0, 73, 46.4);
   group.add(print);
   const back = decal(120, 40, (g, W, H) => {
     g.fillStyle = '#e5e7eb'; rrect(g, 0, 0, W, H, 3); g.fill();
@@ -259,7 +259,7 @@ function buildVfd(dev) {
   const l3 = labelStrip(96, 6, pw.map((p) => ({ x: p.pos[0], label: p.label, size: 2.8 })), { color: '#e2e8f0' }); l3.position.set(0, 8.5, 128.2); group.add(l3);
   // display
   const dispTex = canvasTexture(320, 96, () => {}, { mip: false });
-  const dm = new THREE.MeshStandardMaterial({ color: 0x120404, emissive: 0xffffff, emissiveMap: dispTex, emissiveIntensity: 1, roughness: 0.2 });
+  const dm = offsetMat(new THREE.MeshStandardMaterial({ color: 0x120404, emissive: 0xffffff, emissiveMap: dispTex, emissiveIntensity: 1, roughness: 0.2 }), 2);
   dm.toneMapped = false;
   const disp = new THREE.Mesh(new THREE.PlaneGeometry(60, 18), dm);
   disp.position.set(0, 163, 151.5);
@@ -366,11 +366,9 @@ function buildMcb(dev) {
   B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(17, 38, 25));
   B.add(box(30, 10, 14), MAT.darkPlastic, M4(-6, -2, 20));
   for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.3);
-  // line side screws + mains cable
+  // line side screws (the mains cable from here is routed with the wiring, see devices/routing.js)
   addScrew(B, [-15, 80, 64], [0, 0.55, 0.83], 2.3);
   addScrew(B, [-3, 80, 64], [0, 0.55, 0.83], 2.3);
-  const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(-9, 84, 60), new THREE.Vector3(-9, 105, 50), new THREE.Vector3(-9, 150, 40), new THREE.Vector3(-9, 200, 34)]);
-  B.add(new THREE.TubeGeometry(curve, 24, 4.2, 10), mat('mainsCable', { color: 0x3c4048, roughness: 0.7 }));
   B.build(group);
   const front = decal(32, 86, (g, W, H) => {
     txt(g, 'C10', W / 2, 9, { size: 5, weight: 800, color: '#111827', font: FONT_D });
@@ -385,7 +383,7 @@ function buildMcb(dev) {
   const pel = labelStrip(12, 5, [{ x: 0, label: 'PE', size: 3 }], { color: '#111' });
   pel.position.set(17, 67, 50.2); group.add(pel);
   // indicator + lever
-  const ind = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 }));
+  const ind = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), offsetMat(new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 })));
   ind.position.set(-6, 60.5, 71.1);
   group.add(ind);
   const lever = new THREE.Group();
@@ -760,13 +758,15 @@ function buildLaptop(dev, ctx) {
   lidMesh.position.set(0, 106, -3.5);
   lidMesh.castShadow = true;
   lid.add(lidMesh);
-  const bez = new THREE.Mesh(new THREE.PlaneGeometry(312, 204), mat('lapBezel', { color: 0x0b0d10, roughness: 0.3 }));
-  bez.position.set(0, 107, 0.05);
+  // bezel and screen sit clearly in front of the lid and of each other (layered decals 0.05 mm
+  // apart z-fight on many GPUs: the laptop screen flickered while orbiting)
+  const bez = new THREE.Mesh(new THREE.PlaneGeometry(312, 204), offsetMat(mat('lapBezel', { color: 0x0b0d10, roughness: 0.3 }), 1));
+  bez.position.set(0, 107, 0.6);
   lid.add(bez);
-  const scr = new THREE.MeshStandardMaterial({ color: 0x050608, emissive: 0xffffff, emissiveMap: ctx.laptopTexture, emissiveIntensity: 0.95, roughness: 0.2 });
+  const scr = offsetMat(new THREE.MeshStandardMaterial({ color: 0x050608, emissive: 0xffffff, emissiveMap: ctx.laptopTexture, emissiveIntensity: 0.95, roughness: 0.2 }), 2);
   scr.toneMapped = false;
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(296, 185), scr);
-  screen.position.set(0, 109, 0.1);
+  screen.position.set(0, 109, 1.2);
   control(screen, dev.id, 'laptop', { label: 'Laptop' });
   lid.add(screen);
   group.add(lid);

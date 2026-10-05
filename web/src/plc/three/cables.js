@@ -86,33 +86,100 @@ function orientAt(obj, pos, dir) {
   obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
 }
 
+const FILLET = { wire: 7, patch: 11, comm: 15, motor: 10, mains: 18 };
+const RADIAL = { wire: 7, patch: 8, comm: 10, motor: 8, mains: 10 };
+
+/** Polyline with rounded corners (a quadratic arc at every bend), as dense points. */
+export function filleted(pts, R) {
+  const P = pts.map(V);
+  const out = [P[0].clone()];
+  for (let i = 1; i < P.length - 1; i++) {
+    const a = P[i - 1], b = P[i], c = P[i + 1];
+    const u = b.clone().sub(a), v = c.clone().sub(b);
+    const lu = u.length(), lv = v.length();
+    if (lu < 1e-6 || lv < 1e-6) continue;
+    u.divideScalar(lu); v.divideScalar(lv);
+    const cos = Math.max(-1, Math.min(1, u.dot(v)));
+    if (cos > 0.99995) { out.push(b.clone()); continue; }
+    const k = Math.min(R, lu * 0.49, lv * 0.49);
+    const p0 = b.clone().addScaledVector(u, -k), p1 = b.clone().addScaledVector(v, k);
+    const n = Math.max(2, Math.min(14, Math.ceil(Math.acos(cos) / 0.2)));
+    for (let j = 0; j <= n; j++) {
+      const t = j / n, w0 = (1 - t) * (1 - t), w1 = 2 * (1 - t) * t, w2 = t * t;
+      out.push(new THREE.Vector3(p0.x * w0 + b.x * w1 + p1.x * w2, p0.y * w0 + b.y * w1 + p1.y * w2, p0.z * w0 + b.z * w1 + p1.z * w2));
+    }
+  }
+  out.push(P[P.length - 1].clone());
+  return out;
+}
+
 /**
- * Build the 3D cable for a connection.
- * ends: [{pos:[x,y,z], dir:[x,y,z], port, dev}] (world space)
+ * Tube along dense points with rotation-minimising frames: one ring per point, so straight runs
+ * stay cheap (two rings) and bends stay round. uv.x runs 0 → 1 along the length.
  */
-export function buildCable(conn, ends) {
-  const [A, B] = ends;
+export function tubeGeometry(line, radius, radial = 8) {
+  const n = line.length;
+  const T = line.map((p, i) => line[Math.min(n - 1, i + 1)].clone().sub(line[Math.max(0, i - 1)]).normalize());
+  const t0 = T[0];
+  const ax = Math.abs(t0.x) <= Math.abs(t0.y) && Math.abs(t0.x) <= Math.abs(t0.z) ? new THREE.Vector3(1, 0, 0) : Math.abs(t0.y) <= Math.abs(t0.z) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+  let N = new THREE.Vector3().crossVectors(t0, ax).normalize();
+  const s = [0];
+  for (let i = 1; i < n; i++) s.push(s[i - 1] + line[i].distanceTo(line[i - 1]));
+  const total = s[n - 1] || 1;
+  const ring = radial + 1;
+  const pos = new Float32Array(n * ring * 3), nor = new Float32Array(n * ring * 3), uv = new Float32Array(n * ring * 2);
+  const axis = new THREE.Vector3(), Bv = new THREE.Vector3(), d = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    if (i > 0) {
+      axis.crossVectors(T[i - 1], T[i]);
+      const l = axis.length();
+      if (l > 1e-8) N.applyAxisAngle(axis.divideScalar(l), Math.acos(Math.max(-1, Math.min(1, T[i - 1].dot(T[i])))));
+      N.addScaledVector(T[i], -N.dot(T[i])).normalize();
+    }
+    Bv.crossVectors(T[i], N);
+    for (let j = 0; j <= radial; j++) {
+      const a = (j / radial) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      d.set(N.x * c + Bv.x * sn, N.y * c + Bv.y * sn, N.z * c + Bv.z * sn);
+      const k = (i * ring + j) * 3;
+      pos[k] = line[i].x + d.x * radius; pos[k + 1] = line[i].y + d.y * radius; pos[k + 2] = line[i].z + d.z * radius;
+      nor[k] = d.x; nor[k + 1] = d.y; nor[k + 2] = d.z;
+      uv[(i * ring + j) * 2] = s[i] / total; uv[(i * ring + j) * 2 + 1] = j / radial;
+    }
+  }
+  const idx = [];
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < radial; j++) {
+    const a = i * ring + j, b = (i + 1) * ring + j;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  g.userData.length = total;
+  return g;
+}
+
+/**
+ * Build the 3D cable for a connection along its route (devices/routing.js):
+ * route = { pts (fitting to fitting), r, kind, ends: [{pos, dir, kind: ferrule|plug|conn, conn, len}] }.
+ */
+export function buildCable(conn, route) {
   const group = new THREE.Group();
-  group.userData.connId = conn.id;
-  const pa = A.port, pb = B.port;
-  const comm = !!conn.comm;
-  const patch = !comm && (pa.kind === 'sock' || pb.kind === 'sock');
-  const motor = !comm && pa.sig === 'mot' && pb.sig === 'mot';
-  const radius = comm ? 2.8 : motor ? 2.3 : patch ? 1.9 : 1.35;
-  const pos0 = V(A.pos), pos1 = V(B.pos), d0 = V(A.dir).normalize(), d1 = V(B.dir).normalize();
-  // end fittings
-  const color = new THREE.Color(conn.color && conn.color !== 'pe' ? conn.color : comm ? COMM_COLORS[pa.bus] || 0x444a55 : 0x2f9e44);
+  const comm = route.kind === 'comm';
+  const radius = route.r;
+  const bus = route.ends[0] && route.ends[0].bus;
+  const color = new THREE.Color(conn.color && conn.color !== 'pe' ? conn.color : comm ? COMM_COLORS[bus] || 0x444a55 : 0x2f9e44);
   const ins = new THREE.MeshStandardMaterial({ color, roughness: comm ? 0.62 : 0.42, metalness: 0.02 });
   if (conn.color === 'pe') { const t = peTexture().clone(); t.needsUpdate = true; ins.map = t; ins.color.set(0xffffff); }
-  const ends3 = [];
-  for (const [p, d, info] of [[pos0, d0, A], [pos1, d1, B]]) {
-    let len;
-    if (comm) {
-      const c = connector(info.port.conn);
+  for (const f of route.ends) {
+    const p = V(f.pos), d = V(f.dir).normalize();
+    if (f.kind === 'conn') {
+      const c = connector(f.conn);
       orientAt(c.group, p, d);
       group.add(c.group);
-      len = c.len;
-    } else if (info.port.kind === 'sock') {
+    } else if (f.kind === 'plug') {
       const plug = new THREE.Group();
       const sleeve = new THREE.Mesh(cyl(3.3, 3.6, 16, 16), ins);
       sleeve.position.y = 9;
@@ -123,7 +190,6 @@ export function buildCable(conn, ends) {
       plug.add(sleeve, tip, grip);
       orientAt(plug, p, d);
       group.add(plug);
-      len = 22;
     } else {
       const fer = new THREE.Group();
       const sleeve = new THREE.Mesh(cyl(radius + 0.5, radius + 0.3, 7, 12), ins);
@@ -133,33 +199,27 @@ export function buildCable(conn, ends) {
       fer.add(sleeve, metal);
       orientAt(fer, p, d);
       group.add(fer);
-      len = 10;
     }
-    ends3.push(p.clone().add(d.clone().multiplyScalar(len)));
   }
-  // route
-  const [e0, e1] = ends3;
-  const dist = e0.distanceTo(e1);
-  const lead = comm ? 24 : patch ? 16 : 10;
-  const p1 = e0.clone().add(d0.clone().multiplyScalar(lead));
-  const q1 = e1.clone().add(d1.clone().multiplyScalar(lead));
-  const mid = p1.clone().add(q1).multiplyScalar(0.5);
-  const sag = Math.max(14, Math.min(240, dist * (patch ? 0.26 : 0.2)));
-  mid.y -= sag;
-  if (Math.max(p1.z, q1.z) < 170) mid.z = Math.max(p1.z, q1.z) + 18 + dist * 0.05;
-  mid.y = Math.max(mid.y, 5 + radius);
-  const pts = [e0, e0.clone().lerp(p1, 0.55), p1, mid, q1, e1.clone().lerp(q1, 0.55), e1];
-  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5);
-  const segs = Math.max(24, Math.min(110, Math.round(curve.getLength() / 9)));
-  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, segs, radius, comm ? 10 : 7, false), ins);
+  const line = filleted(route.pts, FILLET[route.kind] || 8);
+  const tube = new THREE.Mesh(tubeGeometry(line, radius, RADIAL[route.kind] || 7), ins);
   tube.castShadow = true;
   tube.userData.connId = conn.id;
   tube.userData.isCable = true;
   group.add(tube);
-  const length = curve.getLength();
-  if (ins.map) { ins.map.repeat.set(length / 12, 1); }
-  group.userData = { connId: conn.id, tube, ins, length, comm, baseColor: color.clone(), flow: null };
+  const length = tube.geometry.userData.length;
+  if (ins.map) ins.map.repeat.set(length / 12, 1);
+  group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  group.userData = { connId: conn.id, tube, ins, length, comm, baseColor: color.clone(), flow: null, line };
   return group;
+}
+
+/** A plain cable without fittings (the MCB's mains supply). */
+export function buildPlainCable(pts, r, color = 0x3c4048) {
+  const line = filleted(pts, FILLET.mains);
+  const m = new THREE.Mesh(tubeGeometry(line, r, RADIAL.mains), mat('mainsCable', { color, roughness: 0.7 }));
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
 }
 
 /** Live animation: current flow along powered wires, data pulses on busy comm cables. */

@@ -496,18 +496,25 @@ export class LabScreen {
     }
   }
 
-  renderLaptopScreen() {
+  renderLaptopScreen(force = false) {
     const sys = this.sys;
     const plcDev = this.project.devices.find((d) => DEVICE_DEFS[d.type].category === 'plc');
     const plcRt = sys && sys.plc;
     const online = !!(sys && sys.pcLink().ok);
-    renderLaptop(this.laptopCanvas, {
+    const opts = {
       project: this.project,
       plc: plcDev ? { short: DEVICE_DEFS[plcDev.type].short, mode: plcRt ? plcRt.cpu.mode : 'OFF' } : null,
       online,
-      simTime: sys ? `${sys.time.toFixed(1)} s` : '',
+      simTime: sys ? `${Math.floor(sys.time)} s` : '',
       compiledLive: online && plcRt && plcRt.cpu.running && this.views.ladder.inSync() ? (ri) => plcRt.cpu.rungLive(ri) : null,
-    });
+    };
+    // redraw (and upload to the GPU) only when something on the screen changed: re-uploading the
+    // 1024 × 640 screen four times a second made the 3D view stutter
+    const live = opts.compiledLive ? this.project.program.rungs.map((r, i) => JSON.stringify(opts.compiledLive(i))).join(';') : '';
+    const sig = JSON.stringify([opts.plc, online, opts.simTime, this.project.name, this.project.program]) + live;
+    if (!force && sig === this.laptopSig) return;
+    this.laptopSig = sig;
+    renderLaptop(this.laptopCanvas, opts);
     if (this.scene) this.scene.laptopDirty = true;
   }
 
@@ -517,7 +524,7 @@ export class LabScreen {
     const g = this.hmiCanvas.getContext('2d');
     g.fillStyle = '#020305'; g.fillRect(0, 0, 800, 480);
     if (this.scene) this.scene.hmiDirty = true;
-    this.renderLaptopScreen();
+    this.renderLaptopScreen(true);
     if (this.views.hmi) this.views.hmi.refresh();
   }
 

@@ -738,6 +738,9 @@ export class LabSchematic {
 
   // ------------------------------------------------------------------ pan / pinch / wheel
   onDown(e) {
+    // a primary pointer means no other finger is down: drop pointers whose 'up' never arrived
+    // (a stale one would turn every drag into a pinch and the schematic would stop panning)
+    if (e.isPrimary) { this.pointers.clear(); this.pinch = null; }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     this.anim = null;

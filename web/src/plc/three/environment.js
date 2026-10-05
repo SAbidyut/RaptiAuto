@@ -1,6 +1,6 @@
 // Lab surroundings: workbench, control-panel enclosure with mounting plate, DIN rails and wire
 // ducts, the sloped operator console, HMI stand, motor base, lights and background.
-import { THREE, MAT, mat, canvasTexture, rbox, box, M4, Builder, txt, FONT_D } from './kit.js';
+import { THREE, MAT, mat, canvasTexture, rbox, box, M4, Builder, txt, offsetMat, FONT_D } from './kit.js';
 import { SCENE, toWorld } from '../devices/layout.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
@@ -80,20 +80,22 @@ export function buildEnvironment(layout, devices) {
   root.add(floor);
 
   // ---- enclosure + mounting plate
-  const P = SCENE.panel;
+  const P = SCENE.panel, D = SCENE.duct;
   const W = P.x1 - P.x0, H = P.y1 - P.y0;
   const B = new Builder();
   const encl = mat('enclosure', { color: 0xcfd3cf, roughness: 0.55, metalness: 0.1 });
   B.add(box(W + 80, H + 60, 30), encl, M4(0, H / 2 + 10, -40));
-  B.add(box(40, H + 60, 90), encl, M4(P.x0 - 20, H / 2 + 10, -5));
-  B.add(box(40, H + 60, 90), encl, M4(P.x1 + 20, H / 2 + 10, -5));
-  B.add(box(W + 80, 40, 90), encl, M4(0, P.y1 + 20, -5));
+  B.add(box(40, H + 60, 130), encl, M4(P.x0 - 20, H / 2 + 10, 15));
+  B.add(box(40, H + 60, 130), encl, M4(P.x1 + 20, H / 2 + 10, 15));
+  B.add(box(W + 80, 40, 130), encl, M4(0, P.y1 + 20, 15));
   B.add(box(W + 80, 30, 90), encl, M4(0, 15, -5));
-  // DIN rails
-  for (const y of [SCENE.rail1Y, SCENE.rail2Y]) {
-    B.add(box(W - 30, 25, 6.5), MAT.steel, M4(0, y, 3.5));
-    B.add(box(W - 30, 5, 1.2), MAT.steel, M4(0, y + 15, 0.8));
-    B.add(box(W - 30, 5, 1.2), MAT.steel, M4(0, y - 15, 0.8));
+  // DIN rails (rail 2 stops at the middle vertical duct)
+  const vm = SCENE.vducts.find((v) => v.from > 0);
+  for (const [y, x0] of [[SCENE.rail1Y, D.x0], [SCENE.rail2Y, vm ? vm.x + vm.w / 2 + 6 : D.x0]]) {
+    const len = D.x1 - x0, cx = (D.x1 + x0) / 2;
+    B.add(box(len, 25, 6.5), MAT.steel, M4(cx, y, 3.5));
+    B.add(box(len, 5, 1.2), MAT.steel, M4(cx, y + 15, 0.8));
+    B.add(box(len, 5, 1.2), MAT.steel, M4(cx, y - 15, 0.8));
   }
   B.build(root, { shadow: true });
   const plateTex = noiseTex(256, 256, '#c4c9cc', 7, { lines: true, repeat: 3 });
@@ -101,29 +103,14 @@ export function buildEnvironment(layout, devices) {
   plate.position.set(0, H / 2 + 10, -2);
   plate.receiveShadow = true;
   root.add(plate);
-  // wire ducts with finger slots
-  const ductTex = canvasTexture(256, 64, (g, w, h) => {
-    g.fillStyle = '#9ba1a8'; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#5b6168';
-    for (let x = 6; x < w; x += 16) g.fillRect(x, 10, 6, h - 10);
-    g.fillStyle = '#b3b9bf'; g.fillRect(0, 0, w, 10);
-  }, { repeat: true });
-  ductTex.repeat.set((W - 30) / 128, 1);
-  const ductMat = new THREE.MeshStandardMaterial({ map: ductTex, roughness: 0.65 });
-  for (const d of SCENE.ducts) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(W - 30, d.h, 58), [ductMat.clone(), ductMat.clone(), mat('ductTop', { color: 0xa9afb5, roughness: 0.6 }), mat('ductTop', {}), ductMat, ductMat]);
-    mesh.position.set(0, d.y, 29);
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    root.add(mesh);
-  }
   // panel name plate
-  const tag = new THREE.Mesh(new THREE.PlaneGeometry(220, 26), new THREE.MeshStandardMaterial({
+  const tag = new THREE.Mesh(new THREE.PlaneGeometry(220, 26), offsetMat(new THREE.MeshStandardMaterial({
     map: canvasTexture(880, 104, (g, w, h) => {
       g.fillStyle = '#10151f'; g.fillRect(0, 0, w, h);
       txt(g, 'RAPTI · DELTA PLC TRAINER', w / 2, h / 2 + 2, { size: 46, color: '#e2e8f0', weight: 700, font: FONT_D, spacing: 4 });
     }), roughness: 0.4,
-  }));
-  tag.position.set(0, P.y1 + 20, 40.5);
+  })));
+  tag.position.set(0, P.y1 + 20, 80.6);
   root.add(tag);
 
   // ---- operator console
@@ -177,4 +164,62 @@ export function buildEnvironment(layout, devices) {
     }
   }
   return root;
+}
+
+/**
+ * The slotted wire ducts, open at the front so the wiring shows: a base, walls with fingers and a
+ * slot wherever a wire passes (gaps from the router: gaps[duct] = {lo, hi} lists of {x, r}).
+ */
+export function buildDucts(gaps = []) {
+  const D = SCENE.duct, HD = SCENE.ducts, wt = D.wall, pitch = 10, finger = 5;
+  const B = new Builder();
+  const wallM = mat('ductWall', { color: 0xb7bdc4, roughness: 0.62 });
+  const baseM = mat('ductBase', { color: 0x9aa1a9, roughness: 0.7 });
+  const fz = (D.depth + D.web) / 2, fd = D.depth - D.web;
+  /** One wall along x at height y between x0 and x1, slotted, without fingers where wires pass. */
+  const wallX = (y, x0, x1, holes) => {
+    B.add(box(x1 - x0, wt, D.web), wallM, M4((x0 + x1) / 2, y, D.web / 2));
+    for (let x = x0 + 1; x + finger <= x1; x += pitch) {
+      if (holes.some((h) => x < h.x + h.r + 1.4 && x + finger > h.x - h.r - 1.4)) continue;
+      B.add(box(finger, wt, fd), wallM, M4(x + finger / 2, y, fz));
+    }
+  };
+  /** One wall along y at x between y0 and y1, slotted, open over the given y ranges. */
+  const wallY = (x, y0, y1, open) => {
+    for (let y = y0 + 1; y + finger <= y1; y += pitch) {
+      if (open.some((o) => y < o[1] && y + finger > o[0])) continue;
+      B.add(box(wt, finger, fd), wallM, M4(x, y + finger / 2, fz));
+    }
+    let a = y0;
+    for (const o of [...open].sort((p, q) => p[0] - q[0]).concat([[y1, y1]])) {
+      if (o[0] > a) B.add(box(wt, o[0] - a, D.web), wallM, M4(x, (a + o[0]) / 2, D.web / 2));
+      a = Math.max(a, o[1]);
+    }
+  };
+  const vds = SCENE.vducts;
+  HD.forEach((d, i) => {
+    const y0 = d.y - d.h / 2, y1 = d.y + d.h / 2;
+    B.add(box(D.x1 - D.x0, d.h, 2), baseM, M4((D.x0 + D.x1) / 2, d.y, 1));
+    // vertical ducts that join this one from below / above leave an opening in that wall
+    const into = (lo) => vds.filter((v) => v.x > D.x0 && v.x < D.x1 && (lo ? v.to === i && v.from < i : v.from === i && v.to > i)).map((v) => ({ x: v.x, r: v.w / 2 - 1.4 }));
+    const g = gaps[i] || { lo: [], hi: [] };
+    wallX(y0 + wt / 2, D.x0, D.x1, [...g.lo, ...into(false)]);
+    wallX(y1 - wt / 2, D.x0, D.x1, [...g.hi, ...into(true)]);
+  });
+  for (const v of vds) {
+    const y0 = HD[v.to].y + (v.x > D.x0 && v.x < D.x1 ? HD[v.to].h / 2 : -HD[v.to].h / 2);
+    const y1 = HD[v.from].y + (v.x > D.x0 && v.x < D.x1 ? -HD[v.from].h / 2 : HD[v.from].h / 2);
+    B.add(box(v.w, y1 - y0, 2), baseM, M4(v.x, (y0 + y1) / 2, 1));
+    const open = [];
+    for (let i = v.from; i <= v.to; i++) open.push([HD[i].y - HD[i].h / 2, HD[i].y + HD[i].h / 2]);
+    const side = v.x < D.x0 ? 1 : v.x > D.x1 ? -1 : 0; // which wall faces the horizontal ducts
+    wallY(v.x - v.w / 2 + wt / 2, y0, y1, side < 0 ? open : []);
+    wallY(v.x + v.w / 2 - wt / 2, y0, y1, side > 0 ? open : []);
+    if (side) B.add(box(v.w, wt, D.depth), wallM, M4(v.x, y0 + wt / 2, D.depth / 2));
+    if (side < 0) B.add(box(v.w, wt, D.depth), wallM, M4(v.x, y1 - wt / 2, D.depth / 2));
+  }
+  const g = new THREE.Group();
+  g.name = 'ducts';
+  B.build(g, { shadow: true });
+  return g;
 }

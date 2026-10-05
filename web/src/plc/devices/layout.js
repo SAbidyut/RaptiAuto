@@ -3,10 +3,16 @@
 import { DEVICE_DEFS } from './defs.js';
 
 export const SCENE = {
-  panel: { x0: -420, x1: 420, y0: 0, y1: 680, z: 0 },
+  panel: { x0: -460, x1: 460, y0: 0, y1: 680, z: 0 },
   rail1Y: 505,
   rail2Y: 255,
+  // horizontal slotted wire ducts (top → bottom) between x0 and x1, and the vertical ducts at
+  // both sides that join them; all are `depth` deep, open at the front so the wiring stays visible
   ducts: [{ y: 625, h: 44 }, { y: 395, h: 44 }, { y: 95, h: 44 }],
+  duct: { x0: -418, x1: 418, depth: 70, wall: 2, web: 9 },
+  // `from`/`to`: the horizontal ducts a vertical duct joins (the middle one sits under the PLC,
+  // left of the drives, so PLC wires drop straight to the bottom duct)
+  vducts: [{ x: -437, w: 36, from: 0, to: 2 }, { x: 437, w: 36, from: 0, to: 2 }, { x: -200, w: 36, from: 1, to: 2 }],
   deviceZ: 12,
   console: { cx: 10, zBack: 250, zFront: 445, hBack: 150, hFront: 58, pitch: 74, perRow: 7 },
   hmi: { x: -420, z: 330, tilt: 0.32 },
@@ -35,14 +41,14 @@ export function layoutDevices(devices) {
   }
   // rail 1: left → right (MCB, power supplies, PLC)
   rail1.sort((a, b) => (RAIL1_ORDER[cat(a)] ?? 3) - (RAIL1_ORDER[cat(b)] ?? 3));
-  let x = S.panel.x0 + 34;
+  let x = S.duct.x0 + 32;
   for (const d of rail1) {
     const [w, h] = DEVICE_DEFS[d.type].size;
     out.set(d.id, { pos: [x + w / 2, S.rail1Y - h / 2, S.deviceZ], rot: [0, 0, 0], zone: 'rail1' });
     x += w + 16;
   }
   // rail 2: drives from the right
-  x = S.panel.x1 - 40;
+  x = S.duct.x1 - 38;
   for (const d of rail2) {
     const [w, h] = DEVICE_DEFS[d.type].size;
     out.set(d.id, { pos: [x - w / 2, S.rail2Y - h / 2 + 10, S.deviceZ], rot: [0, 0, 0], zone: 'rail2' });

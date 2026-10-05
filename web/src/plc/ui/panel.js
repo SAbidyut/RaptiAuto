@@ -35,6 +35,12 @@ export class PanelView {
     this.selectTool = false;
     this.buildOverlay();
     this.box = new SelectBox(this.el);
+    // the 3D view lost its GPU context (driver reset, GPU switch, memory pressure): show 2D
+    this.scene.onLost = () => {
+      if (this.scene.mode !== '3d') return;
+      this.applyView('2d');
+      this.hint('The 3D graphics were reset by the system, so the lab shows the 2D wiring schematic. Tap 3D (bottom left) to load it again.', 7000);
+    };
     const want = this.initialView();
     if (this.scene.setMode(want) !== want) this.no3d = true;
     this.updateViewSeg();
@@ -64,7 +70,7 @@ export class PanelView {
     if (this.scene.mode === '3d' && !this.lab.settings.labView) this.watchSpeed();
   }
 
-  destroy() { clearTimeout(this.speedT); this.scene.dispose(); }
+  destroy() { clearTimeout(this.speedT); this.scene.onLost = null; this.scene.dispose(); }
 
   // ------------------------------------------------------------------ 2D / 3D
   /** 2D on slow phones (few cores / little memory / "Fast" quality), unless the user chose a view. */
@@ -78,15 +84,49 @@ export class PanelView {
 
   /** Switch the view; remembered for the next labs. */
   setView(mode, remember = true) {
-    if (mode === this.scene.mode) return;
-    const first = mode === '3d' ? !this.scene.s3 : !this.scene.s2;
-    const got = this.scene.setMode(mode);
-    if (got !== mode) { toast('3D needs WebGL 2, which this phone does not have', 'warn'); this.updateViewSeg(); return; }
-    if (remember) { this.lab.settings.labView = mode; this.lab.app.saveSettings(); }
-    if (first) this.restoreView(mode, false);
-    this.box.cancel();
-    this.updateViewSeg();
+    // a tap while the 3D view is still being built: do what was tapped last once it is ready
+    if (this.loading3d) { this.wantView = { mode, remember }; this.updateViewSeg(mode); return; }
+    if (mode === this.scene.mode) { this.updateViewSeg(); return; }
     Native.vibrate(8);
+    if (mode === '3d' && (!this.scene.s3 || this.scene.lost3d)) {
+      // building the 3D lab takes a moment on a slow phone or laptop: show that, then build it
+      // after the browser has drawn the switch (the page never looks frozen / stuck)
+      this.loading3d = true;
+      this.el.classList.add('loading-3d');
+      this.updateViewSeg('3d');
+      requestAnimationFrame(() => setTimeout(() => {
+        this.loading3d = false;
+        this.el.classList.remove('loading-3d');
+        const want = this.wantView;
+        this.wantView = null;
+        this.applyView('3d', remember);
+        if (want && want.mode !== this.scene.mode) this.setView(want.mode, want.remember);
+      }, 30));
+      return;
+    }
+    this.applyView(mode, remember);
+  }
+
+  applyView(mode, remember = false) {
+    this.resetGesture();
+    const first = mode === '3d' ? !this.scene.s3 || this.scene.lost3d : !this.scene.s2;
+    let got = mode;
+    try { got = this.scene.setMode(mode); } catch (e) { console.warn('view switch', e); got = this.scene.mode; }
+    if (mode === '3d' && got !== '3d') { toast('3D needs WebGL 2, which this device does not have', 'warn'); this.updateViewSeg(); return; }
+    if (remember) { this.lab.settings.labView = mode; this.lab.app.saveSettings(); }
+    if (first) this.restoreView(got, false);
+    this.updateViewSeg();
+  }
+
+  /** Forget a press / zoom slide / selection box in progress (the view under it changes). */
+  resetGesture() {
+    clearTimeout(this.boxTimer);
+    this.box.cancel();
+    if (this.active) { try { this.releaseControl(true); } catch (e) { this.active = null; } }
+    this.down = null;
+    this.pointers.clear();
+    this.taps.clear();
+    for (const s of this.scene.all) { s.controls.enabled = true; if (s.resetPointers) s.resetPointers(); }
   }
 
   restoreView(mode, intro) {
@@ -104,8 +144,8 @@ export class PanelView {
     });
   }
 
-  updateViewSeg() {
-    for (const b of this.viewSeg.children) b.classList.toggle('active', b.dataset.view === this.scene.mode);
+  updateViewSeg(shown = this.scene.mode) {
+    for (const b of this.viewSeg.children) b.classList.toggle('active', b.dataset.view === shown);
     this.el.classList.toggle('is-2d', this.scene.mode === '2d');
   }
 
@@ -114,8 +154,8 @@ export class PanelView {
     this.speedT = setTimeout(() => {
       const s3 = this.scene.s3;
       const pf = s3 && s3.perf;
-      if (this.lab.settings.labView || this.scene.mode !== '3d' || !pf || pf.n < 8) return;
-      if (pf.sum / pf.n > 1 / 18) {
+      if (this.lab.settings.labView || this.scene.mode !== '3d' || !pf || pf.n < 12) return;
+      if (pf.sum / pf.n > 1 / 14) {
         this.setView('2d', false);
         this.lab.settings.labView = '2d';
         this.lab.app.saveSettings();
@@ -224,8 +264,18 @@ export class PanelView {
   // which is switched off (controls.enabled = false) while a control, a zoom slide or a selection
   // box owns the finger.
   onDown(e) {
+    // a primary pointer going down means no other finger is down: forget pointers whose 'up' got
+    // lost (otherwise every later tap counts as a two-finger gesture and the lab stops reacting)
+    if (e.isPrimary) {
+      if (this.pointers.size) {
+        if (this.active) this.releaseControl(true);
+        this.pointers.clear();
+        for (const s of this.scene.all) s.controls.enabled = true;
+      }
+      if (this.scene.active && this.scene.active.resetPointers) this.scene.active.resetPointers();
+    }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.pointers.size > 1) { this.down = null; this.releaseControl(); this.endGesture(); return; }
+    if (this.pointers.size > 1) { this.down = null; this.releaseControl(true); this.endGesture(); return; }
     this.chooser.classList.add('hidden');
     const d = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
     this.down = d;
@@ -304,13 +354,14 @@ export class PanelView {
     }
   }
 
-  releaseControl() {
+  /** Let go of the control under the finger; cancel = the press was interrupted (no tap action). */
+  releaseControl(cancel = false) {
     if (!this.active) return;
     const { ctl, id } = this.active;
     const sys = this.scene.system;
     if (ctl.action === 'press') sys.act(ctl.devId, 'press', false);
     if (ctl.action === 'hmi') { const rt = sys.rts.get(ctl.devId); if (rt && rt.hmi) rt.hmi.pointerUp(0, 0, id); }
-    if (ctl.action === 'laptop') this.lab.setTab('ladder');
+    if (ctl.action === 'laptop' && !cancel) this.lab.setTab('ladder');
     this.active = null;
     this.scene.controls.enabled = true;
   }

@@ -125,10 +125,21 @@ export function deltaLogo(g, x, y, h, color = '#1d4f9c', align = 'left') {
   g.restore();
 }
 
+/**
+ * Pull a surface that lies on another one towards the camera in the depth test (polygon offset), so
+ * prints, labels and screens never z-fight with the face below them (no flicker while orbiting).
+ */
+export function offsetMat(m, k = 1) {
+  m.polygonOffset = true;
+  m.polygonOffsetFactor = -1 - k;
+  m.polygonOffsetUnits = -2 - 2 * k;
+  return m;
+}
+
 /** A textured plane (decal) facing +z. ppm = canvas pixels per mm. */
 export function decal(wmm, hmm, draw, { ppm = 6, transparent = true, rough = 0.55, emissive = false, metal = 0 } = {}) {
   const tex = canvasTexture(Math.ceil(wmm * ppm), Math.ceil(hmm * ppm), (g, w, h) => { g.scale(ppm, ppm); draw(g, wmm, hmm); });
-  const m = new THREE.MeshStandardMaterial({ map: tex, transparent, roughness: rough, metalness: metal, depthWrite: !transparent });
+  const m = offsetMat(new THREE.MeshStandardMaterial({ map: tex, transparent, roughness: rough, metalness: metal, depthWrite: !transparent }));
   if (emissive) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = tex; m.emissiveIntensity = 0; }
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(wmm, hmm), m);
   mesh.userData.tex = tex;
