@@ -386,6 +386,35 @@ const scenarios = {
     await page.click('.lab .fs-handle'); await sleep(300);
     await page.screenshot({ path: join(outDir, 'fsclean-lab-menus.png') });
   },
+  async labswitch(page) {
+    // rapid 2D / 3D taps, a switch while a finger is down on the 3D view, then orbit and pan must work
+    await page.evaluate(() => { window.__rapti.settings.labView = '2d'; });
+    await page.evaluate(() => window.__rapti.home.openLabExample('start-stop')); await sleep(1500);
+    const seg = (v) => page.click(`.lab-view-seg .seg[data-view="${v}"]`);
+    await seg('3d'); await sleep(40); await seg('2d'); await sleep(40); await seg('3d');
+    const loading = await page.evaluate(() => document.querySelector('.panel-view').classList.contains('loading-3d'));
+    await sleep(2500);
+    const st = () => page.evaluate(() => { const sc = window.__rapti.lab.scene; return { mode: sc.mode, active: document.querySelector('.lab-view-seg .seg.active').dataset.view, ptrs: sc.s3 && sc.s3.controls._pointers ? sc.s3.controls._pointers.length : -1 }; });
+    console.log('after rapid taps', JSON.stringify(await st()), 'loading chip shown:', loading);
+    const r = await page.evaluate(() => { const b = window.__rapti.lab.views.panel.host.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+    // finger down on the 3D canvas, the view switches under it, the finger lifts
+    await page.mouse.move(r.x, r.y); await page.mouse.down(); await page.mouse.move(r.x + 20, r.y, { steps: 3 });
+    await page.evaluate(() => window.__rapti.lab.views.panel.setView('2d'));
+    await page.mouse.up(); await sleep(300);
+    await seg('3d'); await sleep(600);
+    console.log('after switching under a finger', JSON.stringify(await st()));
+    const cam = () => page.evaluate(() => window.__rapti.lab.scene.s3.camera.position.toArray().map((v) => Math.round(v)).join(','));
+    const c0 = await cam();
+    await page.mouse.move(r.x, r.y); await page.mouse.down(); await page.mouse.move(r.x + 140, r.y + 30, { steps: 8 }); await page.mouse.up(); await sleep(700);
+    const c1 = await cam();
+    console.log('3D orbit after switching:', c0, '→', c1, c0 !== c1 ? 'OK' : 'STUCK');
+    await seg('2d'); await sleep(500);
+    const v0 = await page.evaluate(() => JSON.stringify(window.__rapti.lab.scene.s2.getView()));
+    await page.mouse.move(r.x, r.y); await page.mouse.down(); await page.mouse.move(r.x + 80, r.y + 40, { steps: 8 }); await page.mouse.up(); await sleep(300);
+    const v1 = await page.evaluate(() => JSON.stringify(window.__rapti.lab.scene.s2.getView()));
+    console.log('2D pan after switching:', v0, '→', v1, v0 !== v1 ? 'OK' : 'STUCK');
+    await page.screenshot({ path: join(outDir, 'labswitch-2d.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);

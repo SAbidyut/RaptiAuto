@@ -18,29 +18,44 @@ export class SceneSwitch {
     this._markers = [];
     this._sel = { devs: [], conns: [] };
     this.project = null;
+    this.onLost = null; // called when the 3D view loses its GPU context
   }
 
   get active() { return this.mode === '3d' ? this.s3 : this.s2; }
   get all() { return [this.s2, this.s3].filter(Boolean); }
   get has3d() { return !!this.s3 && !this.s3.failed; }
   get failed3d() { return !!this.s3 && this.s3.failed; }
+  get lost3d() { return !!this.s3 && !!this.s3.lost; }
 
-  /** Show '2d' or '3d'. Returns false when 3D could not be created (WebGL 2 missing). */
+  /** Show '2d' or '3d'. Returns the mode actually shown ('2d' when 3D could not be created). */
   setMode(mode) {
+    // a 3D view whose GPU context was lost is thrown away and built again
+    if (mode === '3d' && this.s3 && !this.s3.failed && this.s3.lost) { try { this.s3.dispose(); } catch (e) { /* ignore */ } this.s3 = null; }
     if (mode === '3d' && !this.s3) {
-      try { this.s3 = new LabScene(this.host, this.opts); } catch (e) { console.warn('3D unavailable', e); this.s3 = new NullScene(this.host); }
-      if (!this.s3.failed) this.prime(this.s3);
+      try {
+        this.s3 = new LabScene(this.host, this.opts);
+        this.prime(this.s3);
+        this.s3.onLost = (lost) => { if (lost && this.onLost) this.onLost(); };
+      } catch (e) {
+        console.warn('3D unavailable', e);
+        if (this.s3 && this.s3.dispose) { try { this.s3.dispose(); } catch (err) { /* ignore */ } }
+        this.s3 = new NullScene(this.host);
+      }
     }
     if (mode === '3d' && this.s3.failed) mode = '2d';
-    if (mode === '2d' && !this.s2) { this.s2 = new LabSchematic(this.host, this.opts); this.prime(this.s2); }
+    if (mode === '2d' && !this.s2) {
+      this.s2 = new LabSchematic(this.host, this.opts);
+      try { this.prime(this.s2); } catch (e) { console.warn('2D view', e); }
+    }
     this.mode = mode;
     this.host.classList.toggle('view-2d', mode === '2d');
     this.host.classList.toggle('view-3d', mode === '3d');
-    for (const s of this.all) s.visible = s === this.active && this._visible;
+    for (const s of this.all) { s.visible = s === this.active && this._visible; s.controls.enabled = true; }
     const a = this.active;
     a.dirty = true;
     a.hmiDirty = true; a.laptopDirty = true;
-    requestAnimationFrame(() => a.resize());
+    a.resize();
+    requestAnimationFrame(() => { if (this.active === a) a.resize(); });
     return mode;
   }
 

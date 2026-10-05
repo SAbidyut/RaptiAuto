@@ -10,6 +10,8 @@ A virtual industrial-automation trainer with Delta equipment, built for touch sc
 
 - **3D trainer (three.js):** a control panel with DIN rails and wire ducts, a Delta **DVP-16ES2 / 32ES2 / 20EX2** PLC, **DOP-107BV** 7" HMI on a stand, **MS300** VFD, Delta CliQ 24 V supply, MCB, an operator console (push buttons, E-stop, selector, pilot lamps, buzzer, PNP proximity sensor, speed pot), a 0.75 kW induction motor and the programming laptop. Orbit / pinch / pan, focus chips per device.
 - **2D wiring schematic ↔ 3D (new in 2.1):** the 2D / 3D switch at the bottom left of the Lab tab shows the same lab as a wiring diagram: every device as a terminal-block symbol, each wire routed through the wire ducts on its own track, with live LEDs, lamps, the drive display, the HMI screen and current flow. Wire, operate and select exactly as in 3D. Slow phones (few CPU cores, little memory, “Fast” 3D quality, no WebGL 2 or a 3D view that renders too slowly) open in 2D; the choice is remembered.
+- **Panel-style 3D wiring (new in 2.2):** every wire is laid like in a real control panel: out of its terminal, into the nearest slotted wire duct (open at the front, so the wiring stays visible), along the duct on a track of its own, down the side or middle vertical ducts and out through the bottom duct. Front terminals (VFD, PLC comm ports) drop down on their own plane, cables on the bench go around the console, HMI stand, motor base and laptop and lie over each other where they cross, and console patch cords come over the back edge. No wire runs through a device or another wire (checked by `tests/routing.mjs`).
+- **Smooth, flicker-free 3D (2.2):** no more z-fighting on the laptop and HMI screens and labels, no blank frames on resize, the laptop screen is only redrawn when it changes, the depth range follows the camera, and the resolution steps down on slow GPUs instead of stuttering. Switching 2D ↔ 3D shows "Loading 3D…" instead of freezing, never gets stuck on a lost touch, and a lost GPU context falls back to 2D.
 - **Wiring in 3D:** tap a terminal, tap the other end. Panel wires with ferrules, banana patch cords on the console, real connectors for COM1 (RS-232 mini-DIN ↔ D-sub), COM2 (RS-485 ↔ RJ45) and USB. Valid ends glow; U/V/W and L/N/PE are completed automatically; a wiring list editor is included.
 - **Operate in 3D:** press buttons, flip the MCB and RUN/STOP switch, tap the live HMI touch screen and the VFD keypad. LEDs, lamps, the 7-segment drive display and the motor shaft react; powered wires show current flow, busy comm cables show data pulses.
 - **Electrical model:** supply nets, sink/source inputs via S/S, relay output groups, VFD NPN/PNP inputs, 0–10 V analog (pot, AVI, EX2 AI/AO), shorts trip the PSU or the MCB, swapped motor phases reverse rotation.
@@ -49,6 +51,7 @@ Other scripts:
 | `node tests/devices.mjs` | Device and library tests |
 | `node tests/plc.mjs` | PLC lab: ladder/IL, CPU, Modbus, VFD, wiring and full lab simulations |
 | `node tests/schematic.mjs` | 2D wiring schematic: layout, wire routing through the ducts, window / crossing selection |
+| `node tests/routing.mjs` | 3D cable routing: no cable through a device, the console or the bench, no two cables overlapping, duct runs inside the ducts |
 | `node tools/icons.mjs` | Regenerate launcher icons and the splash logo from the logo SVG |
 | `node tools/shot.mjs <dir> home run:<example>:<ms>` | Screenshots in a phone-sized Chromium |
 
@@ -61,7 +64,7 @@ Other scripts:
 - `web/src/ui/`: the app screens.
 - `web/src/examples/`: the example gallery.
 - `web/src/plc/sim/`: PLC lab simulation (DVP CPU, ladder compiler/IL, MS300 drive, Modbus, HMI runtime, lab system).
-- `web/src/plc/devices/`: Delta device catalogue (ports, terminals) and the automatic 3D layout.
+- `web/src/plc/devices/`: Delta device catalogue (ports, terminals), the automatic 3D layout and the 3D cable router (`routing.js`).
 - `web/src/plc/three/`: three.js scene, procedural device models, cables.
 - `web/src/plc/ui/`: lab screen, 3D panel, 2D wiring schematic (`schematic.js`, switched by `scene-switch.js`), ladder editor, HMI designer, VFD view, monitor.
 - `web/src/ui/gestures.js`: double-tap zoom and the window / crossing selection box shared by both simulators.
