@@ -2,16 +2,17 @@
 
 /* ---------------------------------------------------------------- shell: banner, lab page */
 .lab-banner { position: relative; margin: 14px 14px 0; border-radius: 24px; overflow: hidden; display: flex; align-items: stretch; cursor: pointer; border: 1px solid rgba(59, 130, 246, .35); background: radial-gradient(110% 120% at 100% 0%, rgba(59, 130, 246, .35), transparent 60%), radial-gradient(90% 90% at 0% 100%, rgba(34, 197, 94, .18), transparent 60%), linear-gradient(160deg, #0f1c3a, #0a1226); box-shadow: 0 18px 44px -20px rgba(59, 130, 246, .5); }
-.lab-banner .lb-art { position: absolute; right: -18px; top: 8px; width: 58%; max-width: 330px; opacity: .95; pointer-events: none; }
-.lab-banner .lb-content { position: relative; padding: 18px 16px 16px; max-width: 64%; }
+.lab-banner .lb-art { position: absolute; right: -10px; top: 50%; transform: translateY(-50%); width: 42%; max-width: 330px; opacity: .95; pointer-events: none; }
+.lab-banner .lb-content { position: relative; padding: 18px 16px 16px; max-width: 56%; }
 .lab-banner h2 { margin: 12px 0 6px; font-family: var(--display); font-size: 24px; line-height: 1.1; }
 .lab-banner h2 .grad { background: linear-gradient(135deg, #22d3ee, #22c55e); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lab-banner p { margin: 0 0 14px; color: #b8c4dc; font-size: 13px; line-height: 1.45; }
 .lab-banner .hero-actions .btn { height: 40px; font-size: 13.5px; padding: 0 13px; }
 .lab-banner:active { transform: scale(.99); }
-@media (max-width: 420px) {
+/* the picture sits beside the text only where both fit; on phones (any width) it goes below the buttons */
+@media (max-width: 640px) {
   .lab-banner { flex-direction: column; }
-  .lab-banner .lb-art { position: relative; right: auto; top: auto; width: 100%; max-width: none; height: 150px; margin-top: -4px; order: 2; }
+  .lab-banner .lb-art { position: relative; right: auto; top: auto; transform: none; width: 100%; max-width: none; height: 150px; margin-top: -4px; order: 2; }
   .lab-banner .lb-content { max-width: none; padding-bottom: 4px; }
 }
 .lab-art { width: 100%; height: 100%; }
@@ -36,13 +37,19 @@
 .lab.split .lab-pane.show { position: relative; inset: auto; flex: 1; }
 .lab.split .pane-panel { flex: 1.25 !important; border-right: 1px solid var(--line2); }
 .lab.fs .lab-top, .lab.fs .lab-nav { display: none; }
-.lab.fs .lab-status { position: absolute; top: calc(8px + var(--safe-t)); left: 50%; transform: translateX(-50%); border-radius: 99px; border: 1px solid rgba(34, 197, 94, .3); background: rgba(8, 14, 26, .82); backdrop-filter: blur(10px); z-index: 20; max-width: calc(100% - 140px); }
-.lab.fs .lab-fs-bar { display: flex; flex-direction: column; gap: 4px; position: absolute; left: calc(8px + var(--safe-l)); top: calc(10px + var(--safe-t)); z-index: 20; padding: 5px; border-radius: 18px; background: rgba(10, 16, 32, .78); border: 1px solid var(--line2); backdrop-filter: blur(12px); }
+.lab.fs .lab-fs-bar { display: flex; flex-direction: column; gap: 4px; position: absolute; left: calc(8px + var(--safe-l)); top: calc(8px + var(--safe-t)); z-index: 20; padding: 5px; border-radius: 18px; background: rgba(10, 16, 32, .78); border: 1px solid var(--line2); backdrop-filter: blur(12px); max-height: calc(100% - 16px - var(--safe-t) - var(--safe-b)); overflow-y: auto; scrollbar-width: none; }
+.lab.fs .lab-fs-bar::-webkit-scrollbar { display: none; }
 .lab.fs .pane-panel .lab-mode { left: calc(70px + var(--safe-l)); }
-/* the full-screen menus float over the ladder / HMI / VFD / monitor (below their own tool bars) — the panes keep their size */
 .lab.fs .lab-pane:not(.pane-panel) { padding-left: var(--safe-l); }
-.lab.fs:not(.tab-panel) .lab-fs-bar { top: calc(62px + var(--safe-t)); }
-.lab.fs.split .lab-fs-bar { top: calc(10px + var(--safe-t)); }
+/* full screen with the menus shown: nothing floats over the ladder / HMI / VFD / monitor or the 3D controls.
+   The tab rail gets a column of its own on the left and the run status a strip of its own at the top
+   (with room for the ☰ / ✕ handle); the pane sits in the rest. Hiding the menus gives the whole screen back. */
+.lab.fs:not(.fs-clean) { padding-left: calc(66px + var(--safe-l)); }
+.lab.fs:not(.fs-clean) .lab-main { --safe-l: 0px; }
+.lab.fs:not(.fs-clean) .lab-status { min-height: calc(44px + var(--safe-t)); height: auto; padding: var(--safe-t) calc(52px + var(--safe-r)) 0 10px; flex-shrink: 0; }
+.lab.fs.simulating:not(.fs-clean) .lab-main { --safe-t: 0px; }
+.lab.fs:not(.fs-clean) .pane-panel .lab-mode { left: 10px; }
+.lab.fs.simulating:not(.fs-clean) .lab-tools { top: 10px !important; } /* the ☰ / ✕ handle sits in the status strip */
 .lab.kb .lab-nav { display: none; }
 .lab-nav .nav-tab { font-size: 11px; }
 .lab-status { gap: 8px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
@@ -63,7 +70,14 @@
 .mode-operate .lab-mode .seg.active { color: #86efac; }
 .mode-wire .lab-mode .seg.active { color: #fcd34d; }
 .lab-tools { top: 10px; }
-.lab-chips { position: absolute; left: 0; right: 62px; bottom: 10px; z-index: 3; display: flex; gap: 6px; overflow-x: auto; padding: 0 10px; scrollbar-width: none; }
+.lab-chips { position: absolute; left: 0; right: var(--safe-r); bottom: 10px; z-index: 3; display: flex; gap: 6px; overflow-x: auto; padding: 0 10px; scrollbar-width: none; }
+/* the tool rail on the right ends well above the chips on a phone held upright, so the chips use the full
+   width; on short screens (landscape) the rail reaches down and the chips stop before it */
+@media (max-height: 680px) { .lab-chips { right: 62px; } }
+/* more chips to scroll to: fade the cut edge so it reads as a scrolling row, not a clipped one */
+.lab-chips.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+.lab-chips.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px); mask-image: linear-gradient(90deg, transparent, #000 28px); }
+.lab-chips.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 36px), transparent); }
 .lab-chips::-webkit-scrollbar { display: none; }
 .lab-chip { height: 32px; padding: 0 11px; background: rgba(10, 16, 32, .8); backdrop-filter: blur(10px); color: #dbe5f7; border-color: rgba(148, 163, 184, .28); flex-shrink: 0; }
 .lab-chip:active { background: rgba(34, 211, 238, .18); }
@@ -554,7 +568,7 @@
 .sm.pulse { animation: smPulse .8s ease-in-out infinite alternate; }
 @keyframes smPulse { from { stroke-width: 2; opacity: .7; } to { stroke-width: 4; opacity: 1; } }
 .ssel { fill: rgba(34, 211, 238, .05); stroke: #22d3ee; stroke-width: 2; stroke-dasharray: 7 5; }
-@media (max-width: 480px) { .lab.fs .pane-panel .task-pill, .lab.fs .pane-panel .lab-hint { left: calc(70px + var(--safe-l)); } }
+@media (max-width: 480px) { .lab.fs .pane-panel .task-pill, .lab.fs .pane-panel .lab-hint { left: calc(70px + var(--safe-l)); } .lab.fs:not(.fs-clean) .pane-panel .task-pill, .lab.fs:not(.fs-clean) .pane-panel .lab-hint { left: 10px; } }
 
 /* ---------------------------------------------------------------- overlay glass over the 3D / 2D view
    app.css (imported after this file) gives .segmented and .chip an almost transparent background with the
