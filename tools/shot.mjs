@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
 const exe = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 
 const errors = [];
 async function newPage(w = +process.env.VW || 390, h = +process.env.VH || 844) {
@@ -115,6 +115,68 @@ const scenarios = {
     await page.screenshot({ path: join(outDir, `zoom-${id}${run ? '-run' : ''}.png`) });
   },
   async about(page) { await scenarios.page(page, 'about'); await scenarios.page(page, 'about', 900); },
+  // ---- Delta PLC lab
+  async labopen(page, id = 'vfd-modbus-hmi') {
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id);
+    await sleep(2500);
+    await page.screenshot({ path: join(outDir, `lab-${id}.png`) });
+  },
+  async labrun(page, id = 'vfd-modbus-hmi', ms = 4000) {
+    await scenarios.labopen(page, id);
+    await page.click('.lab .run-btn'); await sleep(1500);
+    await page.evaluate(() => { const l = window.__rapti.lab; const s = l.sys; const b = l.project.devices.find((d) => d.type === 'pb' && (!d.props.contact || d.props.contact === 'NO')); if (b) { s.act(b.id, 'press', true); setTimeout(() => s.act(b.id, 'press', false), 200); } });
+    await sleep(+ms);
+    await page.screenshot({ path: join(outDir, `labrun-${id}.png`) });
+    for (const t of ['ladder', 'hmi', 'vfd', 'monitor']) {
+      await page.evaluate((t) => window.__rapti.lab.setTab(t), t); await sleep(900);
+      await page.screenshot({ path: join(outDir, `labrun-${id}-${t}.png`) });
+    }
+  },
+  async labwire(page) {
+    // build a small circuit by tapping in 3D: add a lamp, wire PLC Y0 → lamp X1 using the wiring list fallback
+    await page.evaluate(() => window.__rapti.home.openLabExample('blank')); await sleep(2500);
+    await page.click('.lab-tools .tool[title="Add device"]'); await sleep(1500);
+    await page.screenshot({ path: join(outDir, 'labwire-library.png') });
+    await page.click('.dev-card >> text=Pilot lamp'); await sleep(1500);
+    await page.screenshot({ path: join(outDir, 'labwire-added.png') });
+    // tap the lamp's first socket on screen
+    const pos = await page.evaluate(() => { const l = window.__rapti.lab; const lamp = l.project.devices.find((d) => d.type === 'lamp'); const pw = l.scene.portWorld(lamp.id, 'X1'); return l.scene.toScreen(pw.pos); });
+    await page.mouse.click(pos.x, pos.y); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labwire-start.png') });
+    await page.evaluate(() => window.__rapti.lab.scene.focus('plc', false)); await sleep(1500);
+    const p2 = await page.evaluate(() => { const l = window.__rapti.lab; const plc = l.project.devices.find((d) => d.id === 'plc'); const pw = l.scene.portWorld(plc.id, 'Y0'); return l.scene.toScreen(pw.pos); });
+    await page.mouse.click(p2.x, p2.y); await sleep(900);
+    await page.screenshot({ path: join(outDir, 'labwire-done.png') });
+    const n = await page.evaluate(() => window.__rapti.lab.project.conns.filter((c) => c.a.port === 'X1' || c.b.port === 'X1').map((c) => c.a.dev + '.' + c.a.port + '-' + c.b.dev + '.' + c.b.port));
+    console.log('lamp conns', JSON.stringify(n));
+  },
+  async labladder(page) {
+    await page.evaluate(() => window.__rapti.home.openLabExample('blank')); await sleep(2000);
+    await page.evaluate(() => window.__rapti.lab.setTab('ladder')); await sleep(800);
+    await page.click('.lb[title^="Normally open"]'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labladder-keypad.png') });
+    await page.click('.kp-key:text-is("1")'); await sleep(200);
+    await page.click('.kp-actions .btn-primary'); await sleep(500);
+    await page.click('.lb[title^="Parallel NO"]'); await sleep(600);
+    await page.click('.kp-key.dev:text-is("Y")'); await sleep(150);
+    await page.click('.kp-key:text-is("0")'); await sleep(150);
+    await page.click('.kp-actions .btn-primary'); await sleep(500);
+    await page.click('.lb[title^="Output coil"]'); await sleep(600);
+    await page.click('.kp-actions .btn-primary'); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'labladder-rung.png') });
+    await page.click('.lb-dl'); await sleep(3500);
+    await page.screenshot({ path: join(outDir, 'labladder-dl.png') });
+    const btn = await page.$('.dialog-actions .btn-primary'); if (btn) { await btn.click(); await sleep(1200); }
+    await page.screenshot({ path: join(outDir, 'labladder-run.png') });
+    const il = await page.evaluate(() => { const v = window.__rapti.lab.views.ladder; return JSON.stringify(v.compiled.il.map((r) => r.lines.map((l) => l.text))); });
+    console.log('IL', il);
+  },
+  async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
+    await scenarios.labopen(page, id);
+    await page.click('.lab .run-btn'); await sleep(1200);
+    await page.evaluate((t) => window.__rapti.lab.scene.focus(t, false), target); await sleep(1500);
+    await page.screenshot({ path: join(outDir, `labfocus-${id}-${target}.png`) });
+  },
 };
 
 const list = wanted.length ? wanted : Object.keys(scenarios);

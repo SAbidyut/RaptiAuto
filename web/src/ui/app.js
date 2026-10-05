@@ -5,6 +5,7 @@ import { Shell } from './shell.js';
 import { Editor } from './editor.js';
 import { popBack, toast } from './widgets.js';
 import { SHARED_DEFS } from '../components/draw.js';
+import { LabScreen } from '../plc/ui/lab.js';
 
 export class App {
   constructor(root) {
@@ -13,6 +14,7 @@ export class App {
     Native.haptics = this.settings.haptics !== false;
     this.home = null; // the menu shell (Home, Projects, Examples, … pages)
     this.editor = null;
+    this.lab = null;
     installNativeCallbacks(this);
     // shared SVG gradients / filters used by every component drawing
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -26,25 +28,37 @@ export class App {
     this.showHome();
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.handleBack();
-      if ((e.ctrlKey || e.metaKey) && e.key === 's' && this.editor) { e.preventDefault(); this.editor.saveNow(); toast('Saved', 'ok'); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && (this.editor || this.lab)) { e.preventDefault(); (this.editor || this.lab).saveNow(); toast('Saved', 'ok'); }
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.onPause(); else this.onResume(); });
   }
 
   saveSettings() { saveSettings(this.settings); }
 
-  showHome() {
+  showHome(page) {
     if (this.editor) { this.editor.unmount(); this.editor = null; }
+    if (this.lab) { this.lab.unmount(); this.lab = null; }
     if (!this.home) this.home = new Shell(this);
     if (!this.home.root.isConnected) this.home.mount(this.root);
     else this.home.refreshProjects();
+    if (page) this.home.go(page);
   }
 
   openProject(p) {
     if (this.home) this.home.unmount();
     if (this.editor) this.editor.unmount();
+    if (this.lab) { this.lab.unmount(); this.lab = null; }
     this.editor = new Editor(this, p);
     this.editor.mount(this.root);
+  }
+
+  /** Open a Delta PLC lab project. */
+  openLab(p) {
+    if (this.home) this.home.unmount();
+    if (this.editor) { this.editor.unmount(); this.editor = null; }
+    if (this.lab) this.lab.unmount();
+    this.lab = new LabScreen(this, p);
+    this.lab.mount(this.root);
   }
 
   showAbout() {
@@ -62,9 +76,9 @@ export class App {
     return true;
   }
 
-  onPause() { if (this.editor) this.editor.onPause(); }
+  onPause() { if (this.editor) this.editor.onPause(); if (this.lab) this.lab.saveNow(); }
   onResume() { if (this.editor) this.editor.onResume(); }
-  onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); }
+  onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); if (this.lab) this.lab.root.classList.toggle('kb', h > 0); }
 
   persist(p) { saveProject(p); }
 }

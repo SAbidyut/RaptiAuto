@@ -88,6 +88,16 @@ const P = {
   format: '<path d="M21 10H7M21 6H3M21 14H3M21 18H7"/>',
   textSize: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
   flip: '<path d="M12 3v18M16 7l4 5-4 5M8 7l-4 5 4 5"/>',
+  cube: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 22V12M21 7l-9 5-9-5"/>',
+  ladder: '<path d="M4 3v18M20 3v18M4 8h4M8 5v6M16 5v6M16 8h4M8 8h8"/><path d="M4 16h5M9 13v6M15 13v6M15 16h5M9 16h6"/>',
+  plug: '<path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0zM12 18v4"/>',
+  gauge: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/><circle cx="12" cy="14" r="1.6" fill="currentColor"/>',
+  usb: '<circle cx="12" cy="20" r="2"/><path d="M12 18V3M12 3l-3 3M12 3l3 3M12 14l-5-3V8M12 12l5-3V7"/><rect x="15.5" y="5" width="3" height="3"/><circle cx="7" cy="7" r="1.4"/>',
+  power: '<path d="M18.4 6.6a9 9 0 1 1-12.8 0"/><path d="M12 2v10"/>',
+  download2: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
+  screen: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 7h5M6 10h8M6 13h3"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  move: '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
   magnet: '<path d="M6 15A6 6 0 0 0 18 15V4h-4v11a2 2 0 0 1-4 0V4H6z"/><path d="M6 8h4M14 8h4"/>',
 };
 

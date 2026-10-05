@@ -3,15 +3,15 @@
 import { DEVICE_DEFS } from './defs.js';
 
 export const SCENE = {
-  panel: { x0: -470, x1: 470, y0: 0, y1: 680, z: 0 },
+  panel: { x0: -420, x1: 420, y0: 0, y1: 680, z: 0 },
   rail1Y: 505,
   rail2Y: 255,
   ducts: [{ y: 625, h: 44 }, { y: 395, h: 44 }, { y: 95, h: 44 }],
   deviceZ: 12,
   console: { cx: 10, zBack: 250, zFront: 445, hBack: 150, hFront: 58, pitch: 74, perRow: 7 },
-  hmi: { x: -450, z: 330, tilt: 0.32 },
+  hmi: { x: -420, z: 330, tilt: 0.32 },
   motor: { x: 470, z: 320, dz: 250 },
-  laptop: { x: -250, z: 640, rotY: 0.22 },
+  laptop: { x: -760, z: 300, rotY: 0.62 },
 };
 
 const RAIL1_ORDER = { mcb: 0, power: 1, plc: 2 };
@@ -68,7 +68,7 @@ export function layoutDevices(devices) {
     const half = 43;
     out.set(d.id, { pos: [px, cy - upDir[1] * half + 1, cz - upDir[2] * half], rot: [rotX, 0, 0], zone: 'console', row: r });
   });
-  motors.forEach((d, i) => out.set(d.id, { pos: [S.motor.x, 0, S.motor.z + i * S.motor.dz], rot: [0, 0, 0], zone: 'motor' }));
+  motors.forEach((d, i) => out.set(d.id, { pos: [S.motor.x, 14, S.motor.z + i * S.motor.dz], rot: [0, 0, 0], zone: 'motor' }));
   return { places: out, console: { cx: C.cx, width, zBack: C.zBack, zFront: C.zFront, hBack: C.hBack, hFront: C.hFront, slope: L, theta, show: consoleDevs.length > 0 } };
 }
 

@@ -5,6 +5,7 @@ import { DEVICE_DEFS, findPort, wireColorFor } from './devices/defs.js';
 
 const INDEX = 'raptiauto.plc.index.v1';
 const PKEY = (id) => 'raptiauto.plc.p.' + id;
+const TKEY = (id) => 'raptiauto.plc.t.' + id;
 const safe = (fn, fb) => { try { return fn(); } catch (e) { return fb; } };
 
 let seq = 0;
@@ -30,8 +31,12 @@ export function saveLab(p) {
   return ok;
 }
 
+export function labThumb(id) { return safe(() => localStorage.getItem(TKEY(id)), null); }
+export function saveLabThumb(id, dataUrl) { safe(() => localStorage.setItem(TKEY(id), dataUrl)); }
+
 export function deleteLab(id) {
   safe(() => localStorage.removeItem(PKEY(id)));
+  safe(() => localStorage.removeItem(TKEY(id)));
   safe(() => localStorage.setItem(INDEX, JSON.stringify(listLabs().filter((x) => x.id !== id))));
 }
 
