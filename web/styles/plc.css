@@ -37,19 +37,24 @@
 .lab.split .lab-pane.show { position: relative; inset: auto; flex: 1; }
 .lab.split .pane-panel { flex: 1.25 !important; border-right: 1px solid var(--line2); }
 .lab.fs .lab-top, .lab.fs .lab-nav { display: none; }
-.lab.fs .lab-fs-bar { display: flex; flex-direction: column; gap: 4px; position: absolute; left: calc(8px + var(--safe-l)); top: calc(8px + var(--safe-t)); z-index: 20; padding: 5px; border-radius: 18px; background: rgba(10, 16, 32, .78); border: 1px solid var(--line2); backdrop-filter: blur(12px); max-height: calc(100% - 16px - var(--safe-t) - var(--safe-b)); overflow-y: auto; scrollbar-width: none; }
+/* full screen, menus shown (☰): everything floats over the view on frosted glass and keeps clear of the tool
+   bars — the tab dock sits at the bottom centre (above the ladder footer / the 3D focus chips) and the run
+   status just above it, so the ladder / HMI / VFD / monitor tool bars at the top stay uncovered */
+.lab { --dock-b: 12px; }
+.lab.tab-panel, .lab.split { --dock-b: 54px; }
+.lab.tab-ladder:not(.split), .lab.tab-hmi:not(.split) { --dock-b: 44px; } /* above the ladder / HMI footer */
+.lab.fs .lab-fs-bar { display: flex; flex-direction: row; gap: 4px; position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 16px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b)); z-index: 20; padding: 5px; border-radius: 20px; overflow-x: auto; scrollbar-width: none; }
 .lab.fs .lab-fs-bar::-webkit-scrollbar { display: none; }
-.lab.fs .pane-panel .lab-mode { left: calc(70px + var(--safe-l)); }
+.lab.fs .lab-fs-bar .fs-btn { flex-shrink: 0; }
+.lab.fs .lab-status { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 24px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b) + 62px); height: 34px; border-radius: 99px; z-index: 20; }
+.lab.fs .lab-fs-bar.fs-bar, .lab.fs .lab-status.sim-status { background: rgba(10, 16, 32, .42) !important; border: 1px solid rgba(148, 163, 184, .24) !important; backdrop-filter: blur(18px) saturate(160%) !important; -webkit-backdrop-filter: blur(18px) saturate(160%) !important; box-shadow: 0 14px 36px -16px rgba(0, 0, 0, .7) !important; }
+.lab.fs:not(.fs-clean) .lab-status { animation: fsMenuIn .22s cubic-bezier(.2, .9, .3, 1.1); }
+.lab.fs .pane-panel .lab-mode { left: calc(10px + var(--safe-l)); }
 .lab.fs .lab-pane:not(.pane-panel) { padding-left: var(--safe-l); }
-/* full screen with the menus shown: nothing floats over the ladder / HMI / VFD / monitor or the 3D controls.
-   The tab rail gets a column of its own on the left and the run status a strip of its own at the top
-   (with room for the ☰ / ✕ handle); the pane sits in the rest. Hiding the menus gives the whole screen back. */
-.lab.fs:not(.fs-clean) { padding-left: calc(66px + var(--safe-l)); }
-.lab.fs:not(.fs-clean) .lab-main { --safe-l: 0px; }
-.lab.fs:not(.fs-clean) .lab-status { min-height: calc(44px + var(--safe-t)); height: auto; padding: var(--safe-t) calc(52px + var(--safe-r)) 0 10px; flex-shrink: 0; }
-.lab.fs.simulating:not(.fs-clean) .lab-main { --safe-t: 0px; }
-.lab.fs:not(.fs-clean) .pane-panel .lab-mode { left: 10px; }
-.lab.fs.simulating:not(.fs-clean) .lab-tools { top: 10px !important; } /* the ☰ / ✕ handle sits in the status strip */
+/* the 3D / 2D overlays get the same frosted glass in full screen */
+.lab.fs .panel-view .lab-mode, .lab.fs .panel-view .lab-view-seg, .lab.fs .lab-tools, .lab.fs .task-pill { background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%); }
+/* let the end of the ladder / monitor / drive page scroll out from under the dock */
+.lab.fs:not(.fs-clean) .lad-host, .lab.fs:not(.fs-clean) .mv-body, .lab.fs:not(.fs-clean) .vfd-view { padding-bottom: 132px; }
 .lab.kb .lab-nav { display: none; }
 .lab-nav .nav-tab { font-size: 11px; }
 .lab-status { gap: 8px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
@@ -568,7 +573,7 @@
 .sm.pulse { animation: smPulse .8s ease-in-out infinite alternate; }
 @keyframes smPulse { from { stroke-width: 2; opacity: .7; } to { stroke-width: 4; opacity: 1; } }
 .ssel { fill: rgba(34, 211, 238, .05); stroke: #22d3ee; stroke-width: 2; stroke-dasharray: 7 5; }
-@media (max-width: 480px) { .lab.fs .pane-panel .task-pill, .lab.fs .pane-panel .lab-hint { left: calc(70px + var(--safe-l)); } .lab.fs:not(.fs-clean) .pane-panel .task-pill, .lab.fs:not(.fs-clean) .pane-panel .lab-hint { left: 10px; } }
+@media (max-width: 480px) { .lab.fs .pane-panel .task-pill, .lab.fs .pane-panel .lab-hint { left: calc(10px + var(--safe-l)); } }
 
 /* ---------------------------------------------------------------- overlay glass over the 3D / 2D view
    app.css (imported after this file) gives .segmented and .chip an almost transparent background with the
