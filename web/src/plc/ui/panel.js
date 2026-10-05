@@ -164,7 +164,17 @@ export class PanelView {
     }, 3200);
   }
 
-  onShow() { this.scene.visible = true; this.scene.dirty = true; requestAnimationFrame(() => this.scene.resize()); }
+  onShow() {
+    // coming back from another tab: forget any press that was under way when the tab changed and
+    // make sure the 2D / 3D switch shows (and can change) the view that is really on screen
+    this.resetGesture();
+    this.updateViewSeg();
+    this.scene.visible = true;
+    this.scene.dirty = true;
+    requestAnimationFrame(() => this.scene.resize());
+  }
+
+  onHide() { this.resetGesture(); }
 
   onBack() {
     if (this.potCard) { this.closePot(); return true; }
@@ -281,7 +291,9 @@ export class PanelView {
     this.down = d;
     if (this.mode === 'operate') {
       const ctl = this.scene.pickControl(e.clientX, e.clientY);
-      if (ctl) { this.pressControl(ctl, e); return; }
+      // the laptop is not a push button: a finger on it may start an orbit / pinch. A clean tap
+      // selects it (Ladder button in the bar) instead of jumping to another tab under the finger
+      if (ctl && ctl.action !== 'laptop') { this.pressControl(ctl, e); return; }
     }
     // second press of a double tap: sliding zooms (Google Maps), releasing zooms in a step
     const first = this.taps.second(e.clientX, e.clientY);
@@ -330,7 +342,6 @@ export class PanelView {
         break;
       }
       case 'pot': this.openPot(ctl.devId); break;
-      case 'laptop': break;
       default: break;
     }
   }
@@ -361,7 +372,6 @@ export class PanelView {
     const sys = this.scene.system;
     if (ctl.action === 'press') sys.act(ctl.devId, 'press', false);
     if (ctl.action === 'hmi') { const rt = sys.rts.get(ctl.devId); if (rt && rt.hmi) rt.hmi.pointerUp(0, 0, id); }
-    if (ctl.action === 'laptop' && !cancel) this.lab.setTab('ladder');
     this.active = null;
     this.scene.controls.enabled = true;
   }
@@ -590,7 +600,7 @@ export class PanelView {
         h('div', { class: 'sel-name' }, this.lab.deviceName(dev), h('small', {}, def.part || def.name)),
         btn('target', 'Focus', () => this.scene.focus(dev.id)),
         btn('sliders', 'Settings', () => this.openDevice(dev)),
-        def.sim === 'vfd' ? btn('gauge', 'Keypad', () => this.lab.setTab('vfd')) : def.sim === 'hmi' ? btn('screen', 'Screens', () => this.lab.setTab('hmi')) : def.sim === 'plc' ? btn('ladder', 'Ladder', () => this.lab.setTab('ladder')) : null,
+        def.sim === 'vfd' ? btn('gauge', 'Keypad', () => this.lab.setTab('vfd')) : def.sim === 'hmi' ? btn('screen', 'Screens', () => this.lab.setTab('hmi')) : def.sim === 'plc' || def.sim === 'laptop' ? btn('ladder', 'Ladder', () => this.lab.setTab('ladder')) : null,
         btn('trash', 'Delete', () => this.deleteDevice(dev), 'danger'),
         h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.select(null) }));
     } else {

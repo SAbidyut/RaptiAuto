@@ -10,7 +10,6 @@ import {
 import { parseOperand, addrSortKey, SPECIAL, fmtAddr } from '../sim/address.js';
 import { openKeypad, openInstrPicker } from './keypad.js';
 
-const CW = 66, RH = 60, LEFT = 46, OUTW = 168, HEAD = 26, GAP = 14, TOP = 14;
 const SVGNS = 'http://www.w3.org/2000/svg';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -33,11 +32,9 @@ export class LadderView {
   constructor(lab) {
     this.lab = lab;
     this.cur = { rung: 0, row: 0, col: 0 };
-    this.view = { x: 6, y: 6, z: 1 };
     this.monitor = true;
     this.hist = [];
     this.fut = [];
-    this.pointers = new Map();
     this.el = h('section', { class: 'ladder-view' });
     this.build();
     this.compileSoon = debounce(() => this.compile(), 250);
@@ -69,37 +66,38 @@ export class LadderView {
       B('lb-sym', sym('RST'), 'Reset coil (RST)', () => this.insertOutput('RST')),
       B('lb-txt', '<b>TMR</b>', 'Timer', () => this.insertOutput('TMR')),
       B('lb-txt', '<b>CNT</b>', 'Counter', () => this.insertOutput('CNT')),
-      B('lb-txt', '<b>ƒ API</b>', 'Application instructions', () => openInstrPicker({ onPick: (t) => (INSTR[t].kind === 'contact' ? this.insertContact(t) : this.insertOutput(t)) })),
+      B('lb-txt', '<b>ƒ API</b>', 'All instructions (compare, math, shift, MC, CJ, CALL, STL …)', () => openInstrPicker({ onPick: (t) => this.insertAny(t) })),
       B('lb-sym', sym('H'), 'Horizontal line', () => this.insertH()),
       B('lb-sym', sym('V'), 'Vertical line (link to the row below)', () => this.toggleV()),
       B('lb-del', icon('eraser', 18), 'Delete', () => this.deleteAt()), sep(),
       B('lb-ic', icon('undo', 18), 'Undo', () => this.undo()),
       B('lb-ic', icon('redo', 18), 'Redo', () => this.redo()),
       B('lb-ic', icon('dots', 18), 'More', (e) => this.more(e.currentTarget)));
+    // a plain vertical scroller: the diagram is as wide as the screen and only grows downward
     this.host = h('div', { class: 'lad-host' });
     this.svg = document.createElementNS(SVGNS, 'svg');
     this.svg.setAttribute('class', 'lad-svg');
     this.g = document.createElementNS(SVGNS, 'g');
     this.svg.appendChild(this.g);
     this.host.appendChild(this.svg);
-    this.zoomBox = h('div', { class: 'lad-zoom' },
-      h('button', { class: 'tool', html: icon('zoomIn', 19), title: 'Zoom in', onclick: () => this.zoomBy(1.2) }),
-      h('button', { class: 'tool', html: icon('zoomOut', 19), title: 'Zoom out', onclick: () => this.zoomBy(1 / 1.2) }),
-      h('button', { class: 'tool', html: icon('fit', 19), title: 'Fit width', onclick: () => this.fit() }));
-    this.host.appendChild(this.zoomBox);
     this.banner = h('div', { class: 'lad-banner hidden' });
     this.out = h('div', { class: 'lad-out hidden' });
     this.foot = h('div', { class: 'lad-foot' });
     this.el.append(this.bar, this.banner, this.host, this.out, this.foot);
-    const opts = { passive: false };
-    this.svg.addEventListener('pointerdown', (e) => this.onDown(e), opts);
-    this.svg.addEventListener('pointermove', (e) => this.onMove(e), opts);
-    this.svg.addEventListener('pointerup', (e) => this.onUp(e), opts);
-    this.svg.addEventListener('pointercancel', (e) => this.onUp(e, true), opts);
-    this.svg.addEventListener('wheel', (e) => this.onWheel(e), opts);
+    this.svg.addEventListener('pointerdown', (e) => this.onDown(e));
+    this.svg.addEventListener('pointermove', (e) => this.onMove(e));
+    this.svg.addEventListener('pointerup', (e) => this.onUp(e));
+    this.svg.addEventListener('pointercancel', (e) => this.onUp(e, true));
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.ro = new ResizeObserver(() => { if (this.visible) { if (!this.fitted) this.fit(); this.render(); } });
+    // scrolling: draw the networks coming into view, and a scroll is never a tap or a long press
+    this.host.addEventListener('scroll', () => {
+      if (this.down) { this.down.moved = true; clearTimeout(this.lpT); }
+      if (!this.scrollRaf) this.scrollRaf = requestAnimationFrame(() => { this.scrollRaf = 0; this.render(); });
+    }, { passive: true });
+    this.ro = new ResizeObserver(() => { this.G = null; if (this.visible) this.render(); });
     this.ro.observe(this.host);
+    // texts are measured for wrapping: measure again once the web fonts are in
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { this.mfont = null; if (this.visible) this.render(); });
     this.onKey = (e) => this.keydown(e);
   }
 
@@ -107,12 +105,8 @@ export class LadderView {
 
   onShow() {
     window.addEventListener('keydown', this.onKey);
-    const r = this.host.getBoundingClientRect();
-    if (r.width && r.width < 520 && !this.rotHint) {
-      this.rotHint = true;
-      try { if (!localStorage.getItem('raptiauto.plc.rothint')) { localStorage.setItem('raptiauto.plc.rothint', '1'); setTimeout(() => toast('Tip: turn the phone sideways to see whole networks — or pinch to zoom', 'info', 4200), 700); } } catch (e) { /* ignore */ }
-    }
-    requestAnimationFrame(() => { if (!this.fitted) this.fit(); this.render(); this.updateBanner(); });
+    this.G = null;
+    requestAnimationFrame(() => { this.render(); this.updateBanner(); });
   }
   onHide() { window.removeEventListener('keydown', this.onKey); }
 
@@ -225,6 +219,25 @@ export class LadderView {
     });
   }
 
+  /** Any instruction from the picker: contacts go into the grid, the rest into the output column. */
+  insertAny(t) {
+    const d = INSTR[t];
+    if (t === 'STL') {
+      // a step starts on the left bus bar: always the first cell of the network
+      const r = this.rung();
+      this.edit(newElement('STL'), (el) => {
+        const first = r.cells[0][0];
+        if (first && first.t !== 'H' && first.t !== 'STL' && !insertCell(r, 0, 0)) { toast('The first row is full — delete a cell first', 'warn'); return; }
+        r.cells[0][0] = el;
+        this.cur = { rung: this.cur.rung, row: 0, col: 1 };
+        this.commit('STL');
+        this.ensureVisible();
+      });
+      return;
+    }
+    if (d.kind === 'contact') this.insertContact(t); else this.insertOutput(t);
+  }
+
   insertH() {
     const c = this.cur;
     if (c.col === 'out') return;
@@ -286,15 +299,31 @@ export class LadderView {
     this.commit('Comment');
   }
 
+  /** ISPSoft pointer P0…P255 on the left of a network: the target of CJ and CALL. */
+  async editLabel(ri = this.cur.rung) {
+    const r = this.prog.rungs[ri];
+    const v = await promptDialog(`Network ${ri + 1}: pointer label`, r.label || 'P0', 'P0 … P255 — empty removes it');
+    if (v === null || v === undefined) return;
+    const t = v.trim().toUpperCase();
+    if (!t) { delete r.label; this.commit('Label'); return; }
+    const op = parseOperand(/^\d+$/.test(t) ? 'P' + t : t);
+    if (!op || op.dev !== 'P') { toast('A pointer is P0 … P255', 'warn'); return; }
+    const other = this.prog.rungs.findIndex((x, i) => i !== ri && x.label === op.text);
+    if (other >= 0) { toast(`${op.text} is already on network ${other + 1}`, 'warn'); return; }
+    r.label = op.text;
+    this.commit('Label');
+  }
+
   more(anchor) {
     popupMenu(anchor, [
       { icon: 'plus', label: 'Insert network below', action: () => this.addNetwork() },
       { icon: 'plus', label: 'Insert row below', action: () => { addRow(this.rung(), this.cur.row + 1); this.cur.row++; this.commit('Row'); } },
       { icon: 'trash', label: 'Delete row', action: () => { deleteRow(this.rung(), this.cur.row); this.clampCursor(); this.commit('Delete row'); } },
-      { icon: 'copy', label: 'Duplicate network', action: () => { const c = JSON.parse(JSON.stringify(this.rung())); c.id = c.id + 'c'; this.prog.rungs.splice(this.cur.rung + 1, 0, c); this.cur.rung++; this.commit('Duplicate'); } },
+      { icon: 'copy', label: 'Duplicate network', action: () => { const c = JSON.parse(JSON.stringify(this.rung())); c.id = c.id + 'c'; delete c.label; this.prog.rungs.splice(this.cur.rung + 1, 0, c); this.cur.rung++; this.commit('Duplicate'); } },
       { icon: 'arrowUp', label: 'Move network up', action: () => this.moveNetwork(-1) },
       { icon: 'arrowDown', label: 'Move network down', action: () => this.moveNetwork(1) },
       { icon: 'edit', label: 'Network comment', action: () => this.editComment() },
+      { icon: 'target', label: this.rung().label ? `Pointer label: ${this.rung().label}` : 'Pointer label (P) for CJ / CALL', action: () => this.editLabel() },
       { icon: 'trash', label: 'Delete network', danger: true, action: async () => { if (await confirmDialog('Delete network?', `Network ${this.cur.rung + 1} will be removed.`, 'Delete', true)) this.deleteNetwork(); } },
       '-',
       { icon: 'upload', label: 'Upload from PLC', action: () => this.upload() },
@@ -455,221 +484,294 @@ export class LadderView {
     return !!(this.monitor && sys && sys.plc && sys.plc.cpu.powered && sys.pcLink().ok && this.inSync());
   }
 
-  // ------------------------------------------------------------------ view
-  contentW() { return LEFT + this.prog.cols * CW + OUTW + 18; }
+  // ------------------------------------------------------------------ fixed layout
+  // The diagram always fills the width of the screen (no sideways panning or zooming): the eight
+  // contact columns and the output column share the width, and the program grows downward —
+  // long comments wrap, big instruction boxes make their row taller — and scrolls up and down.
 
-  fit() {
-    const r = this.host.getBoundingClientRect();
-    if (!r.width) return;
-    const z = Math.max(0.55, Math.min(1.35, (r.width - 12) / this.contentW()));
-    this.view.z = r.width < 520 ? Math.max(z, 0.82) : z;
-    this.view.x = 6;
-    this.fitted = true;
-    this.clampView();
-    this.render();
+  /** Column widths, fonts and row heights for the current width. */
+  geom() {
+    const W = Math.max(280, Math.round(this.host.clientWidth || 360));
+    if (this.G && this.G.W === W) return this.G;
+    const cols = this.prog.cols;
+    const narrow = W < 600;
+    const pad = 6;
+    const x0 = pad + (narrow ? 10 : 16);
+    const xR = W - pad - (narrow ? 6 : 12);
+    const outW = Math.round(Math.max(narrow ? 92 : 150, Math.min(250, W * (narrow ? 0.27 : 0.24))));
+    const xo = xR - outW;
+    const cw = (xo - x0) / cols;
+    const fs = Math.round(Math.max(9, Math.min(13, cw * 0.3)) * 10) / 10;
+    const rh = narrow ? 60 : 66;
+    const cy = narrow ? 27 : 30;
+    const fo = narrow ? 10 : 11.5; // operands in boxes
+    this.G = { W, narrow, pad, x0, xR, xo, outW, cw, fs, rh, cy, fo, cols, bw: outW - 26, fc: narrow ? 8 : Math.min(10, Math.max(8.5, fs * 0.78)) };
+    return this.G;
   }
 
-  zoomBy(k, cx, cy) {
-    const r = this.host.getBoundingClientRect();
-    cx = cx ?? r.width / 2; cy = cy ?? r.height / 2;
-    const z0 = this.view.z, z1 = Math.max(0.4, Math.min(2.2, z0 * k));
-    this.view.x = cx - (cx - this.view.x) * (z1 / z0);
-    this.view.y = cy - (cy - this.view.y) * (z1 / z0);
-    this.view.z = z1;
-    this.clampView();
-    this.render();
+  /** Width of a text in px, measured with the font the diagram uses. */
+  textW(str, size, mono = false, italic = false) {
+    const c = this.mctx || (this.mctx = document.createElement('canvas').getContext('2d'));
+    const key = `${italic ? 'italic ' : ''}${mono ? 700 : 600} ${size}px ${mono ? "'JetBrains Mono', monospace" : "Inter, system-ui, sans-serif"}`;
+    if (this.mfont !== key) { c.font = key; this.mfont = key; }
+    return c.measureText(str).width;
   }
 
-  clampView() {
-    const r = this.host.getBoundingClientRect();
-    const v = this.view;
-    const W = this.contentW() * v.z, H = (this.layoutH || 400) * v.z;
-    v.x = Math.min(40, Math.max(Math.min(6, r.width - W - 10), v.x));
-    v.y = Math.min(40, Math.max(Math.min(6, r.height - H - 60), v.y));
+  /** The text, cut with … so it is at most w px wide. */
+  fitText(str, size, w, mono = false) {
+    if (this.textW(str, size, mono) <= w) return str;
+    let n = str.length - 1;
+    while (n > 1 && this.textW(str.slice(0, n) + '…', size, mono) > w) n--;
+    return str.slice(0, n) + '…';
   }
 
+  /** Word-wrap a text into lines at most w px wide (maxLines: the last line is cut with …). */
+  wrapText(str, size, w, { mono = false, italic = false, maxLines = 99, breakWords = true } = {}) {
+    const out = [];
+    for (const word of String(str).split(/\s+/).filter(Boolean)) {
+      const last = out.length ? out[out.length - 1] : null;
+      if (last !== null && this.textW(last + ' ' + word, size, mono, italic) <= w) { out[out.length - 1] = last + ' ' + word; continue; }
+      if (this.textW(word, size, mono, italic) <= w) { out.push(word); continue; }
+      if (!breakWords) { out.push(this.fitText(word, size, w, mono)); continue; }
+      let rest = word; // a word longer than the line: split it
+      while (rest) {
+        let n = rest.length;
+        while (n > 1 && this.textW(rest.slice(0, n), size, mono, italic) > w) n--;
+        out.push(rest.slice(0, n));
+        rest = rest.slice(n);
+      }
+    }
+    if (out.length > maxLines) { out.length = maxLines; out[maxLines - 1] = this.fitText(out[maxLines - 1] + '…', size, w, mono); }
+    return out;
+  }
+
+  /** Operand lines of a box instruction, wrapped to the box width. */
+  boxLines(el) {
+    const G = this.geom();
+    return el.a.length ? this.wrapText(el.a.join(' '), G.fo, G.bw - 14, { mono: true }) : [];
+  }
+
+  boxHeight(el) {
+    const G = this.geom();
+    return 8 + (G.fo + 5) + this.boxLines(el).length * (G.fo + 4) + (hasValue(el) ? G.fo + 3 : 0) + 4;
+  }
+
+  /** Network header: number, pointer label and the comment wrapped over as many lines as needed. */
+  headLines(rung, ri) {
+    const G = this.geom();
+    const txt = rung.comment ? '// ' + rung.comment : ri === this.cur.rung ? '// tap here to add a comment' : '';
+    if (!txt) return [];
+    const x = G.pad + 40 + (rung.label ? 34 : 0);
+    return this.wrapText(txt, 12, G.W - x - G.pad - 10, { italic: true });
+  }
+
+  layoutRungs() {
+    const G = this.geom();
+    let y = 8;
+    this.layout = this.prog.rungs.map((r, ri) => {
+      const lines = this.headLines(r, ri);
+      const headH = Math.max(28, 10 + lines.length * 16);
+      const rowTop = [], rowH = [];
+      let yy = y + headH;
+      for (let rr = 0; rr < r.cells.length; rr++) {
+        const o = r.outs[rr];
+        const need = o && INSTR[o.t] && INSTR[o.t].kind === 'box' ? this.boxHeight(o) + 10 : 0;
+        const hgt = Math.max(G.rh, need);
+        rowTop.push(yy); rowH.push(hgt);
+        yy += hgt;
+      }
+      const L = { y, headH, lines, rowTop, rowH, h: yy - y + 8 };
+      y += L.h + 10;
+      return L;
+    });
+    this.endY = y;
+    this.layoutH = y + 64;
+  }
+
+  /** Scroll so the cursor cell is on screen. */
   ensureVisible() {
     this.layoutRungs();
     const L = this.layout[this.cur.rung];
     if (!L) return;
-    const r = this.host.getBoundingClientRect();
-    const v = this.view;
-    const y0 = L.y + HEAD + this.cur.row * RH, y1 = y0 + RH;
-    const x0 = this.cur.col === 'out' ? LEFT + this.prog.cols * CW : LEFT + this.cur.col * CW;
-    const x1 = x0 + (this.cur.col === 'out' ? OUTW : CW);
-    if (y0 * v.z + v.y < 10) v.y = 10 - (y0 - HEAD) * v.z;
-    if (y1 * v.z + v.y > r.height - 20) v.y = r.height - 20 - y1 * v.z;
-    if (x0 * v.z + v.x < 6) v.x = 6 - x0 * v.z + 4;
-    if (x1 * v.z + v.x > r.width - 6) v.x = r.width - 6 - x1 * v.z;
-    this.clampView();
+    const row = Math.min(this.cur.row, L.rowTop.length - 1);
+    const top = (this.cur.row === 0 ? L.y : L.rowTop[row]) - 8, bot = L.rowTop[row] + L.rowH[row] + 10;
+    const h = this.host.clientHeight;
+    if (top < this.host.scrollTop) this.host.scrollTop = top;
+    else if (bot > this.host.scrollTop + h) this.host.scrollTop = bot - h;
     this.render();
   }
 
-  layoutRungs() {
-    let y = TOP;
-    this.layout = this.prog.rungs.map((r) => {
-      const L = { y, h: HEAD + r.cells.length * RH + GAP };
-      y += L.h;
-      return L;
-    });
-    this.layoutH = y + 70;
-  }
-
-  hit(wx, wy) {
+  hit(x, y) {
+    const G = this.geom();
     for (let i = 0; i < this.layout.length; i++) {
       const L = this.layout[i];
-      if (wy < L.y || wy >= L.y + L.h) continue;
+      if (y < L.y || y >= L.y + L.h + 10) continue;
       const r = this.prog.rungs[i];
-      if (wy < L.y + HEAD) return { rung: i, header: true };
-      const row = Math.min(r.cells.length - 1, Math.floor((wy - L.y - HEAD) / RH));
-      const cx = wx - LEFT;
-      const col = cx >= this.prog.cols * CW ? 'out' : Math.max(0, Math.floor(cx / CW));
+      if (y < L.y + L.headH) return { rung: i, header: true };
+      let row = r.cells.length - 1;
+      for (let k = 0; k < L.rowTop.length; k++) if (y < L.rowTop[k] + L.rowH[k]) { row = k; break; }
+      const col = x >= G.xo ? 'out' : Math.max(0, Math.min(G.cols - 1, Math.floor((x - G.x0) / G.cw)));
       return { rung: i, row, col };
     }
-    if (wy >= (this.layoutH || 0) - 70) return { add: true };
+    if (y >= this.endY && y < this.endY + 48) return { add: true };
     return null;
   }
 
   // ------------------------------------------------------------------ rendering
   render() {
     if (!this.visible) return;
+    const G = this.geom();
     this.layoutRungs();
-    const v = this.view;
-    const r = this.host.getBoundingClientRect();
-    this.g.setAttribute('transform', `translate(${v.x.toFixed(1)},${v.y.toFixed(1)}) scale(${v.z.toFixed(4)})`);
-    const wy0 = -v.y / v.z - 40, wy1 = (r.height - v.y) / v.z + 40;
+    const H = Math.max(this.layoutH, this.host.clientHeight);
+    if (this.svgW !== G.W || this.svgH !== H) {
+      this.svgW = G.W; this.svgH = H;
+      this.svg.setAttribute('width', G.W); this.svg.setAttribute('height', H);
+      this.svg.setAttribute('viewBox', `0 0 ${G.W} ${H}`);
+      this.svg.style.height = H + 'px';
+    }
+    const vy0 = this.host.scrollTop - 300, vy1 = this.host.scrollTop + this.host.clientHeight + 300;
     const sys = this.lab.sys;
     const mon = this.monitorActive();
     const cpu = mon ? sys.plc.cpu : null;
     const comments = this.prog.comments;
-    const cols = this.prog.cols;
-    const W = this.contentW();
+    const { cols, x0, xR, xo, cw, pad, W } = G;
     let s = '';
     this.prog.rungs.forEach((rung, ri) => {
       const L = this.layout[ri];
-      if (L.y + L.h < wy0 || L.y > wy1) return;
+      if (L.y + L.h < vy0 || L.y > vy1) return;
       const selR = ri === this.cur.rung;
-      const live = cpu && cpu.running ? cpu.rungLive(this.compiledIndex(ri)) : null;
-      const y0 = L.y + HEAD;
+      const live = cpu && cpu.running ? cpu.rungLive(ri) : null;
       const rows = rung.cells.length;
-      // header
-      s += `<rect x="2" y="${L.y + 2}" width="${W - 4}" height="${L.h - GAP + 2}" rx="8" class="lr-bg${selR ? ' sel' : ''}"/>`;
-      s += `<text x="10" y="${L.y + 17}" class="lr-num">${ri + 1}</text>`;
-      s += rung.comment ? `<text x="${LEFT}" y="${L.y + 17}" class="lr-cmt">// ${esc(rung.comment.slice(0, 90))}</text>` : selR ? `<text x="${LEFT}" y="${L.y + 17}" class="lr-cmt ph">// tap here to add a comment</text>` : '';
-      // rails
-      s += `<line x1="${LEFT}" y1="${y0 + 4}" x2="${LEFT}" y2="${y0 + rows * RH - 4}" class="lr-rail${live ? ' on' : ''}"/>`;
-      s += `<line x1="${LEFT + cols * CW + OUTW - 8}" y1="${y0 + 4}" x2="${LEFT + cols * CW + OUTW - 8}" y2="${y0 + rows * RH - 4}" class="lr-rail r"/>`;
+      const yc = (rr) => L.rowTop[rr] + G.cy;
+      // card + header
+      s += `<rect x="${pad}" y="${L.y}" width="${W - pad * 2}" height="${L.h}" rx="10" class="lr-bg${selR ? ' sel' : ''}"/>`;
+      s += `<rect x="${pad + 6}" y="${L.y + 6}" width="28" height="18" rx="6" class="lr-numbg${selR ? ' sel' : ''}"/><text x="${pad + 20}" y="${L.y + 19}" text-anchor="middle" class="lr-num">${ri + 1}</text>`;
+      let tx = pad + 40;
+      if (rung.label) { s += `<rect x="${tx}" y="${L.y + 6}" width="30" height="18" rx="6" class="lr-ptr"/><text x="${tx + 15}" y="${L.y + 19}" text-anchor="middle" class="lr-ptrt">${esc(rung.label)}</text>`; tx += 34; }
+      L.lines.forEach((ln, k) => { s += `<text x="${tx}" y="${L.y + 19 + k * 16}" class="lr-cmt${rung.comment ? '' : ' ph'}">${esc(ln)}</text>`; });
+      // bus bars
+      const top = L.rowTop[0] + 4, bot = L.rowTop[rows - 1] + L.rowH[rows - 1] - 6;
+      const stlHead = rung.cells[0][0] && rung.cells[0][0].t === 'STL';
+      s += `<line x1="${x0}" y1="${top}" x2="${x0}" y2="${bot}" class="lr-rail${live ? ' on' : ''}${stlHead ? ' stl' : ''}"/>`;
+      s += `<line x1="${xR}" y1="${top}" x2="${xR}" y2="${bot}" class="lr-rail r"/>`;
       for (let rr = 0; rr < rows; rr++) {
-        const yc = y0 + rr * RH + RH / 2 + 4;
+        const y = yc(rr);
         for (let c = 0; c < cols; c++) {
           const el = rung.cells[rr][c];
-          const x0 = LEFT + c * CW;
+          const x = x0 + c * cw;
           const st = live && live.cells[rr] ? live.cells[rr][c] : 0;
-          if (el) s += this.drawCell(el, x0, yc, st, cpu, comments, this.errAt.has(`${this.compiledIndex(ri, true)}:${rr}:${c}`));
-          else if (selR) s += `<circle cx="${x0 + CW / 2}" cy="${yc}" r="1.6" class="lr-dot"/>`;
+          if (el) s += this.drawCell(el, x, y, st, cpu, comments, this.errAt.has(`${ri}:${rr}:${c}`));
+          else if (selR) s += `<circle cx="${(x + cw / 2).toFixed(1)}" cy="${y}" r="1.5" class="lr-dot"/>`;
         }
         const o = rung.outs[rr];
-        const xo = LEFT + cols * CW;
-        if (o) s += this.drawOut(o, xo, yc, live ? live.rows[rr] : 0, cpu, comments, this.errAt.has(`${this.compiledIndex(ri, true)}:${rr}:out`));
-        else if (selR) s += `<circle cx="${xo + 40}" cy="${yc}" r="1.6" class="lr-dot"/>`;
+        if (o) s += this.drawOut(o, xo, y, L.rowTop[rr], live ? live.rows[rr] : 0, cpu, comments, this.errAt.has(`${ri}:${rr}:out`));
+        else if (selR) s += `<circle cx="${xo + 34}" cy="${y}" r="1.5" class="lr-dot"/>`;
       }
       // vertical links
       for (let rr = 0; rr < rows - 1; rr++) for (let c = 0; c < cols; c++) {
         if (!rung.vl[rr] || !rung.vl[rr][c]) continue;
-        const x = LEFT + (c + 1) * CW;
-        const ya = y0 + rr * RH + RH / 2 + 4, yb = ya + RH;
+        const x = (x0 + (c + 1) * cw).toFixed(1);
         const on = live && ((live.cells[rr][c] & 2) || (live.cells[rr + 1][c] & 2) || (c === cols - 1 && (live.rows[rr] || live.rows[rr + 1])));
-        s += `<line x1="${x}" y1="${ya}" x2="${x}" y2="${yb}" class="lw${on ? ' on' : ''}"/>`;
+        s += `<line x1="${x}" y1="${yc(rr)}" x2="${x}" y2="${yc(rr + 1)}" class="lw${on ? ' on' : ''}"/>`;
       }
       // cursor
       if (selR) {
         const c = this.cur;
-        const cx = c.col === 'out' ? LEFT + cols * CW : LEFT + c.col * CW;
-        const cw = c.col === 'out' ? OUTW - 12 : CW;
-        s += `<rect x="${cx + 1}" y="${y0 + c.row * RH + 3}" width="${cw - 2}" height="${RH - 2}" rx="7" class="lr-cursor"/>`;
+        const row = Math.min(c.row, rows - 1);
+        const cx = c.col === 'out' ? xo + 2 : x0 + c.col * cw;
+        const cwid = c.col === 'out' ? xR - xo - 6 : cw;
+        s += `<rect x="${(cx + 1).toFixed(1)}" y="${L.rowTop[row] + 2}" width="${(cwid - 2).toFixed(1)}" height="${L.rowH[row] - 4}" rx="7" class="lr-cursor"/>`;
       }
     });
-    const endY = this.layoutH - 66;
-    s += `<g class="lr-end"><rect x="2" y="${endY}" width="${W - 4}" height="34" rx="8"/><text x="${LEFT}" y="${endY + 22}">END</text><text x="${W - 16}" y="${endY + 22}" text-anchor="end" class="lr-add">＋ add network</text></g>`;
+    const ey = this.endY;
+    s += `<g class="lr-end"><rect x="${pad}" y="${ey}" width="${W - pad * 2}" height="40" rx="10"/><text x="${pad + 14}" y="${ey + 25}" class="lr-endt">END</text>`;
+    s += `<rect x="${W - pad - 150}" y="${ey + 6}" width="142" height="28" rx="9" class="lr-addbg"/><text x="${W - pad - 79}" y="${ey + 25}" text-anchor="middle" class="lr-add">＋ Add network</text></g>`;
     this.g.innerHTML = s;
     this.renderFoot();
   }
 
-  /** Index of a rung in the compiled program (empty rungs are skipped by the compiler). */
-  compiledIndex(ri, forErrors = false) {
-    if (forErrors) return ri;
-    return ri;
-  }
-
   drawCell(el, x, y, st, cpu, comments, err) {
+    const G = this.geom();
+    const cw = G.cw;
     const inOn = st & 1, outOn = st & 2;
+    const f = (v) => v.toFixed(1);
+    const w = (x1, x2, on) => `<line x1="${f(x1)}" y1="${y}" x2="${f(x2)}" y2="${y}" class="lw${on ? ' on' : ''}"/>`;
+    if (el.t === 'H') return w(x, x + cw, inOn);
+    const m = x + cw / 2;
+    const fit = (txt, size) => this.fitText(txt, size, cw - 2, true);
+    const label = (txt, cls = 'lr-op') => `<text x="${f(m)}" y="${y - 15}" text-anchor="middle" class="${cls}" style="font-size:${G.fs}px">${esc(fit(txt, G.fs))}</text>`;
+    // the device comment under the contact, on up to two lines
+    const cm = (a) => (comments[a] ? this.wrapText(comments[a], G.fc, cw - 3, { maxLines: 2, breakWords: false }).map((ln, k) => `<text x="${f(m)}" y="${y + 21 + k * (G.fc + 1.5)}" text-anchor="middle" class="lr-cm" style="font-size:${G.fc}px">${esc(ln)}</text>`).join('') : '');
     let s = '';
-    const w = (x1, x2, on) => `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" class="lw${on ? ' on' : ''}"/>`;
-    if (el.t === 'H') return w(x, x + CW, inOn);
-    const m = x + CW / 2;
-    const label = (txt, cls = 'lr-op') => `<text x="${m}" y="${y - 17}" text-anchor="middle" class="${cls}">${esc(txt)}</text>`;
-    const cm = (a) => (comments[a] ? `<text x="${m}" y="${y + 26}" text-anchor="middle" class="lr-cm">${esc(comments[a].slice(0, 11))}</text>` : '');
     if (el.t === 'CC') {
-      s += w(x, x + 6, inOn) + w(x + CW - 6, x + CW, outOn);
-      s += `<rect x="${x + 6}" y="${y - 13}" width="${CW - 12}" height="26" rx="4" class="lr-box${outOn ? ' on' : ''}${err ? ' err' : ''}"/>`;
-      s += `<text x="${m}" y="${y + 4}" text-anchor="middle" class="lr-cc">${esc(el.op)}</text>`;
-      s += `<text x="${m}" y="${y - 18}" text-anchor="middle" class="lr-op sm">${esc(el.a[0])}</text>`;
-      s += `<text x="${m}" y="${y + 26}" text-anchor="middle" class="lr-op sm">${esc(el.a[1])}</text>`;
-      if (cpu) {
-        const a = parseOperand(el.a[0]), b = parseOperand(el.a[1]);
-        if (a && b) s += `<text x="${x + CW - 2}" y="${y - 28}" text-anchor="end" class="lr-val">${cpu.getWord(a)}</text>`;
-      }
+      const bx = x + 3, bw = cw - 6;
+      s += w(x, bx, inOn) + w(bx + bw, x + cw, outOn);
+      s += `<rect x="${f(bx)}" y="${y - 11}" width="${f(bw)}" height="22" rx="4" class="lr-box${outOn ? ' on' : ''}${err ? ' err' : ''}"/>`;
+      s += `<text x="${f(m)}" y="${y + 4.5}" text-anchor="middle" class="lr-cc" style="font-size:${Math.min(14, G.fs + 1.5)}px">${esc(el.op)}</text>`;
+      s += `<text x="${f(m)}" y="${y - 15}" text-anchor="middle" class="lr-op" style="font-size:${G.fs * 0.92}px">${esc(fit(el.a[0], G.fs * 0.92))}</text>`;
+      s += `<text x="${f(m)}" y="${y + 24}" text-anchor="middle" class="lr-op" style="font-size:${G.fs * 0.92}px">${esc(fit(el.a[1], G.fs * 0.92))}</text>`;
+      if (cpu) { const a = parseOperand(el.a[0]); if (a) s += `<text x="${f(x + cw - 2)}" y="${y - 27}" text-anchor="end" class="lr-val" style="font-size:${G.fc}px">${cpu.getWord(a)}</text>`; }
       return s;
     }
-    if (el.t === 'INV') {
-      s += w(x, x + CW / 2 - 8, inOn) + w(x + CW / 2 + 8, x + CW, outOn);
-      s += `<line x1="${m - 9}" y1="${y + 10}" x2="${m + 9}" y2="${y - 10}" class="lr-sym"/><text x="${m}" y="${y - 17}" text-anchor="middle" class="lr-op">INV</text>`;
+    if (el.t === 'INV' || el.t === 'MEP' || el.t === 'MEF') {
+      s += w(x, m - 6, inOn) + w(m + 6, x + cw, outOn);
+      if (el.t === 'INV') s += `<line x1="${f(m - 7)}" y1="${y + 9}" x2="${f(m + 7)}" y2="${y - 9}" class="lr-sym${err ? ' err' : ''}"/>`;
+      else s += `<path d="M${f(m - 6)} ${y}H${f(m + 6)}M${f(m)} ${y + 9}V${y - 9}${el.t === 'MEP' ? `M${f(m - 4)} ${y - 5}l4-4 4 4` : ''}" class="lr-sym thin"/>${el.t === 'MEF' ? `<path d="M${f(m - 4)} ${y + 5}l4 4 4-4" class="lr-sym thin"/>` : ''}`;
+      s += `<text x="${f(m)}" y="${y - 15}" text-anchor="middle" class="lr-mn" style="font-size:${G.fs * 0.9}px">${el.t}</text>`;
       return s;
     }
-    const gap = 9;
-    s += w(x, m - gap, inOn) + w(m + gap, x + CW, outOn);
+    if (el.t === 'STL') {
+      const bx = x + 2, bw = cw - 4;
+      const op = parseOperand(el.a[0]);
+      const act = cpu && op ? cpu.S[op.idx] : 0;
+      s += w(bx + bw, x + cw, outOn);
+      s += `<rect x="${f(bx)}" y="${y - 12}" width="${f(bw)}" height="24" rx="5" class="lr-stl${act ? ' on' : ''}${err ? ' err' : ''}"/>`;
+      s += `<text x="${f(m)}" y="${y + 4}" text-anchor="middle" class="lr-stlt" style="font-size:${Math.max(8, G.fs * 0.85)}px">STL</text>`;
+      s += label(el.a[0] || '?', 'lr-op' + (err ? ' err' : '')) + cm(el.a[0]);
+      return s;
+    }
+    const gap = Math.max(5, Math.min(9, cw * 0.17));
+    const hh = G.narrow ? 10 : 12;
+    s += w(x, m - gap, inOn) + w(m + gap, x + cw, outOn);
     const op = parseOperand(el.a[0]);
     let closed = false;
     if (cpu && op) { const b = cpu.getBit(op); closed = el.t === 'NC' ? !b : el.t === 'NO' ? !!b : !!outOn; }
-    if (closed) s += `<rect x="${m - gap}" y="${y - 12}" width="${gap * 2}" height="24" rx="2" class="lr-fill"/>`;
-    s += `<line x1="${m - gap}" y1="${y - 12}" x2="${m - gap}" y2="${y + 12}" class="lr-sym${err ? ' err' : ''}"/><line x1="${m + gap}" y1="${y - 12}" x2="${m + gap}" y2="${y + 12}" class="lr-sym${err ? ' err' : ''}"/>`;
-    if (el.t === 'NC') s += `<line x1="${m - gap - 3}" y1="${y + 12}" x2="${m + gap + 3}" y2="${y - 12}" class="lr-sym"/>`;
-    if (el.t === 'P') s += `<path d="M${m} ${y + 7}V${y - 7}M${m - 4} ${y - 3}l4-4 4 4" class="lr-sym thin"/>`;
-    if (el.t === 'F') s += `<path d="M${m} ${y - 7}V${y + 7}M${m - 4} ${y + 3}l4 4 4-4" class="lr-sym thin"/>`;
+    if (closed) s += `<rect x="${f(m - gap)}" y="${y - hh}" width="${f(gap * 2)}" height="${hh * 2}" rx="2" class="lr-fill"/>`;
+    s += `<line x1="${f(m - gap)}" y1="${y - hh}" x2="${f(m - gap)}" y2="${y + hh}" class="lr-sym${err ? ' err' : ''}"/><line x1="${f(m + gap)}" y1="${y - hh}" x2="${f(m + gap)}" y2="${y + hh}" class="lr-sym${err ? ' err' : ''}"/>`;
+    if (el.t === 'NC') s += `<line x1="${f(m - gap - 3)}" y1="${y + hh}" x2="${f(m + gap + 3)}" y2="${y - hh}" class="lr-sym"/>`;
+    if (el.t === 'P') s += `<path d="M${f(m)} ${y + 6}V${y - 6}M${f(m - 3.5)} ${y - 2.5}l3.5-3.5 3.5 3.5" class="lr-sym thin"/>`;
+    if (el.t === 'F') s += `<path d="M${f(m)} ${y - 6}V${y + 6}M${f(m - 3.5)} ${y + 2.5}l3.5 3.5 3.5-3.5" class="lr-sym thin"/>`;
     s += label(el.a[0] || '?', 'lr-op' + (err ? ' err' : ''));
     s += cm(el.a[0]);
     return s;
   }
 
-  drawOut(el, x, y, on, cpu, comments, err) {
+  drawOut(el, x, y, rowTop, on, cpu, comments, err) {
+    const G = this.geom();
     const d = INSTR[el.t];
-    let s = `<line x1="${x}" y1="${y}" x2="${x + 22}" y2="${y}" class="lw${on ? ' on' : ''}"/>`;
+    const f = (v) => v.toFixed(1);
+    let s = `<line x1="${f(x)}" y1="${y}" x2="${f(x + 14)}" y2="${y}" class="lw${on ? ' on' : ''}"/>`;
     if (d.kind === 'out') {
-      const cx = x + 44;
-      s += `<line x1="${x + 22}" y1="${y}" x2="${cx - 12}" y2="${y}" class="lw${on ? ' on' : ''}"/>`;
+      const cx = x + 36;
+      s += `<line x1="${f(x + 14)}" y1="${y}" x2="${f(cx - 12)}" y2="${y}" class="lw${on ? ' on' : ''}"/>`;
       const op = parseOperand(el.a[0]);
       const bit = cpu && op ? cpu.getBit(op) : 0;
-      if (bit) s += `<circle cx="${cx}" cy="${y}" r="12" class="lr-fill"/>`;
-      s += `<path d="M${cx - 4} ${y - 13}a13 13 0 0 0 0 26M${cx + 4} ${y - 13}a13 13 0 0 1 0 26" class="lr-sym${err ? ' err' : ''}"/>`;
-      if (el.t !== 'OUT') s += `<text x="${cx}" y="${y + 4.5}" text-anchor="middle" class="lr-coilt">${el.t === 'SET' ? 'S' : el.t === 'RST' ? 'R' : el.t === 'PLS' ? 'P' : 'F'}</text>`;
-      s += `<text x="${cx}" y="${y - 19}" text-anchor="middle" class="lr-op${err ? ' err' : ''}">${esc(el.a[0] || '?')}</text>`;
-      if (el.t === 'PLS' || el.t === 'PLF') s += `<text x="${cx + 20}" y="${y + 4}" class="lr-mn">${el.t}</text>`;
-      if (comments[el.a[0]]) s += `<text x="${cx}" y="${y + 27}" text-anchor="middle" class="lr-cm">${esc(comments[el.a[0]].slice(0, 14))}</text>`;
+      if (bit) s += `<circle cx="${f(cx)}" cy="${y}" r="11" class="lr-fill"/>`;
+      s += `<path d="M${f(cx - 4)} ${y - 12}a12 12 0 0 0 0 24M${f(cx + 4)} ${y - 12}a12 12 0 0 1 0 24" class="lr-sym${err ? ' err' : ''}"/>`;
+      if (el.t !== 'OUT') s += `<text x="${f(cx)}" y="${y + 4}" text-anchor="middle" class="lr-coilt">${el.t === 'SET' ? 'S' : el.t === 'RST' ? 'R' : el.t === 'PLS' ? 'P' : 'F'}</text>`;
+      s += `<text x="${f(cx)}" y="${y - 17}" text-anchor="middle" class="lr-op${err ? ' err' : ''}" style="font-size:${Math.max(10, G.fs)}px">${esc(el.a[0] || '?')}</text>`;
+      if (el.t === 'PLS' || el.t === 'PLF') s += `<text x="${f(cx + 18)}" y="${y + 4}" class="lr-mn">${el.t}</text>`;
+      if (comments[el.a[0]]) s += `<text x="${f(cx)}" y="${y + 25}" text-anchor="middle" class="lr-cm" style="font-size:${G.fc + 0.5}px">${esc(this.fitText(comments[el.a[0]], G.fc + 0.5, (Math.min(cx - x, G.xR - cx) - 3) * 2))}</text>`;
       return s;
     }
-    const bx = x + 22, bw = OUTW - 40;
-    s += `<rect x="${bx}" y="${y - 18}" width="${bw}" height="36" rx="5" class="lr-box${on ? ' on' : ''}${err ? ' err' : ''}"/>`;
-    s += `<text x="${bx + 7}" y="${y - 4}" class="lr-mn">${esc(mnemonic(el))}</text>`;
-    s += `<text x="${bx + 7}" y="${y + 11}" class="lr-ops">${esc(el.a.join('  '))}</text>`;
-    if (cpu) {
-      let v = '';
-      const a0 = parseOperand(el.a[0]);
-      if (el.t === 'TMR' && a0) v = `${el.a[0]} = ${cpu.TV[a0.idx]}`;
-      else if (el.t === 'CNT' && a0) v = `${el.a[0]} = ${cpu.CV[a0.idx]}`;
-      else if (el.t === 'MOV' || el.t === 'INC' || el.t === 'DEC') { const dst = parseOperand(el.a[el.a.length - 1]); if (dst) v = `${dst.text} = ${cpu.getWord(dst)}`; }
-      else if (['ADD', 'SUB', 'MUL', 'DIV'].includes(el.t)) { const dst = parseOperand(el.a[2]); if (dst) v = `${dst.text} = ${cpu.getWord(dst)}`; }
-      else if (el.t === 'MODRW') { const dst = parseOperand(el.a[3]); if (dst) v = `${dst.text} = ${cpu.getWord(dst)}${cpu.M[1129] ? ' · time-out' : ''}`; }
-      if (v) s += `<text x="${bx + bw}" y="${y + 31}" text-anchor="end" class="lr-val">${esc(v)}</text>`;
+    const bx = x + 14, bw = G.bw, by = rowTop + 6, bh = this.boxHeight(el);
+    const lines = this.boxLines(el);
+    s += `<rect x="${f(bx)}" y="${by}" width="${f(bw)}" height="${bh}" rx="6" class="lr-box${d.flow ? ' flow' : ''}${on ? ' on' : ''}${err ? ' err' : ''}"/>`;
+    s += `<text x="${f(bx + 7)}" y="${by + 6 + G.fo + 1}" class="lr-mn${d.flow ? ' flow' : ''}" style="font-size:${G.fo + 1}px">${esc(mnemonic(el))}</text>`;
+    lines.forEach((ln, k) => { s += `<text x="${f(bx + 7)}" y="${by + 6 + (G.fo + 5) + (k + 1) * (G.fo + 4) - 2}" class="lr-ops" style="font-size:${G.fo}px">${esc(ln)}</text>`; });
+    if (cpu && hasValue(el)) {
+      const v = valueText(el, cpu);
+      if (v) s += `<text x="${f(bx + 7)}" y="${by + bh - 6}" class="lr-val" style="font-size:${G.fo - 0.5}px">${esc(v)}</text>`;
     }
     return s;
   }
@@ -677,67 +779,30 @@ export class LadderView {
   // ------------------------------------------------------------------ pointer & keys
   toWorld(e) {
     const r = this.svg.getBoundingClientRect();
-    return [(e.clientX - r.left - this.view.x) / this.view.z, (e.clientY - r.top - this.view.y) / this.view.z];
+    return [e.clientX - r.left, e.clientY - r.top];
   }
 
+  // taps and long presses; dragging scrolls the page natively (touch-action: pan-y)
   onDown(e) {
-    e.preventDefault();
-    this.svg.setPointerCapture(e.pointerId);
-    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.pointers.size === 2) {
-      const [a, b] = [...this.pointers.values()];
-      this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: this.view.z, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, vx: this.view.x, vy: this.view.y };
-      this.down = null;
-      clearTimeout(this.lpT);
-      return;
-    }
-    this.down = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y, t: performance.now(), moved: false, id: e.pointerId };
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (this.down) { this.down = null; clearTimeout(this.lpT); return; } // a second finger: no tap
+    this.down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId, top: this.host.scrollTop };
     clearTimeout(this.lpT);
     this.lpT = setTimeout(() => { if (this.down && !this.down.moved) { const d = this.down; this.down = null; this.longPress(d.x, d.y); } }, 520);
   }
 
   onMove(e) {
-    if (!this.pointers.has(e.pointerId)) return;
-    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const r = this.svg.getBoundingClientRect();
-    if (this.pinch && this.pointers.size >= 2) {
-      const [a, b] = [...this.pointers.values()];
-      const p = this.pinch;
-      const z = Math.max(0.4, Math.min(2.2, p.z * Math.hypot(a.x - b.x, a.y - b.y) / p.d));
-      const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
-      const wx = (p.mx - r.left - p.vx) / p.z, wy = (p.my - r.top - p.vy) / p.z;
-      this.view.z = z;
-      this.view.x = mx - wx * z;
-      this.view.y = my - wy * z;
-      this.clampView();
-      this.render();
-      return;
-    }
     const d = this.down;
     if (!d || d.id !== e.pointerId) return;
-    const dx = e.clientX - d.x, dy = e.clientY - d.y;
-    if (!d.moved && Math.hypot(dx, dy) > 7) { d.moved = true; clearTimeout(this.lpT); }
-    if (d.moved) { this.view.x = d.vx + dx; this.view.y = d.vy + dy; this.clampView(); this.render(); }
+    if (!d.moved && (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8 || Math.abs(this.host.scrollTop - d.top) > 4)) { d.moved = true; clearTimeout(this.lpT); }
   }
 
   onUp(e, cancel) {
-    this.pointers.delete(e.pointerId);
-    try { this.svg.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     clearTimeout(this.lpT);
-    if (this.pinch) { if (this.pointers.size < 2) this.pinch = null; return; }
     const d = this.down;
     this.down = null;
-    if (!d || cancel || d.moved || d.id !== e.pointerId) return;
+    if (!d || cancel || d.moved || d.id !== e.pointerId || Math.abs(this.host.scrollTop - d.top) > 4) return;
     this.tap(e);
-  }
-
-  onWheel(e) {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) { const r = this.svg.getBoundingClientRect(); this.zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - r.left, e.clientY - r.top); return; }
-    this.view.x -= e.shiftKey ? e.deltaY : e.deltaX;
-    this.view.y -= e.shiftKey ? 0 : e.deltaY;
-    this.clampView();
-    this.render();
   }
 
   tap(e) {
@@ -772,7 +837,7 @@ export class LadderView {
 
   longPress(x, y) {
     const r = this.svg.getBoundingClientRect();
-    const hit = this.hit((x - r.left - this.view.x) / this.view.z, (y - r.top - this.view.y) / this.view.z);
+    const hit = this.hit(x - r.left, y - r.top);
     if (!hit || hit.add) return;
     if (hit.header) { this.cur.rung = hit.rung; this.clampCursor(); this.render(); this.more({ getBoundingClientRect: () => ({ left: x, right: x, top: y, bottom: y }) }); return; }
     this.cur = { rung: hit.rung, row: hit.row, col: hit.col };
@@ -893,7 +958,9 @@ export class LadderView {
     dialog({
       title: 'Ladder editor',
       body: `<div class="lab-help">
-        <p>Tap a cell to move the <b>cursor</b>, then a toolbar button: <b>⊣⊢</b> NO contact, <b>⊣/⊢</b> NC contact, the stacked ones add a <b>parallel (OR)</b> branch below, <b>( )</b> output coil, <b>(S)/(R)</b> set / reset, <b>TMR</b>, <b>CNT</b> and <b>ƒ API</b> for MOV, ADD, CMP, MODRW…</p>
+        <p>Tap a cell to move the <b>cursor</b>, then a toolbar button: <b>⊣⊢</b> NO contact, <b>⊣/⊢</b> NC contact, the stacked ones add a <b>parallel (OR)</b> branch below, <b>( )</b> output coil, <b>(S)/(R)</b> set / reset, <b>TMR</b>, <b>CNT</b> and <b>ƒ API</b> for every other instruction: compare (LD=, LD&amp;, CMP, ZCP), move &amp; convert (MOV, BMOV, FMOV, XCH, BCD, BIN, SWAP), math (ADD … DIV, INC, DEC, NEG, ABS, SQR, MEAN, SCAL), word logic &amp; shifts (WAND, WOR, WXOR, ROR, ROL, SFTR, SFTL, DECO, ENCO, SUM, BON, ZRST, ALT), program flow (MC/MCR, CJ, CALL/SRET, FEND), step ladder (STL/RET), INV, MEP/MEF and MODRW.</p>
+        <p>The diagram always fits the screen width; networks are stacked and the program grows downward — scroll up and down.</p>
+        <p><b>CJ / CALL:</b> give the target network a pointer — long-press its number → <b>Pointer label</b>. Subroutines go after <b>FEND</b> and end with <b>SRET</b>. <b>Step ladder:</b> <code>M1002 → SET S0</code>, each step starts with <b>STL Sn</b> (first cell), <b>SET Sm</b> moves to the next step, <b>RET</b> ends the block.</p>
         <p>Enter the device with the keypad. <b>X / Y are octal</b> on Delta PLCs (X0–X7, X10–X17). Timers T0–T199 count in 100 ms: <code>TMR T0 K50</code> = 5 s.</p>
         <p>Tap an element again to edit it, long-press for more. <b>│</b> links the cell's right edge to the row below.</p>
         <p><b>Download</b> writes the program over USB; while online and in RUN the ladder shows <b style="color:#4ade80">live power flow</b>. Tap an element to force inputs or change values.</p>
@@ -901,6 +968,24 @@ export class LadderView {
       actions: [{ label: 'OK', value: true, cls: 'btn-primary' }],
     });
   }
+}
+
+/** Does a box show a live value (timer / counter value or the word it writes) while monitoring? */
+function valueOperand(el) {
+  const d = INSTR[el.t];
+  if (!d || d.kind !== 'box' || d.flow) return -1;
+  if (el.t === 'TMR' || el.t === 'CNT') return 0;
+  for (let i = d.ops.length - 1; i >= 0; i--) if (d.ops[i] === 'wordw' || d.ops[i] === 'dreg') return i;
+  return -1;
+}
+function hasValue(el) { return valueOperand(el) >= 0; }
+function valueText(el, cpu) {
+  const i = valueOperand(el);
+  const op = i >= 0 ? parseOperand(el.a[i]) : null;
+  if (!op) return '';
+  if (el.t === 'TMR') return `${op.text} = ${cpu.TV[op.idx]}`;
+  if (el.t === 'CNT') return `${op.text} = ${cpu.CV[op.idx]}`;
+  return `${op.text} = ${cpu.getWord(op)}${el.t === 'MODRW' && cpu.M[1129] ? ' · time-out' : ''}`;
 }
 
 export { isOutputType, elementText, fmtAddr };

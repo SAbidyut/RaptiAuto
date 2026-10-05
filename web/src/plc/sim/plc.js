@@ -37,6 +37,13 @@ export class PlcCpu {
     this.mbCompletePending = false;
     this.dt = SCAN_MS;
     this.acc = 0;
+    // program flow: master control levels switched off (bit n = N n), CALL return stack, step ladder
+    this.mcOff = 0;
+    this.callStack = [];
+    this.flow = null;
+    this.curStep = -1;
+    this.stlWas = new Uint8Array(1024);
+    this.stlMode = new Uint8Array(1024);
     this.setDefaults();
   }
 
@@ -161,6 +168,7 @@ export class PlcCpu {
   enterRun() {
     this.clearNonLatched();
     this.st.fill(0);
+    this.stlWas.fill(0);
     this.running = true;
     this.first = true;
     this.errorFlag = false;
@@ -250,7 +258,7 @@ export class PlcCpu {
     M[1127] = this.mbCompletePending ? 1 : 0;
     this.mbCompletePending = false;
     this.mbSeen.clear();
-    for (const r of this.prog.rungs) this.execRung(r);
+    this.runProgram();
     for (const sid of [...this.mbReq.keys()]) if (!this.mbSeen.has(sid)) this.mbReq.delete(sid);
     for (const [i, v] of this.forceY) this.Y[i] = v;
     this.first = false;
@@ -262,9 +270,54 @@ export class PlcCpu {
     this.D[1012] = Math.max(this.scanMax || 0, t); this.scanMax = this.D[1012];
   }
 
-  execRung(r) {
+  /**
+   * One pass over the networks. Normally top to bottom up to FEND / END; CJ jumps, CALL runs a
+   * subroutine (after FEND) up to its SRET, MC switches the power of the networks up to MCR off,
+   * and STL steps run only while their step relay is ON (once more with no power when they end, so
+   * their coils and timers drop out).
+   */
+  runProgram() {
+    const R = this.prog.rungs;
+    const labels = this.prog.labels || {};
+    this.mcOff = 0;
+    this.callStack.length = 0;
+    let pc = 0, guard = 0;
+    while (pc < R.length) {
+      if (++guard > 20000) { this.errorFlag = true; this.M[1067] = 1; break; } // endless jump loop: watchdog
+      const r = R[pc];
+      let rail = this.mcOff ? 0 : 1;
+      this.curStep = -1;
+      if (r.step >= 0) {
+        const n = r.step;
+        if (r.stlHead) { const act = this.S[n]; this.stlMode[n] = act ? 1 : this.stlWas[n] ? 2 : 0; this.stlWas[n] = act; }
+        const mode = this.stlMode[n];
+        if (mode === 0) { if (r.live) { for (const c of r.live.cells) c.fill(0); r.live.rows.fill(0); } pc++; continue; }
+        if (mode === 2 || !this.S[n]) rail = 0;
+        this.curStep = n;
+      }
+      this.flow = null;
+      this.execRung(r, rail);
+      const f = this.flow;
+      if (!f) { pc++; continue; }
+      if (f.fend || f.sret) {
+        if (this.callStack.length) { pc = this.callStack.pop(); continue; }
+        if (f.fend) break; // end of the main program
+        pc++;
+        continue;
+      }
+      const target = labels[f.call !== undefined ? f.call : f.jump];
+      if (target === undefined) { pc++; continue; }
+      if (f.call !== undefined) {
+        if (this.callStack.length >= 16) { this.errorFlag = true; this.M[1067] = 1; pc++; continue; }
+        this.callStack.push(pc + 1);
+      }
+      pc = target;
+    }
+  }
+
+  execRung(r, rail = 1) {
     const P = this.pw && this.pw.length >= r.rows ? this.pw : (this.pw = new Uint8Array(Math.max(8, r.rows)));
-    for (let i = 0; i < r.rows; i++) P[i] = 1;
+    for (let i = 0; i < r.rows; i++) P[i] = rail;
     const live = r.live || (r.live = { cells: r.cells.map((row) => new Uint8Array(row.length)), rows: new Uint8Array(r.rows) });
     for (let c = 0; c < r.cols; c++) {
       for (let i = 0; i < r.rows; i++) {
@@ -298,6 +351,9 @@ export class PlcCpu {
       case 'F': { const v = this.getBit(e.a[0]); const r = !v && st[e.sid]; st[e.sid] = v; return pw && r ? 1 : 0; }
       case 'CC': return pw && compare(this.getWord(e.a[0]), this.getWord(e.a[1]), e.op) ? 1 : 0;
       case 'INV': return pw ? 0 : 1;
+      case 'MEP': { const r = pw && !st[e.sid]; st[e.sid] = pw; return r ? 1 : 0; }
+      case 'MEF': { const r = !pw && st[e.sid]; st[e.sid] = pw; return r ? 1 : 0; }
+      case 'STL': return pw && this.S[e.a[0].idx] ? 1 : 0;
       default: return 0;
     }
   }
@@ -306,8 +362,20 @@ export class PlcCpu {
     const st = this.st;
     const a = e.a;
     switch (e.t) {
-      case 'OUT': this.setBit(a[0], pw); return;
-      case 'SET': if (pw) this.setBit(a[0], 1); return;
+      case 'OUT':
+        // OUT S inside a step: move to that step (like SET)
+        if (a[0].dev === 'S' && this.curStep >= 0) { if (pw) this.toStep(a[0].idx); return; }
+        this.setBit(a[0], pw);
+        return;
+      case 'SET':
+        if (!pw) return;
+        if (a[0].dev === 'S' && this.curStep >= 0) this.toStep(a[0].idx); else this.setBit(a[0], 1);
+        return;
+      case 'MC': if (pw) this.mcOff &= ~(1 << a[0].idx); else this.mcOff |= 1 << a[0].idx; return;
+      case 'MCR': this.mcOff &= (1 << a[0].idx) - 1; return; // levels N and deeper are on again
+      case 'FEND': this.flow = { fend: true }; return;
+      case 'SRET': this.flow = { sret: true }; return;
+      case 'RET': return; // the end of the step ladder is known from the program layout
       case 'RST': if (pw) this.reset(a[0].dev, a[0].idx); return;
       case 'PLS': this.setBit(a[0], pw && !st[e.sid]); st[e.sid] = pw; return;
       case 'PLF': this.setBit(a[0], !pw && st[e.sid]); st[e.sid] = pw; return;
@@ -387,9 +455,114 @@ export class PlcCpu {
       }
       case 'ZRST': for (let i = a[0].idx; i <= a[1].idx; i++) this.reset(a[0].dev, i); break;
       case 'ALT': this.setBit(a[0], !this.getBit(a[0])); break;
+      case 'CJ': this.flow = { jump: a[0].idx }; break;
+      case 'CALL': this.flow = { call: a[0].idx }; break;
+      case 'ZCP': {
+        const lo = this.getWord(a[0]), hi = this.getWord(a[1]), v = this.getWord(a[2]), d = a[3];
+        this.setBitAt(d.dev, d.idx, v < lo);
+        this.setBitAt(d.dev, d.idx + 1, v >= lo && v <= hi);
+        this.setBitAt(d.dev, d.idx + 2, v > hi);
+        break;
+      }
+      case 'CML': this.setWord(a[1], ~this.getWord(a[0])); break;
+      case 'BMOV': {
+        const n = this.getWord(a[2]);
+        const vals = [];
+        for (let k = 0; k < n; k++) vals.push(this.getWord(offset(a[0], k)));
+        for (let k = 0; k < n; k++) this.setWord(offset(a[1], k), vals[k]);
+        break;
+      }
+      case 'FMOV': { const n = this.getWord(a[2]), v = this.getWord(a[0]); for (let k = 0; k < n; k++) this.setWord(offset(a[1], k), v); break; }
+      case 'XCH': { const x = this.getWord(a[0]); this.setWord(a[0], this.getWord(a[1])); this.setWord(a[1], x); break; }
+      case 'BCD': {
+        const v = this.getWord(a[0]);
+        if (v < 0 || v > 9999) { M[1067] = 1; this.errorFlag = true; break; }
+        this.setWord(a[1], (Math.floor(v / 1000) << 12) | ((Math.floor(v / 100) % 10) << 8) | ((Math.floor(v / 10) % 10) << 4) | (v % 10));
+        break;
+      }
+      case 'BIN': {
+        const v = this.getWord(a[0]) & 0xFFFF;
+        const dg = [(v >> 12) & 15, (v >> 8) & 15, (v >> 4) & 15, v & 15];
+        if (dg.some((x) => x > 9)) { M[1067] = 1; this.errorFlag = true; break; }
+        this.setWord(a[1], dg[0] * 1000 + dg[1] * 100 + dg[2] * 10 + dg[3]);
+        break;
+      }
+      case 'SWAP': { const v = this.getWord(a[0]) & 0xFFFF; this.setWord(a[0], ((v & 0xFF) << 8) | (v >> 8)); break; }
+      case 'WAND': this.setWord(a[2], this.getWord(a[0]) & this.getWord(a[1])); break;
+      case 'WOR': this.setWord(a[2], this.getWord(a[0]) | this.getWord(a[1])); break;
+      case 'WXOR': this.setWord(a[2], this.getWord(a[0]) ^ this.getWord(a[1])); break;
+      case 'NEG': this.setWord(a[0], -this.getWord(a[0])); break;
+      case 'ABS': this.setWord(a[0], Math.abs(this.getWord(a[0]))); break;
+      case 'SQR': {
+        const v = this.getWord(a[0]);
+        if (v < 0) { M[1067] = 1; this.errorFlag = true; break; }
+        const r = Math.floor(Math.sqrt(v));
+        M[1020] = r === 0 ? 1 : 0;
+        this.setWord(a[1], r);
+        break;
+      }
+      case 'MEAN': {
+        const n = this.getWord(a[2]);
+        let sum = 0;
+        for (let k = 0; k < n; k++) sum += this.getWord(offset(a[0], k));
+        this.setWord(a[1], Math.trunc(sum / Math.max(1, n)));
+        break;
+      }
+      case 'SCAL': this.setWord(a[3], Math.trunc((this.getWord(a[0]) * this.getWord(a[1])) / 1000) + this.getWord(a[2])); break;
+      case 'ROR': case 'ROL': {
+        const n = this.getWord(a[1]) & 15;
+        let v = this.getWord(a[0]) & 0xFFFF;
+        if (n) v = e.t === 'ROR' ? ((v >>> n) | (v << (16 - n))) & 0xFFFF : ((v << n) | (v >>> (16 - n))) & 0xFFFF;
+        M[1022] = n ? (e.t === 'ROR' ? (v >> 15) & 1 : v & 1) : M[1022];
+        this.setWord(a[0], v);
+        break;
+      }
+      case 'SFTR': case 'SFTL': {
+        const s = a[0], d = a[1], n1 = this.getWord(a[2]), n2 = this.getWord(a[3]);
+        const bits = [];
+        for (let k = 0; k < n1; k++) bits.push(this.getBitAt(d.dev, d.idx + k));
+        const src = [];
+        for (let k = 0; k < n2; k++) src.push(this.getBitAt(s.dev, s.idx + k));
+        const out = e.t === 'SFTR' ? [...bits.slice(n2), ...src] : [...src, ...bits.slice(0, n1 - n2)];
+        out.forEach((b, k) => this.setBitAt(d.dev, d.idx + k, b));
+        break;
+      }
+      case 'DECO': {
+        const n = this.getWord(a[2]), v = this.getWord(a[0]) & ((1 << n) - 1), d = a[1];
+        if (d.dev === 'D') { let w = this.D[d.idx] & ~((1 << (1 << n)) - 1); w |= 1 << v; this.D[d.idx] = i16(w); }
+        else for (let k = 0; k < (1 << n); k++) this.setBitAt(d.dev, d.idx + k, k === v);
+        break;
+      }
+      case 'ENCO': {
+        const n = this.getWord(a[2]), s = a[0];
+        const word = ['D', 'T', 'C'].includes(s.dev);
+        const w = word ? this.getWord(s) & 0xFFFF : 0;
+        let hi = -1;
+        for (let k = (1 << n) - 1; k >= 0; k--) if (word ? (w >> k) & 1 : this.getBitAt(s.dev, s.idx + k)) { hi = k; break; }
+        if (hi < 0) { M[1067] = 1; this.errorFlag = true; break; }
+        this.D[a[1].idx] = hi;
+        break;
+      }
+      case 'SUM': {
+        let v = this.getWord(a[0]) & 0xFFFF, c = 0;
+        while (v) { c += v & 1; v >>>= 1; }
+        M[1020] = c === 0 ? 1 : 0;
+        this.setWord(a[1], c);
+        break;
+      }
+      case 'BON': this.setBit(a[1], (this.getWord(a[0]) >> (this.getWord(a[2]) & 15)) & 1); break;
       default: break;
     }
   }
+
+  /** STL transfer: the step that is running hands over to step n. */
+  toStep(n) {
+    this.S[n] = 1;
+    if (this.curStep >= 0 && this.curStep !== n) this.S[this.curStep] = 0;
+  }
+
+  getBitAt(dev, idx) { return this.getBit({ dev, idx }); }
+  setBitAt(dev, idx, v) { this.setBit({ dev, idx }, v); }
 
   // ------------------------------------------------------------------ Modbus master hooks (COM2)
   /** Next active MODRW request after `lastSid` (round robin), or null. */
@@ -429,8 +602,14 @@ export class PlcCpu {
   describe(dev, idx) { return fmtAddr(dev, idx); }
 }
 
+/** The k-th word after a word device (BMOV, FMOV, MEAN). */
+function offset(op, k) { return { dev: op.dev, idx: op.idx + k }; }
+
 export function compare(a, b, op) {
   switch (op) {
+    case '&': return (a & b) !== 0;
+    case '|': return (a | b) !== 0;
+    case '^': return (a ^ b) !== 0;
     case '=': return a === b;
     case '<>': return a !== b;
     case '>': return a > b;

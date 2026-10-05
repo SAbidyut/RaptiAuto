@@ -11,6 +11,8 @@ export const DEVICES = {
   D: { name: 'Data register', word: true, max: 9999, modbus: 0x1000 },
   K: { name: 'Decimal constant', konst: true },
   H: { name: 'Hex constant', konst: true },
+  N: { name: 'Master control nesting level', max: 7, pointer: true },
+  P: { name: 'Pointer (jump / subroutine label)', max: 255, pointer: true },
 };
 
 export const BIT_DEVS = ['X', 'Y', 'M', 'S', 'T', 'C'];
@@ -19,7 +21,7 @@ export const WORD_DEVS = ['D', 'T', 'C'];
 /** Parse "X17", "M1000", "K50", "H2000", "D10" → {dev, idx} or {dev:'K'|'H', val}. Returns null if invalid. */
 export function parseOperand(text) {
   const s = String(text || '').trim().toUpperCase();
-  const m = /^([XYMSTCDKH])(-?[0-9A-F]+)$/.exec(s);
+  const m = /^([XYMSTCDKHNP])(-?[0-9A-F]+)$/.exec(s);
   if (!m) return null;
   const dev = m[1];
   const num = m[2];
