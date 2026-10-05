@@ -33,8 +33,10 @@ function buildPlc(dev) {
   const group = new THREE.Group();
   const B = new Builder();
   B.add(rbox(w, 90, 60, 3), MAT.plcBody, M4(0, 45, 30));
-  B.add(rbox(w - 4, 20, 16, 1.6), MAT.termBlock, M4(0, 80, 52.5));
-  B.add(rbox(w - 4, 20, 16, 1.6), MAT.termBlock, M4(0, 10, 52.5));
+  // terminal blocks sit a little below the top / above the bottom of the housing: flush faces on the
+  // same plane z-fight (the strip on top of the PLC flickered while orbiting or when LEDs changed)
+  B.add(rbox(w - 4, 18.6, 16, 1.6), MAT.termBlock, M4(0, 79.3, 52.5));
+  B.add(rbox(w - 4, 18.6, 16, 1.6), MAT.termBlock, M4(0, 10.7, 52.5));
   B.add(rbox(w - 8, 44, 22, 3), MAT.plcFront, M4(0, 45, 71));
   B.add(box(30, 12, 18), MAT.darkPlastic, M4(0, -2, 20)); // DIN clip
   const ports = devicePorts(dev);
@@ -89,9 +91,9 @@ function buildPlc(dev) {
   const top = ports.filter((p) => p.kind === 'term' && p.pos[1] > 45);
   const bot = ports.filter((p) => p.kind === 'term' && p.pos[1] <= 45);
   const lt = labelStrip(w - 6, 4.6, top.map((p) => ({ x: p.pos[0], label: p.label, size: p.label.length > 3 ? 2 : 2.4 })));
-  lt.position.set(0, 87.2, 60.6); group.add(lt);
+  lt.position.set(0, 85.8, 60.65); group.add(lt);
   const lb = labelStrip(w - 6, 4.6, [...bot.map((p) => ({ x: p.pos[0], label: p.label, size: p.label.length > 3 ? 2 : 2.4 })), { x: com2.pos[0], label: 'D+ D− SG', size: 2 }]);
-  lb.position.set(0, 2.8, 60.6); group.add(lb);
+  lb.position.set(0, 4.2, 60.65); group.add(lb);
 
   // LEDs
   const leds = { pow: ledMat('#36ff6a'), run: ledMat('#36ff6a'), err: ledMat('#ff3b30'), x: [], y: [] };
