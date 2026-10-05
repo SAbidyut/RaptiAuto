@@ -269,7 +269,7 @@ export class LabScene {
     const center = box.getCenter(new THREE.Vector3());
     const dist = this.fitDistance(box, center, dir, margin);
     const pos = center.clone().add(dir.multiplyScalar(dist));
-    if (!animate) { this.camera.position.copy(pos); this.controls.target.copy(center); this.controls.update(); this.camera.updateMatrixWorld(); this.dirty = true; return; }
+    if (!animate) { this.anim = null; this.camera.position.copy(pos); this.controls.target.copy(center); this.controls.update(); this.camera.updateMatrixWorld(); this.dirty = true; return; }
     this.anim = { t0: performance.now(), dur, p0: this.camera.position.clone(), p1: pos, c0: this.controls.target.clone(), c1: center };
   }
 
