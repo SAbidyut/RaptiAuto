@@ -36,7 +36,13 @@ export class PanelView {
     this.buildOverlay();
     this.box = new SelectBox(this.el);
     const want = this.initialView();
-    if (this.scene.setMode(want) !== want) this.no3d = true;
+    try {
+      if (this.scene.setMode(want) !== want) this.no3d = true;
+    } catch (e) {
+      console.error(e);
+      setTimeout(() => toast(`Could not open the ${want.toUpperCase()} view — ${(e && e.message) || e}`, 'error', 9000), 400);
+      this.scene.setMode(want === '2d' ? '3d' : '2d');
+    }
     this.updateViewSeg();
     const opts = { capture: true };
     this.host.addEventListener('pointerdown', (e) => this.onDown(e), opts);
@@ -78,12 +84,22 @@ export class PanelView {
 
   /** Switch the view; remembered for the next labs. */
   setView(mode, remember = true) {
-    if (mode === this.scene.mode) return;
+    if (mode === this.scene.mode) { this.updateViewSeg(); return; }
     const first = mode === '3d' ? !this.scene.s3 : !this.scene.s2;
-    const got = this.scene.setMode(mode);
+    let got;
+    try {
+      got = this.scene.setMode(mode);
+      if (first && got === mode) this.restoreView(mode, false);
+    } catch (e) {
+      // never fail silently: say what went wrong and keep the view that works
+      console.error(e);
+      toast(`Could not open the ${mode.toUpperCase()} view — ${(e && e.message) || e}`, 'error', 9000);
+      if (this.scene.mode !== mode || !got) { try { this.scene.setMode(mode === '2d' ? '3d' : '2d'); } catch (e2) { /* keep what is shown */ } }
+      this.updateViewSeg();
+      return;
+    }
     if (got !== mode) { toast('3D needs WebGL 2, which this phone does not have', 'warn'); this.updateViewSeg(); return; }
     if (remember) { this.lab.settings.labView = mode; this.lab.app.saveSettings(); }
-    if (first) this.restoreView(mode, false);
     this.box.cancel();
     this.updateViewSeg();
     Native.vibrate(8);
@@ -104,9 +120,24 @@ export class PanelView {
     });
   }
 
+  /** 2D / 3D buttons react on pointerup (a tap that moves a little never becomes a click on some
+   *  phones) and on click (keyboard, mouse) — but only once per tap. */
+  viewTap(e, mode) {
+    const now = performance.now();
+    if (e.type === 'click' && now - (this.viewTapAt || 0) < 600) return;
+    if (e.type === 'pointerup') this.viewTapAt = now;
+    this.setView(mode);
+  }
+
   updateViewSeg() {
     for (const b of this.viewSeg.children) b.classList.toggle('active', b.dataset.view === this.scene.mode);
     this.el.classList.toggle('is-2d', this.scene.mode === '2d');
+    this.placeChips();
+  }
+
+  /** Start the focus chips right of the 2D / 3D switch (its width grows with the phone's font size). */
+  placeChips() {
+    requestAnimationFrame(() => { const w = this.viewSeg.offsetWidth; if (w) this.chips.style.left = this.viewSeg.offsetLeft + w + 8 + 'px'; });
   }
 
   /** First 3D lab on a phone without a saved choice: fall back to 2D when 3D is clearly too slow. */
@@ -124,7 +155,7 @@ export class PanelView {
     }, 3200);
   }
 
-  onShow() { this.scene.visible = true; this.scene.dirty = true; requestAnimationFrame(() => this.scene.resize()); }
+  onShow() { this.scene.visible = true; this.scene.dirty = true; requestAnimationFrame(() => this.scene.resize()); this.placeChips(); }
 
   onBack() {
     if (this.potCard) { this.closePot(); return true; }
@@ -155,8 +186,8 @@ export class PanelView {
       tool('zoomIn', 'Zoom in', () => { const r = this.host.getBoundingClientRect(); this.scene.zoomAt(1.5, r.left + r.width / 2, r.top + r.height / 2); }),
       tool('fullscreen', 'Full screen', () => this.lab.setFullscreen(!this.lab.fullscreen)));
     this.viewSeg = h('div', { class: 'segmented lab-view-seg' },
-      h('button', { class: 'seg', 'data-view': '2d', title: '2D wiring schematic', html: `${icon('schematic', 15)}<span>2D</span>`, onclick: () => this.setView('2d') }),
-      h('button', { class: 'seg', 'data-view': '3d', title: '3D lab', html: `${icon('cube', 15)}<span>3D</span>`, onclick: () => this.setView('3d') }));
+      h('button', { class: 'seg', 'data-view': '2d', title: '2D wiring schematic', html: `${icon('schematic', 15)}<span>2D</span>`, onclick: (e) => this.viewTap(e, '2d'), onpointerup: (e) => this.viewTap(e, '2d') }),
+      h('button', { class: 'seg', 'data-view': '3d', title: '3D lab', html: `${icon('cube', 15)}<span>3D</span>`, onclick: (e) => this.viewTap(e, '3d'), onpointerup: (e) => this.viewTap(e, '3d') }));
     this.chips = h('div', { class: 'lab-chips' });
     this.selBar = h('div', { class: 'sel-bar hidden' });
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });

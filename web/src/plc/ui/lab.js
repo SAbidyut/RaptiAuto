@@ -261,6 +261,7 @@ export class LabScreen {
       { icon: 'undo', label: 'Undo wiring / devices', action: () => this.undo() },
       { icon: 'redo', label: 'Redo', action: () => this.redo() },
       { icon: 'columns', label: this.settings.labSplit === false ? 'Side by side in landscape' : 'One panel at a time', action: () => { this.settings.labSplit = this.settings.labSplit === false; this.app.saveSettings(); this.split = null; this.updateLayout(); } },
+      { icon: this.scene.mode === '2d' ? 'cube' : 'schematic', label: this.scene.mode === '2d' ? 'Show the 3D lab' : 'Show the 2D wiring schematic', action: () => { this.setTab('panel'); this.views.panel.setView(this.scene.mode === '2d' ? '3d' : '2d'); } },
       { icon: 'fullscreen', label: 'Full screen', action: () => this.setFullscreen(true) },
       { icon: 'clock', label: `Simulation speed: ${fmtSpeed(this.speed || 1)}`, action: () => this.chooseSpeed() },
       { icon: 'sliders', label: `3D quality: ${this.settings.labQuality === 'low' ? 'Fast' : 'High'}`, action: () => { this.settings.labQuality = this.settings.labQuality === 'low' ? 'high' : 'low'; this.app.saveSettings(); toast('Re-open the lab to apply the 3D quality'); } },

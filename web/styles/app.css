@@ -400,7 +400,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .menu-item .ic { color: var(--muted); }
 .menu-sep { height: 1px; margin: 5px 8px; background: var(--line); }
 .toast-host { position: fixed; left: 0; right: 0; bottom: calc(86px + var(--safe-b)); z-index: 90; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px; }
-.toast { pointer-events: auto; max-width: 520px; display: flex; align-items: flex-start; gap: 9px; padding: 11px 15px; border-radius: 15px; background: rgba(20, 30, 56, .96); border: 1px solid var(--line2); box-shadow: 0 16px 36px -12px rgba(0, 0, 0, .8); font-size: 13.5px; line-height: 1.4; font-weight: 500; transform: translateY(16px); opacity: 0; transition: all .25s cubic-bezier(.2, .9, .3, 1.2); backdrop-filter: blur(12px); }
+.toast { pointer-events: none; max-width: 520px; display: flex; align-items: flex-start; gap: 9px; padding: 11px 15px; border-radius: 15px; background: rgba(20, 30, 56, .96); border: 1px solid var(--line2); box-shadow: 0 16px 36px -12px rgba(0, 0, 0, .8); font-size: 13.5px; line-height: 1.4; font-weight: 500; transform: translateY(16px); opacity: 0; transition: all .25s cubic-bezier(.2, .9, .3, 1.2); backdrop-filter: blur(12px); }
 .toast.show { transform: none; opacity: 1; }
 .toast .ic { margin-top: 1px; }
 .toast-ok .ic { color: var(--ok); }

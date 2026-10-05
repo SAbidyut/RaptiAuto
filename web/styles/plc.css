@@ -452,8 +452,8 @@
 .ll-spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(34, 211, 238, .25); border-top-color: #22d3ee; animation: spin .8s linear infinite; }
 
 /* ---------------------------------------------------------------- 2D / 3D toggle */
-.lab-view-seg { position: absolute; left: calc(10px + var(--safe-l)); bottom: 10px; z-index: 4; padding: 2px; background: rgba(10, 16, 32, .84); border-color: var(--line2); backdrop-filter: blur(12px); }
-.lab-view-seg .seg { height: 28px; padding: 0 9px; gap: 5px; font-size: 12.5px; font-weight: 800; }
+.lab-view-seg { position: absolute; left: calc(10px + var(--safe-l)); bottom: 10px; z-index: 6; touch-action: manipulation; padding: 2px; background: rgba(10, 16, 32, .84); border-color: var(--line2); backdrop-filter: blur(12px); }
+.lab-view-seg .seg { touch-action: manipulation; height: 28px; padding: 0 9px; gap: 5px; font-size: 12.5px; font-weight: 800; }
 .lab-view-seg .seg.active { background: rgba(34, 211, 238, .2); color: #a5f3fc; box-shadow: none; }
 .panel-view .lab-chips { left: calc(134px + var(--safe-l)); padding-left: 0; }
 .lab-3d-host.view-2d .lab-3d, .lab-3d-host.view-3d .schem { display: none; }

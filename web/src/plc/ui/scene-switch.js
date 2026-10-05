@@ -32,10 +32,19 @@ export class SceneSwitch {
       if (!this.s3.failed) this.prime(this.s3);
     }
     if (mode === '3d' && this.s3.failed) mode = '2d';
-    if (mode === '2d' && !this.s2) { this.s2 = new LabSchematic(this.host, this.opts); this.prime(this.s2); }
+    if (mode === '2d' && !this.s2) {
+      const s2 = new LabSchematic(this.host, this.opts);
+      // a view that could not be brought up must not stay half-built: the next try starts afresh
+      try { this.prime(s2); } catch (e) { s2.dispose(); throw e; }
+      this.s2 = s2;
+    }
     this.mode = mode;
     this.host.classList.toggle('view-2d', mode === '2d');
     this.host.classList.toggle('view-3d', mode === '3d');
+    // hide the other view directly as well (does not depend on the stylesheet)
+    const canvas = this.s3 && this.s3.renderer && this.s3.renderer.domElement;
+    if (canvas) canvas.style.display = mode === '3d' ? '' : 'none';
+    if (this.s2) this.s2.svg.style.display = mode === '2d' ? '' : 'none';
     for (const s of this.all) s.visible = s === this.active && this._visible;
     const a = this.active;
     a.dirty = true;
