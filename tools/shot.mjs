@@ -240,6 +240,18 @@ const scenarios = {
     await page.click('.task-pill'); await sleep(700);
     await page.screenshot({ path: join(outDir, 'labtasks-sheet.png') });
   },
+  async labnew(page) {
+    await scenarios.page(page, 'plclab');
+    await page.click('.lab-intro .btn-primary'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labnew-sheet.png') });
+    await page.click('.lab-new .board-item >> text=DVP-32ES2'); await sleep(2600);
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 50; i++) s.step(20); });
+    const st = await page.evaluate(() => { const l = window.__rapti.lab; return { plc: l.sys.plc.def.short, powered: l.sys.plc.cpu.powered, issues: l.sys.issues.map((i) => i.text) }; });
+    console.log('new lab', JSON.stringify(st));
+    await page.evaluate(() => window.__rapti.lab.scene.focus('plc', false)); await sleep(1500);
+    await page.screenshot({ path: join(outDir, 'labnew-32es2.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);
