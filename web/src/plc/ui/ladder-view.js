@@ -4,7 +4,7 @@ import { h, toast, Sheet, popupMenu, promptDialog, dialog, confirmDialog, deboun
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
 import {
-  INSTR, COLS, emptyRung, newElement, placeContact, placeParallel, placeOutput, toggleLink, addRow, deleteRow, trimRows,
+  INSTR, COLS, emptyRung, newElement, placeContact, placeParallel, placeOutput, toggleLink, addRow, deleteRow, trimRows, insertCell, deleteCell,
   compileProgram, programIL, elementText, mnemonic, isOutputType,
 } from '../sim/ladder.js';
 import { parseOperand, addrSortKey, SPECIAL, fmtAddr } from '../sim/address.js';
@@ -297,6 +297,9 @@ export class LadderView {
       { icon: 'edit', label: 'Network comment', action: () => this.editComment() },
       { icon: 'trash', label: 'Delete network', danger: true, action: async () => { if (await confirmDialog('Delete network?', `Network ${this.cur.rung + 1} will be removed.`, 'Delete', true)) this.deleteNetwork(); } },
       '-',
+      { icon: 'upload', label: 'Upload from PLC', action: () => this.upload() },
+      { icon: 'eraser', label: 'PLC memory clear', action: () => this.memoryClear() },
+      '-',
       { icon: 'list', label: 'Instruction list (IL)', action: () => this.showIL() },
       { icon: 'check', label: 'Compile / check', action: () => { this.compile(); this.showOutput(true); } },
       { icon: 'book', label: 'Device comments', action: () => this.showComments() },
@@ -365,6 +368,34 @@ export class LadderView {
     if (run) this.plcRun(true);
     this.render();
     this.updateBanner();
+  }
+
+  /** ISPSoft "Upload": read the program stored in the PLC back into the editor. */
+  async upload() {
+    const plc = await this.lab.ensureOnline();
+    if (!plc) return;
+    const d = this.lab.project.plc && this.lab.project.plc.downloaded;
+    if (!d) { toast('The PLC has no program', 'warn'); return; }
+    if (!this.inSync() && !(await confirmDialog('Upload from PLC?', 'Your unsaved edits in the editor will be replaced by the program in the PLC.', 'Upload'))) return;
+    await this.progress('Reading program from PLC…', 700);
+    this.prog.rungs = JSON.parse(JSON.stringify(d.rungs));
+    this.prog.comments = { ...this.prog.comments, ...(d.comments || {}) };
+    this.cur = { rung: 0, row: 0, col: 0 };
+    this.commit('Upload');
+    toast('Program uploaded from the PLC', 'ok');
+  }
+
+  /** ISPSoft "PLC memory clear": reset devices (latched areas too). */
+  async memoryClear() {
+    const plc = await this.lab.ensureOnline();
+    if (!plc) return;
+    if (!(await confirmDialog('PLC memory clear', 'All M, S, T, C and D devices — including the latched (retentive) areas — are reset to 0. The program stays.', 'Clear', true))) return;
+    const cpu = plc.cpu;
+    cpu.M.fill(0); cpu.S.fill(0); cpu.T.fill(0); cpu.TV.fill(0); cpu.tacc.fill(0); cpu.C.fill(0); cpu.CV.fill(0); cpu.D.fill(0);
+    cpu.setDefaults();
+    this.lab.project.plc.latched = null;
+    this.lab.save();
+    toast('PLC memory cleared', 'ok');
   }
 
   progress(text, ms) {
@@ -756,6 +787,8 @@ export class LadderView {
     if (el && (el.t === 'NO' || el.t === 'NC')) items.push({ icon: 'flip', label: el.t === 'NO' ? 'Change to NC' : 'Change to NO', action: () => { el.t = el.t === 'NO' ? 'NC' : 'NO'; this.commit('Toggle'); } });
     if (el && el.a && el.a[0] && parseOperand(el.a[0]) && !/^[KH]/.test(el.a[0])) items.push({ icon: 'book', label: `Comment for ${el.a[0]}`, action: async () => { const v = await promptDialog(`Comment for ${el.a[0]}`, this.prog.comments[el.a[0]] || ''); if (v !== null && v !== undefined) { if (v) this.prog.comments[el.a[0]] = v; else delete this.prog.comments[el.a[0]]; this.commit('Comment'); } } });
     if (c.col !== 'out') items.push({ icon: 'columns', label: r2.vl[c.row] && r2.vl[c.row][c.col] ? 'Remove vertical line' : 'Vertical line down', action: () => this.toggleV() });
+    if (c.col !== 'out') items.push({ icon: 'arrowRight', label: 'Insert cell (shift right)', action: () => { if (insertCell(r2, c.row, c.col)) this.commit('Insert cell'); else toast('The row is full', 'warn'); } });
+    if (c.col !== 'out' && el) items.push({ icon: 'arrowLeft', label: 'Delete cell (shift left)', action: () => { deleteCell(r2, c.row, c.col); this.commit('Delete cell'); } });
     if (el) items.push({ icon: 'trash', label: 'Delete', danger: true, action: () => this.deleteAt() });
     items.push('-', { icon: 'plus', label: 'Insert row below', action: () => { addRow(r2, c.row + 1); this.commit('Row'); } }, { icon: 'plus', label: 'Insert network below', action: () => this.addNetwork() });
     popupMenu(anchor, items);

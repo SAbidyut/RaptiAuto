@@ -250,11 +250,22 @@ export class LabScreen {
       { icon: 'redo', label: 'Redo', action: () => this.redo() },
       { icon: 'columns', label: this.settings.labSplit === false ? 'Side by side in landscape' : 'One panel at a time', action: () => { this.settings.labSplit = this.settings.labSplit === false; this.app.saveSettings(); this.split = null; this.updateLayout(); } },
       { icon: 'fullscreen', label: 'Full screen', action: () => this.setFullscreen(true) },
+      { icon: 'clock', label: `Simulation speed: ${fmtSpeed(this.speed || 1)}`, action: () => this.chooseSpeed() },
       { icon: 'sliders', label: `3D quality: ${this.settings.labQuality === 'low' ? 'Fast' : 'High'}`, action: () => { this.settings.labQuality = this.settings.labQuality === 'low' ? 'high' : 'low'; this.app.saveSettings(); toast('Re-open the lab to apply the 3D quality'); } },
       '-',
       this.tasks ? { icon: 'target', label: `Lab tasks (${this.project.tasksDone.length}/${this.tasks.length})`, action: () => this.showTasks() } : null,
       { icon: 'help', label: 'How to use the lab', action: () => this.help() },
     ]);
+  }
+
+  chooseSpeed() {
+    const content = h('div', { class: 'opt-grid speed-grid' });
+    const sheet = new Sheet({ title: 'Simulation speed', content, icon: 'clock' });
+    for (const k of [0.25, 0.5, 1, 2, 4]) {
+      content.appendChild(h('button', { class: 'opt' + ((this.speed || 1) === k ? ' active' : ''), onclick: () => { this.speed = k; sheet.close(); this.lastStatus = null; this.updateStatus(); toast(`Simulation speed ${fmtSpeed(k)}`); } }, fmtSpeed(k)));
+    }
+    content.appendChild(h('p', { class: 'muted small' }, 'Slow motion helps to follow timers and ramps; fast-forward skips long waits. Timers, ramps and communication all scale together.'));
+    sheet.open();
   }
 
   help() {
@@ -328,7 +339,7 @@ export class LabScreen {
     this.lastT = t;
     const sys = this.sys;
     if (sys) {
-      sys.step(dt * 1000);
+      sys.step(dt * 1000 * (this.speed || 1));
       this.frameAcc = (this.frameAcc || 0) + dt;
       // HMI screen (≈ 20 fps)
       this.hmiAcc = (this.hmiAcc || 0) + dt;
@@ -456,6 +467,7 @@ export class LabScreen {
     const mm = Math.floor(t / 60), ss = (t - mm * 60).toFixed(1).padStart(4, '0');
     const chip = (cls, txt) => `<span class="ls-chip ${cls}">${txt}</span>`;
     let html = `<span class="dot live"></span><b>${String(mm).padStart(2, '0')}:${ss}</b>`;
+    if ((this.speed || 1) !== 1) html += `<span class="ls-chip warn">${fmtSpeed(this.speed)}</span>`;
     if (s.plc) html += chip(s.plc === 'RUN' ? 'ok' : s.plc === 'STOP' ? 'warn' : 'off', `PLC ${s.plc}`);
     if (s.scan !== null && s.scan !== undefined) html += `<span class="ls-dim">${s.scan.toFixed(1)} ms</span>`;
     if (s.hmi) html += chip(s.hmi === 'ok' ? 'ok' : s.hmi === 'err' ? 'err' : 'off', 'HMI');
@@ -526,3 +538,5 @@ export class LabScreen {
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function fmtSpeed(k) { return k === 0.25 ? '¼×' : k === 0.5 ? '½×' : k + '×'; }

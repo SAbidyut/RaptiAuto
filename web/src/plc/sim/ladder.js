@@ -161,6 +161,23 @@ export function placeOutput(rung, r, el) {
   } else fillToOutput(rung, r);
 }
 
+/** Insert an empty cell at (r, c), shifting the rest of the row right. False if the row is full. */
+export function insertCell(rung, r, c) {
+  const row = rung.cells[r];
+  const last = row[row.length - 1];
+  if (last && last.t !== 'H') return false;
+  for (let i = row.length - 1; i > c; i--) row[i] = row[i - 1];
+  row[c] = null;
+  return true;
+}
+
+/** Delete the cell at (r, c), shifting the rest of the row left (a line fills the end if the row has an output). */
+export function deleteCell(rung, r, c) {
+  const row = rung.cells[r];
+  for (let i = c; i < row.length - 1; i++) row[i] = row[i + 1];
+  row[row.length - 1] = rung.outs[r] && row[row.length - 2] ? { t: 'H', a: [] } : null;
+}
+
 export function toggleLink(rung, r, c) {
   if (r >= rung.cells.length - 1) addRow(rung);
   rung.vl[r][c] = !rung.vl[r][c];
