@@ -140,7 +140,7 @@ const rboxCache = new Map();
 export function rbox(w, h, d, r = 2, seg = 2) {
   const k = [w, h, d, r, seg].join(',');
   let g = rboxCache.get(k);
-  if (!g) { g = new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01)); rboxCache.set(k, g); }
+  if (!g) { g = new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01)); g.userData.shared = true; rboxCache.set(k, g); }
   return g;
 }
 export const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);

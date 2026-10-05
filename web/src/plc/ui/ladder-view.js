@@ -517,7 +517,7 @@ export class LadderView {
       const L = this.layout[ri];
       if (L.y + L.h < wy0 || L.y > wy1) return;
       const selR = ri === this.cur.rung;
-      const live = cpu ? cpu.rungLive(this.compiledIndex(ri)) : null;
+      const live = cpu && cpu.running ? cpu.rungLive(this.compiledIndex(ri)) : null;
       const y0 = L.y + HEAD;
       const rows = rung.cells.length;
       // header

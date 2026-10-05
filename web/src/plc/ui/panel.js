@@ -158,6 +158,7 @@ export class PanelView {
     if (!ctl) return;
     this.scene.controls.enabled = false;
     this.active = { ctl, id: e.pointerId };
+    try { this.host.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     this.down = null;
     const sys = this.scene.system;
     switch (ctl.action) {

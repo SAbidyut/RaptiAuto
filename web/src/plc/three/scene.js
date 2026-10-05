@@ -424,7 +424,7 @@ export class LabScene {
 
   selectDevice(id) {
     if (this.selBox) { this.scene.remove(this.selBox); this.selBox.geometry.dispose(); this.selBox = null; }
-    if (this.selLabel) { this.scene.remove(this.selLabel); this.selLabel = null; }
+    if (this.selLabel) { this.scene.remove(this.selLabel); this.selLabel.material.map.dispose(); this.selLabel.material.dispose(); this.selLabel = null; }
     const e = id && this.models.get(id);
     if (e) {
       const box = new THREE.Box3().setFromObject(e.model.group).expandByScalar(4);

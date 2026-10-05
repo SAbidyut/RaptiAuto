@@ -194,7 +194,7 @@ export function setCableHighlight(cable, on) {
 
 export function disposeCable(cable) {
   cable.traverse((o) => {
-    if (o.isMesh && o.geometry && o.userData.isCable) o.geometry.dispose();
+    if (o.isMesh && o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
   });
   const u = cable.userData;
   if (u.ins) { if (u.ins.map) u.ins.map.dispose(); if (u.flow) u.flow.dispose(); u.ins.dispose(); }

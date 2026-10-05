@@ -416,6 +416,20 @@ export function compileProgram(program, model) {
       if (cur.length > 1) groups.push(cur);
       merges.push(groups);
     }
+    // contacts that can never pass power to an output (open branches)
+    const g = buildGraph(rung);
+    const outNodes = new Set();
+    for (let r = 0; r < rows; r++) if (rung.outs[r]) outNodes.add(g.node(r, cols));
+    const fwd = new Set([g.rail]);
+    let grew = true;
+    while (grew) { grew = false; for (const e of g.edges) if (fwd.has(e.u) && !fwd.has(e.v)) { fwd.add(e.v); grew = true; } }
+    const bwd = new Set(outNodes);
+    grew = true;
+    while (grew) { grew = false; for (const e of g.edges) if (bwd.has(e.v) && !bwd.has(e.u)) { bwd.add(e.u); grew = true; } }
+    for (const e of g.edges) {
+      if (e.x.k !== 'L' || (fwd.has(e.u) && bwd.has(e.v))) continue;
+      warnings.push({ ...loc(e.x.r, e.x.c), msg: `Network ${ri + 1}: ${elementText(e.x.el) || e.x.el.t} is not connected (open branch — add a line or a vertical link)` });
+    }
     const res = rungIL(rung);
     il.push({ rung: ri, lines: res.lines, error: res.error });
     if (res.error) errors.push({ ...loc(0, 0), msg: `Network ${ri + 1}: ${res.error}` });
