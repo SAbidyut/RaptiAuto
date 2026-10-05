@@ -3,10 +3,11 @@
 import { h, Sheet } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
-import { INSTR, CMP_OPS, OPERAND_DEVS, mnemonic } from '../sim/ladder.js';
+import { INSTR, INSTR_GROUPS, CMP_OPS, OPERAND_DEVS, mnemonic } from '../sim/ladder.js';
 import { parseOperand, DEVICES, SPECIAL } from '../sim/address.js';
 
 const DEV_KEYS = ['X', 'Y', 'M', 'S', 'T', 'C', 'D', 'K', 'H'];
+const PTR_KEYS = ['N', 'P']; // shown only for MC / MCR (N) and CJ / CALL (P)
 
 /**
  * Open the keypad. el = existing element ({t, a, op, p}). Resolves via onDone(newEl) or nothing on cancel.
@@ -59,7 +60,9 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     if (pulseRow) { pulseRow.className = 'kp-pulse' + (pulse ? ' active' : ''); pulseRow.innerHTML = `${icon(pulse ? 'check' : 'bolt', 15)}<span>${pulse ? 'Pulse (P): runs once on the rising edge' : 'Continuous: runs every scan while ON — tap for P (pulse)'}</span>`; }
     devRow.innerHTML = '';
     const al = allowed();
-    for (const k of DEV_KEYS) {
+    const devKeys = al.some((k) => PTR_KEYS.includes(k)) ? PTR_KEYS.filter((k) => al.includes(k)) : DEV_KEYS;
+    devRow.classList.toggle('few', devKeys.length < DEV_KEYS.length);
+    for (const k of devKeys) {
       const on = al.includes(k);
       devRow.appendChild(h('button', { class: 'kp-key dev' + ((vals[field] || '')[0] === k ? ' active' : ''), disabled: !on, onclick: () => setDev(k) }, k));
     }
@@ -77,6 +80,8 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     info.textContent = '';
     if (vals[field] && !o) err.textContent = /^[XY]\d*[89]/.test(vals[field]) ? 'X / Y are numbered in octal: 0–7, 10–17, 20–27 …' : 'Not a valid device yet';
     else if (o && !al.includes(o.dev)) err.textContent = `${o.dev} cannot be used here — allowed: ${al.join(', ')}`;
+    else if (o && o.dev === 'P') info.textContent = `Pointer ${o.text}: long-press a network number → Pointer label to mark the target network`;
+    else if (o && o.dev === 'N') info.textContent = `Nesting level ${o.text} (N0 outermost … N7)`;
     else if (o) {
       const sp = SPECIAL[o.text];
       info.textContent = sp ? `${o.text}: ${sp}` : o.dev === 'K' ? `Decimal constant ${o.val}` : o.dev === 'H' ? `Hex constant = ${o.raw ?? o.val}` : `${DEVICES[o.dev].name}${o.dev === 'T' ? timerHint(o.idx) : ''}`;
@@ -141,7 +146,7 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     if (e.key === 'Tab') { e.preventDefault(); field = (field + 1) % Math.max(1, d.ops.length); fresh = true; draw(); return; }
     if (e.key === 'Backspace') { e.preventDefault(); press('⌫'); return; }
     if (/^[0-9]$/.test(k) || (isHex() && /^[A-F]$/.test(k))) { press(k); return; }
-    if (DEV_KEYS.includes(k) && allowed().includes(k)) setDev(k);
+    if ((DEV_KEYS.includes(k) || PTR_KEYS.includes(k)) && allowed().includes(k)) setDev(k);
   };
   const sheet = new Sheet({ title: title || 'Instruction', content, icon: 'ladder', cls: 'kp-sheet', onClose: () => window.removeEventListener('keydown', onKey) });
   window.addEventListener('keydown', onKey);
@@ -158,25 +163,33 @@ function timerHint(n) {
   return ' · 100 ms base (K10 = 1 s)';
 }
 
-/** Instruction picker (application instructions + compare contact). */
+/** Instruction picker: every instruction by group, with a search field. */
 export function openInstrPicker({ onPick }) {
-  const groups = [
-    ['Compare', ['CC', 'CMP']],
-    ['Data move & math', ['MOV', 'ADD', 'SUB', 'MUL', 'DIV', 'INC', 'DEC']],
-    ['Bits', ['ALT', 'ZRST', 'PLS', 'PLF']],
-    ['Timers & counters', ['TMR', 'CNT']],
-    ['Communication', ['MODRW']],
-  ];
   const content = h('div', { class: 'instr-picker' });
-  for (const [g, list] of groups) {
-    content.appendChild(h('div', { class: 'lib-cat' }, g));
-    for (const t of list) {
-      const d = INSTR[t];
-      content.appendChild(h('button', { class: 'ip-row', onclick: () => { sheet.close(); onPick(t); } },
-        h('span', { class: 'ip-mn' }, t === 'CC' ? 'LD>' : t),
-        h('div', { class: 'ip-text' }, h('b', {}, d.name), h('small', {}, d.api ? `API ${d.api} · ${d.labels.join(', ')}` : d.labels.join(', ') || 'Contact'))));
+  const search = h('input', { class: 'input ip-search', type: 'search', placeholder: 'Search: MOV, timer, shift, jump …', autocomplete: 'off' });
+  const list = h('div', { class: 'ip-list' });
+  const shown = (t) => t !== 'H' && t !== 'NO' && t !== 'NC' && t !== 'OUT';
+  const label = (t) => (t === 'CC' ? 'LD>' : t);
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    list.innerHTML = '';
+    for (const [cat, title] of INSTR_GROUPS) {
+      const ts = Object.keys(INSTR).filter((t) => INSTR[t].cat === cat && shown(t) && (!q || t.toLowerCase().includes(q) || INSTR[t].name.toLowerCase().includes(q) || title.toLowerCase().includes(q)));
+      if (!ts.length) continue;
+      list.appendChild(h('div', { class: 'lib-cat' }, title));
+      for (const t of ts) {
+        const d = INSTR[t];
+        const sub = [d.api !== undefined ? `API ${d.api}` : 'Basic', d.labels.length ? d.labels.join(', ') : d.kind === 'contact' ? 'Contact' : 'No operand', d.pulse ? 'P = pulse' : ''].filter(Boolean).join(' · ');
+        list.appendChild(h('button', { class: 'ip-row ip-' + d.kind + (d.flow ? ' ip-flow' : ''), onclick: () => { sheet.close(); onPick(t); } },
+          h('span', { class: 'ip-mn' }, label(t)),
+          h('div', { class: 'ip-text' }, h('b', {}, d.name), h('small', {}, sub))));
+      }
     }
-  }
+    if (!list.children.length) list.appendChild(h('p', { class: 'muted center' }, 'No instruction matches'));
+  };
+  search.addEventListener('input', draw);
+  content.append(search, list);
+  draw();
   const sheet = new Sheet({ title: 'Instructions', content, icon: 'ladder', cls: 'sheet-tall' });
   sheet.open();
 }

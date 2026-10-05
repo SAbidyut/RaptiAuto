@@ -10,6 +10,19 @@ import { routeLab } from '../devices/routing.js';
 import { DEVICE_DEFS, devicePorts, deviceProps } from '../devices/defs.js';
 import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
 
+// the camera stays this far (mm) in front of any surface: zooming, orbiting or panning never
+// takes it inside a device, the enclosure, the console or the bench
+const CAM_MARGIN = 50;
+
+/** Does a ray hit count as something solid the camera must not pass (not a label, glow or hit area)? */
+function isSolid(o) {
+  if (!o.isMesh || o.isSprite) return false;
+  const m = Array.isArray(o.material) ? o.material[0] : o.material;
+  if (!m || m.visible === false || (m.transparent && m.opacity < 0.3)) return false;
+  for (let p = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
+}
+
 const ringTexCache = new Map();
 function ringTexture(color) {
   let t = ringTexCache.get(color);
@@ -60,7 +73,7 @@ export class LabScene {
     c.enableDamping = true;
     c.dampingFactor = 0.1;
     c.screenSpacePanning = true;
-    c.minDistance = 90;
+    c.minDistance = 40;
     c.maxDistance = 4200;
     c.minPolarAngle = 0.08;
     c.maxPolarAngle = 1.52;
@@ -96,6 +109,9 @@ export class LabScene {
     this.env = null;
     this.envKey = '';
     this.raycaster = new THREE.Raycaster();
+    this.solidRay = new THREE.Raycaster();
+    this.safePos = null; // last camera position known to be outside every solid
+    this.clearance = Infinity; // free distance in front of the camera
     this.dirty = true;
     this.t = 0;
     this.running = false;
@@ -146,10 +162,11 @@ export class LabScene {
     this.dirty = false;
   }
 
-  /** Keep the depth range tight around what is looked at (no z-fighting / shimmering far away). */
+  /** Keep the depth range tight around what is looked at (no z-fighting / shimmering far away),
+   *  but never so deep that a surface right in front of the camera is cut open. */
   updateNear() {
     const d = this.camera.position.distanceTo(this.controls.target);
-    const near = Math.max(4, Math.min(80, d * 0.045));
+    const near = Math.max(2, Math.min(80, d * 0.045, this.clearance * 0.5));
     if (Math.abs(near - this.camera.near) > near * 0.08) { this.camera.near = near; this.camera.updateProjectionMatrix(); }
   }
 
@@ -266,7 +283,8 @@ export class LabScene {
     if (this.visible === false || this.lost) { this.lastRenderAt = 0; return; }
     const changed = this.controls.update();
     if (this.anim) this.stepAnim();
-    let dirty = this.dirty || changed || !!this.anim;
+    const pushed = this.keepOutside();
+    let dirty = this.dirty || changed || !!this.anim || pushed;
     if (this.system) {
       const ctx = { t: this.t, dt, running: this.running };
       for (const [id, entry] of this.models) {
@@ -301,6 +319,52 @@ export class LabScene {
       }
       this.lastRenderAt = this.lastNow;
     } else this.lastRenderAt = 0;
+  }
+
+  /**
+   * Collision for the camera: a move (pinch / wheel / double-tap zoom, orbit, pan) that would pass
+   * through a surface stops CAM_MARGIN in front of it, so the view never ends up inside an object.
+   * Camera flights (focus chips, the intro) end at a free spot and are not checked on the way.
+   * Returns true when the camera had to be held back.
+   */
+  keepOutside() {
+    const p = this.camera.position;
+    if (!this.safePos || (this.anim && this.anim.fly)) {
+      this.safePos = (this.safePos || new THREE.Vector3()).copy(p);
+      this.clearance = Infinity;
+      return false;
+    }
+    const move = this._move || (this._move = new THREE.Vector3());
+    move.subVectors(p, this.safePos);
+    const len = move.length();
+    if (len < 0.01) return false;
+    move.divideScalar(len);
+    const hit = this.firstSolid(this.safePos, move, len + CAM_MARGIN);
+    let pushed = false;
+    if (hit) {
+      p.copy(this.safePos).addScaledVector(move, Math.max(0, hit.distance - CAM_MARGIN));
+      pushed = true;
+    }
+    this.safePos.copy(p);
+    // free space straight ahead: the near plane must stay in front of a surface the camera is close to
+    const fwd = this._fwd || (this._fwd = new THREE.Vector3());
+    fwd.subVectors(this.controls.target, p);
+    const fl = fwd.length();
+    const ahead = fl > 0.01 ? this.firstSolid(p, fwd.divideScalar(fl), 170) : null;
+    this.clearance = ahead ? ahead.distance : Infinity;
+    return pushed;
+  }
+
+  /** First solid surface along a ray (devices, enclosure, ducts, console, bench, floor), or null. */
+  firstSolid(origin, dir, far) {
+    const rc = this.solidRay;
+    rc.set(origin, dir);
+    rc.near = 0;
+    rc.far = far;
+    rc.camera = this.camera;
+    const objs = [this.world, this.env, this.ducts].filter(Boolean);
+    for (const h of rc.intersectObjects(objs, true)) if (isSolid(h.object)) return h;
+    return null;
   }
 
   setSystem(sys) { this.system = sys; this.dirty = true; }
@@ -355,8 +419,8 @@ export class LabScene {
     const center = box.getCenter(new THREE.Vector3());
     const dist = this.fitDistance(box, center, dir, margin);
     const pos = center.clone().add(dir.multiplyScalar(dist));
-    if (!animate) { this.anim = null; this.camera.position.copy(pos); this.controls.target.copy(center); this.controls.update(); this.camera.updateMatrixWorld(); this.dirty = true; return; }
-    this.anim = { t0: performance.now(), dur, p0: this.camera.position.clone(), p1: pos, c0: this.controls.target.clone(), c1: center };
+    if (!animate) { this.anim = null; this.safePos = null; this.camera.position.copy(pos); this.controls.target.copy(center); this.controls.update(); this.camera.updateMatrixWorld(); this.dirty = true; return; }
+    this.anim = { t0: performance.now(), dur, p0: this.camera.position.clone(), p1: pos, c0: this.controls.target.clone(), c1: center, fly: true };
   }
 
   /** Smallest camera distance (along dir from center) at which every corner of box is on screen. */
@@ -403,7 +467,7 @@ export class LabScene {
   }
 
   getView() { return { p: this.camera.position.toArray().map((x) => Math.round(x)), t: this.controls.target.toArray().map((x) => Math.round(x)) }; }
-  setView(v) { if (!v) return; this.camera.position.fromArray(v.p); this.controls.target.fromArray(v.t); this.controls.update(); this.dirty = true; }
+  setView(v) { if (!v) return; this.safePos = null; this.camera.position.fromArray(v.p); this.controls.target.fromArray(v.t); this.controls.update(); this.dirty = true; }
 
   // ------------------------------------------------------------------ picking
   ndc(x, y) {

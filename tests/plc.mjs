@@ -1,8 +1,8 @@
 // Headless tests of the Delta PLC lab: node tests/plc.mjs
 import { parseOperand } from '../web/src/plc/sim/address.js';
-import { compileProgram, rungIL, addRow } from '../web/src/plc/sim/ladder.js';
+import { compileProgram, rungIL, addRow, programIL, emptyRung, placeOutput } from '../web/src/plc/sim/ladder.js';
 import { VfdMS300 } from '../web/src/plc/sim/vfd.js';
-import { rung, program } from '../web/src/plc/sim/dsl.js';
+import { rung, program, labelled } from '../web/src/plc/sim/dsl.js';
 import { PlcCpu } from '../web/src/plc/sim/plc.js';
 import { crc16, lrc, requestBytes, encodeFrame } from '../web/src/plc/sim/modbus.js';
 import { LabSystem } from '../web/src/plc/sim/system.js';
@@ -71,6 +71,122 @@ check('double coil warning', dbl.ok && dbl.warnings.some((w) => /Double coil/.te
   check('DIV quotient/remainder', cpu.D[4] === 3 && cpu.D[5] === 1);
   cpu.Xphys[1] = 0; run(10);
   check('NC stop breaks latch', cpu.Y[0] === 0);
+}
+
+// ---------------------------------------------------------------- more instructions (v2.3)
+{
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const mk = (rungs) => { const c = compileProgram(program(rungs), model); const cpu = new PlcCpu(model); cpu.load(c.ok ? c : null); cpu.powerOn(); return { c, cpu }; };
+  // data and logic instructions in one program, run for one scan
+  const { c, cpu } = mk([
+    rung('', ['M1000 =>| MOV K1234 D0', '=>| BCD D0 D1', '=>| BIN D1 D2', '=>| WAND H0F0F H00FF D3', '=>| WOR H0F00 H00F0 D4', '=>| WXOR HFFFF H00FF D5', '=>| CML K0 D6', '=> SWAP D7']),
+    rung('', ['M1000 =>| MOV K-25 D10', '=>| ABS D10', '=>| MOV K10 D11', '=>| NEG D11', '=>| SQR K144 D12', '=>| SCAL K4000 K500 K100 D13', '=> SUM H00F3 D14']),
+    rung('', ['M1000 =>| FMOV K7 D20 K4', '=>| BMOV D20 D30 K4', '=>| MOV K10 D40', '=>| MOV K20 D41', '=>| MEAN D40 D42 K2', '=> XCHP D40 D41']),
+    rung('', ['M1000 =>| ZCP K10 K20 K15 M20', '=>| BON H0004 M30 K2', '=>| DECO K5 M40 K3', '=>| MOV H0050 D50', '=> ENCO D50 D51 K3']),
+    rung('', ['M1000 =>| MOV H0001 D60', '=>| RORP D60 K1', '=>| MOV H8000 D61', '=> ROLP D61 K1']),
+    rung('', ['D0&K2 => OUT Y0']),
+    rung('', ['D0|K0 MEP => OUT Y1']),
+  ]);
+  check('new instructions compile', c.ok, JSON.stringify(c.errors));
+  cpu.D[7] = 0x1234;
+  cpu.step(5);
+  check('BCD / BIN round trip', (cpu.D[1] & 0xFFFF) === 0x1234 && cpu.D[2] === 1234, `${cpu.D[1].toString(16)} ${cpu.D[2]}`);
+  check('WAND / WOR / WXOR', cpu.D[3] === 0x000F && cpu.D[4] === 0x0FF0 && (cpu.D[5] & 0xFFFF) === 0xFF00, `${cpu.D[3]} ${cpu.D[4]} ${cpu.D[5]}`);
+  check('CML / SWAP', cpu.D[6] === -1 && cpu.D[7] === 0x3412, `${cpu.D[6]} ${cpu.D[7].toString(16)}`);
+  check('ABS / NEG / SQR', cpu.D[10] === 25 && cpu.D[11] === -10 && cpu.D[12] === 12);
+  check('SCAL (4000 × 0.5 + 100)', cpu.D[13] === 2100, cpu.D[13]);
+  check('SUM counts ON bits', cpu.D[14] === 6, cpu.D[14]);
+  check('FMOV / BMOV', [20, 21, 22, 23, 30, 31, 32, 33].every((i) => cpu.D[i] === 7));
+  check('MEAN', cpu.D[42] === 15, cpu.D[42]);
+  check('XCHP swaps once', cpu.D[40] === 20 && cpu.D[41] === 10, `${cpu.D[40]} ${cpu.D[41]}`);
+  check('ZCP inside the zone', cpu.M[20] === 0 && cpu.M[21] === 1 && cpu.M[22] === 0);
+  check('BON bit 2', cpu.M[30] === 1);
+  check('DECO 5 → M45', cpu.M[45] === 1 && cpu.M[44] === 0 && cpu.M[40] === 0);
+  check('ENCO H50 → 6', cpu.D[51] === 6, cpu.D[51]);
+  check('ROR / ROL', (cpu.D[60] & 0xFFFF) === 0x8000 && cpu.D[61] === 1, `${cpu.D[60]} ${cpu.D[61]}`);
+  check('word AND contact (LD&): 1234 & 2 ≠ 0', cpu.Y[0] === 1);
+  check('MEP: pulse on the first scan only', cpu.Y[1] === 1);
+  cpu.step(5);
+  check('MEP: off on the next scan', cpu.Y[1] === 0);
+  check('IL of LD& and MEP', JSON.stringify(c.il[5].lines.map((l) => l.text)) === '["LD& D0 K2","OUT Y0"]' && c.il[6].lines.map((l) => l.text).join(';') === 'LD| D0 K0;MEP;OUT Y1', JSON.stringify([c.il[5].lines, c.il[6].lines]));
+}
+{
+  // master control: MC N0 off → OUT Y0 inside drops out, MCR ends the block
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const prog = compileProgram(program([
+    rung('', ['X0 => MC N0']),
+    rung('', ['M1000 => OUT Y0']),
+    rung('', ['M1000 => TMR T1 K50']),
+    rung('', ['=> MCR N0']),
+    rung('', ['M1000 => OUT Y1']),
+  ]), model);
+  check('MC / MCR compile', prog.ok, JSON.stringify(prog.errors));
+  check('MCR IL stands on the bus bar', prog.il[3].lines.map((l) => l.text).join(';') === 'MCR N0', JSON.stringify(prog.il[3]));
+  const cpu = new PlcCpu(model); cpu.load(prog); cpu.powerOn();
+  cpu.step(10);
+  check('MC off: block without power', cpu.Y[0] === 0 && cpu.Y[1] === 1 && cpu.TV[1] === 0);
+  cpu.Xphys[0] = 1; cpu.step(300);
+  check('MC on: block runs', cpu.Y[0] === 1 && cpu.TV[1] > 0);
+  cpu.Xphys[0] = 0; cpu.step(10);
+  check('MC off again: coil and timer reset', cpu.Y[0] === 0 && cpu.TV[1] === 0);
+}
+{
+  // CJ skips networks; CALL runs a subroutine after FEND
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const prog = compileProgram(program([
+    rung('', ['X0 => CJ P0']),
+    rung('', ['M1000 => OUT Y0']),
+    labelled('P0', rung('', ['M1000 => CALL P5'])),
+    rung('', ['=> FEND']),
+    labelled('P5', rung('', ['M1000 => INC D0'])),
+    rung('', ['=> SRET']),
+  ]), model);
+  check('CJ / CALL / FEND / SRET compile', prog.ok, JSON.stringify(prog.errors));
+  check('IL shows the pointer labels', programIL(prog).map((l) => l.text).join(';') === 'LD X0;CJ P0;LD M1000;OUT Y0;P0;LD M1000;CALL P5;FEND;P5;LD M1000;INC D0;SRET;END', programIL(prog).map((l) => l.text).join(';'));
+  const cpu = new PlcCpu(model); cpu.load(prog); cpu.powerOn();
+  cpu.step(5);
+  check('CALL runs the subroutine once per scan', cpu.D[0] === 1 && cpu.Y[0] === 1, `D0=${cpu.D[0]}`);
+  cpu.Y[0] = 0; cpu.Xphys[0] = 1; cpu.step(5);
+  check('CJ skips the network (Y0 holds its state)', cpu.Y[0] === 0 && cpu.D[0] === 2);
+  const bad = compileProgram(program([rung('', ['X0 => CJ P9']), rung('', ['X1 => CALL P1']), labelled('P1', rung('', ['M1000 => OUT Y0']))]), model);
+  check('missing pointer / CALL before FEND are errors', bad.errors.some((e) => /no network has the pointer P9/.test(e.msg)) && bad.errors.some((e) => /after FEND/.test(e.msg)), JSON.stringify(bad.errors));
+  const loop = compileProgram(program([labelled('P0', rung('', ['M1000 => CJ P0']))]), model);
+  const c2 = new PlcCpu(model); c2.load(loop); c2.powerOn(); c2.step(5);
+  check('endless CJ loop trips the watchdog instead of hanging', c2.M[1067] === 1 && c2.errorFlag);
+}
+{
+  // step ladder: S0 → (X0) → S20 (Y0, timer 0.5 s) → S21 (Y1) → (X1) → S0
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const prog = compileProgram(program([
+    rung('', ['M1002 => SET S0']),
+    rung('', ['$S0 X0 => SET S20']),
+    rung('', ['$S20 =>| OUT Y0', '=> TMR T0 K5', 'T0 => SET S21']),
+    rung('', ['$S21 => OUT Y1', 'X1 => SET S0']),
+    rung('', ['=> RET']),
+  ]), model);
+  check('STL program compiles', prog.ok, JSON.stringify(prog.errors));
+  check('STL IL', prog.il[1].lines.map((l) => l.text).join(';') === 'STL S0;LD X0;SET S20' && prog.il[2].lines.map((l) => l.text).join(';').startsWith('STL S20;OUT Y0;TMR T0 K5'), JSON.stringify(prog.il.map((r) => r.lines.map((l) => l.text))));
+  const cpu = new PlcCpu(model); cpu.load(prog); cpu.powerOn();
+  cpu.step(10);
+  check('initial step S0', cpu.S[0] === 1 && cpu.S[20] === 0);
+  cpu.Xphys[0] = 1; cpu.step(10); cpu.Xphys[0] = 0;
+  check('S0 → S20, Y0 on', cpu.S[0] === 0 && cpu.S[20] === 1 && cpu.Y[0] === 1);
+  cpu.step(520);
+  check('timer moves S20 → S21: Y0 off, Y1 on', cpu.S[20] === 0 && cpu.S[21] === 1 && cpu.Y[0] === 0 && cpu.Y[1] === 1 && cpu.TV[0] === 0, `S20=${cpu.S[20]} S21=${cpu.S[21]} Y0=${cpu.Y[0]} Y1=${cpu.Y[1]} TV=${cpu.TV[0]}`);
+  cpu.Xphys[1] = 1; cpu.step(10); cpu.Xphys[1] = 0; cpu.step(10);
+  check('back to S0, Y1 off', cpu.S[0] === 1 && cpu.S[21] === 0 && cpu.Y[1] === 0);
+  const dbl = compileProgram(program([rung('', ['M1002 => SET S0']), rung('', ['$S0 => OUT Y0']), rung('', ['$S1 => OUT Y0']), rung('', ['=> RET'])]), model);
+  check('same coil in two steps is not a double coil', dbl.ok && !dbl.warnings.some((w) => /Double coil/.test(w.msg)), JSON.stringify(dbl.warnings));
+  const misplaced = compileProgram(program([rung('', ['X0 $S0 => OUT Y0'])]), model);
+  check('STL away from the bus bar is an error', !misplaced.ok, JSON.stringify(misplaced.errors));
+}
+{
+  // the editor puts FEND on a line from the bus bar
+  const r = emptyRung(8);
+  placeOutput(r, 0, { t: 'FEND', a: [] });
+  check('FEND placed on a bus-bar line', r.cells[0].every((x) => x && x.t === 'H') && rungIL(r).lines.map((l) => l.text).join(';') === 'FEND', JSON.stringify(rungIL(r)));
+  const r2 = rung('', ['X0 => FEND']);
+  check('FEND behind a contact is an error', !!rungIL(r2).error);
 }
 
 // ---------------------------------------------------------------- Modbus framing

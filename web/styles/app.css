@@ -227,8 +227,18 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .fs-btn.active { color: var(--accent); background: rgba(34, 211, 238, .12); }
 .fs-btn.fs-run { color: #4ade80; }
 .fs-btn.fs-run.running { color: #f87171; background: rgba(239, 68, 68, .14); }
-/* one panel in full screen: code and serial start right of the tool rail so nothing hides under it */
-.editor.fs:not(.split):not(.runsplit) .pane-code, .editor.fs:not(.split):not(.runsplit) .pane-serial { padding-left: calc(62px + var(--safe-l)); }
+/* full screen: the menus float over the content on frosted glass — showing or hiding them never
+   resizes the circuit, the code or the Serial Monitor (the text does not re-wrap) */
+.editor.fs .pane-code, .editor.fs .pane-serial { padding-left: var(--safe-l); }
+.editor.fs .code-bar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(70px + var(--safe-l)); right: calc(54px + var(--safe-r)); height: 46px; border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
+.editor.fs.split .code-bar { left: 8px; }
+.editor.fs .code-bar [title="Fullscreen"] { display: none; }
+.editor.fs:not(.runsplit) .serial-toolbar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(70px + var(--safe-l)); right: calc(54px + var(--safe-r)); border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
+.editor.fs.split:not(.runsplit) .serial-toolbar { left: 8px; }
+.editor.fs .fs-bar, .lab.fs .lab-fs-bar { background: rgba(10, 16, 32, .5) !important; border-color: rgba(148, 163, 184, .22) !important; backdrop-filter: blur(16px) saturate(150%) !important; -webkit-backdrop-filter: blur(16px) saturate(150%) !important; box-shadow: 0 16px 40px -18px rgba(0, 0, 0, .9); }
+.editor.fs:not(.fs-clean) .fs-bar, .editor.fs:not(.fs-clean) .code-bar, .editor.fs:not(.fs-clean):not(.runsplit) .serial-toolbar, .editor.fs:not(.fs-clean) .side-tools,
+.lab.fs:not(.fs-clean) .lab-fs-bar, .lab.fs:not(.fs-clean) .lab-tools, .lab.fs:not(.fs-clean) .lab-chips, .lab.fs:not(.fs-clean) .lab-mode, .lab.fs:not(.fs-clean) .lab-view-seg { animation: fsMenuIn .22s cubic-bezier(.2, .9, .3, 1.1); }
+@keyframes fsMenuIn { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
 
 /* full screen while running: circuit + Serial Monitor together (row in landscape, column in portrait) */
 .editor.fs.runsplit .ed-main { display: flex; flex-direction: row; }
@@ -661,7 +671,8 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
   .editor.fs .side-tools { top: calc(8px + var(--safe-t)); }
   .editor.fs .fs-bar { gap: 2px; padding: 4px; top: calc(8px + var(--safe-t)); }
   .fs-btn { width: 38px; height: 38px; }
-  .editor.fs:not(.split):not(.runsplit) .pane-code, .editor.fs:not(.split):not(.runsplit) .pane-serial { padding-left: calc(54px + var(--safe-l)); }
+  .editor.fs .code-bar, .editor.fs:not(.runsplit) .serial-toolbar { left: calc(62px + var(--safe-l)); }
+  .editor.fs.split .code-bar, .editor.fs.split:not(.runsplit) .serial-toolbar { left: 8px; }
 }
 
 /* ---------------------------------------------------------------- selection box (AutoCAD: window → right, crossing ← left) */
@@ -681,7 +692,5 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .editor.fs .fs-handle:active, .lab.fs .fs-handle:active { opacity: 1; background: rgba(34, 211, 238, .25); }
 .editor.fs:not(.fs-clean) .fs-handle, .lab.fs:not(.fs-clean) .fs-handle { opacity: 1; color: var(--accent); }
 .editor.fs:not(.fs-clean) .side-tools, .lab.fs:not(.fs-clean) .lab-tools { top: calc(52px + var(--safe-t)) !important; }
-.editor.fs.fs-clean .fs-bar, .editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar { display: none !important; }
-.editor.fs.fs-clean .pane-code, .editor.fs.fs-clean .pane-serial { padding-left: var(--safe-l) !important; }
+.editor.fs.fs-clean .fs-bar, .editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar, .editor.fs.fs-clean:not(.runsplit) .serial-toolbar { display: none !important; }
 .lab.fs.fs-clean .lab-fs-bar, .lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
-.lab.fs.fs-clean .lab-pane:not(.pane-panel) { padding-left: var(--safe-l) !important; }

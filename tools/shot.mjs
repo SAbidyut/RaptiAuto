@@ -175,6 +175,16 @@ const scenarios = {
     const il = await page.evaluate(() => { const v = window.__rapti.lab.views.ladder; return JSON.stringify(v.compiled.il.map((r) => r.lines.map((l) => l.text))); });
     console.log('IL', il);
   },
+  async labladderview(page, id = 'vfd-modbus-hmi') {
+    // the fixed-layout ladder: as wide as the screen, networks stacked, scrolls down only
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(1500);
+    await page.evaluate(() => window.__rapti.lab.setTab('ladder')); await sleep(900);
+    await page.screenshot({ path: join(outDir, `labladderview-${id}.png`) });
+    const m = await page.evaluate(() => { const v = window.__rapti.lab.views.ladder; return { sw: v.host.scrollWidth, cw: v.host.clientWidth, sh: v.host.scrollHeight, ch: v.host.clientHeight }; });
+    console.log('ladder scroll', JSON.stringify(m), m.sw <= m.cw ? 'no sideways scroll: OK' : 'SIDEWAYS SCROLL');
+    await page.evaluate(() => { const v = window.__rapti.lab.views.ladder; v.host.scrollTop = v.host.scrollHeight; }); await sleep(400);
+    await page.screenshot({ path: join(outDir, `labladderview-${id}-end.png`) });
+  },
   async labhero(page, id = 'vfd-modbus-hmi', focus = 'overview') {
     await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(1500);
     await page.click('.lab .run-btn'); await sleep(500);

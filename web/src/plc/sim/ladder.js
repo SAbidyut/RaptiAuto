@@ -20,44 +20,110 @@ const OPCLASS = {
   wordw: ['D', 'T', 'C'],
   dreg: ['D'],
   zone: ['Y', 'M', 'S', 'T', 'C', 'D'],
+  n: ['K', 'H'],
+  bitsrc: ['X', 'Y', 'M', 'S'],
+  bword: ['Y', 'M', 'S', 'D'],
+  wsrc: ['X', 'Y', 'M', 'S', 'D', 'T', 'C'],
+  step: ['S'],
+  nest: ['N'],
+  ptr: ['P'],
 };
 export const OPERAND_DEVS = OPCLASS;
 
+// kind: contact (in the grid), wire, out (coil) or box (API instruction, output column).
+// rail: may stand on the left bus bar with no contact in front (FEND, SRET, MCR, RET).
+// flow: changes the order the CPU runs the networks in (jumps, subroutines, master control, steps).
+// cat: group in the instruction picker.
 export const INSTR = {
-  NO: { kind: 'contact', name: 'Normally open contact', il: ['LD', 'AND', 'OR'], ops: ['bit'], labels: ['Device'], steps: 1, def: ['X0'] },
-  NC: { kind: 'contact', name: 'Normally closed contact', il: ['LDI', 'ANI', 'ORI'], ops: ['bit'], labels: ['Device'], steps: 1, def: ['X1'] },
-  P: { kind: 'contact', name: 'Rising-edge contact', il: ['LDP', 'ANDP', 'ORP'], ops: ['bit'], labels: ['Device'], steps: 2, def: ['X0'] },
-  F: { kind: 'contact', name: 'Falling-edge contact', il: ['LDF', 'ANDF', 'ORF'], ops: ['bit'], labels: ['Device'], steps: 2, def: ['X0'] },
-  CC: { kind: 'contact', name: 'Compare contact', il: ['LD', 'AND', 'OR'], ops: ['word', 'word'], labels: ['S1', 'S2'], steps: 5, def: ['D0', 'K10'], cmp: true },
-  INV: { kind: 'contact', name: 'Inverse (NOT)', il: [null, 'INV', null], ops: [], labels: [], steps: 1, def: [] },
+  NO: { kind: 'contact', cat: 'contact', name: 'Normally open contact', il: ['LD', 'AND', 'OR'], ops: ['bit'], labels: ['Device'], steps: 1, def: ['X0'] },
+  NC: { kind: 'contact', cat: 'contact', name: 'Normally closed contact', il: ['LDI', 'ANI', 'ORI'], ops: ['bit'], labels: ['Device'], steps: 1, def: ['X1'] },
+  P: { kind: 'contact', cat: 'contact', name: 'Rising-edge contact', il: ['LDP', 'ANDP', 'ORP'], ops: ['bit'], labels: ['Device'], steps: 2, def: ['X0'] },
+  F: { kind: 'contact', cat: 'contact', name: 'Falling-edge contact', il: ['LDF', 'ANDF', 'ORF'], ops: ['bit'], labels: ['Device'], steps: 2, def: ['X0'] },
+  CC: { kind: 'contact', cat: 'compare', name: 'Compare contact (=, <>, >, >=, <, <=, &, |, ^)', il: ['LD', 'AND', 'OR'], ops: ['word', 'word'], labels: ['S1', 'S2'], steps: 5, def: ['D0', 'K10'], cmp: true },
+  INV: { kind: 'contact', cat: 'contact', name: 'Inverse (NOT) of the result', il: [null, 'INV', null], ops: [], labels: [], steps: 1, def: [] },
+  MEP: { kind: 'contact', cat: 'contact', name: 'Rising edge of the result (pulse)', il: [null, 'MEP', null], ops: [], labels: [], steps: 1, def: [] },
+  MEF: { kind: 'contact', cat: 'contact', name: 'Falling edge of the result (pulse)', il: [null, 'MEF', null], ops: [], labels: [], steps: 1, def: [] },
+  STL: { kind: 'contact', cat: 'step', name: 'Step ladder: start of step S', il: ['STL', null, null], ops: ['step'], labels: ['Step'], steps: 1, def: ['S0'], stl: true, flow: true },
   H: { kind: 'wire', name: 'Horizontal line', ops: [], labels: [], steps: 0, def: [] },
-  OUT: { kind: 'out', name: 'Output coil', ops: ['bitw'], labels: ['Device'], steps: 1, def: ['Y0'] },
-  SET: { kind: 'out', name: 'Set (latch ON)', ops: ['bitw'], labels: ['Device'], steps: 1, def: ['M0'] },
-  RST: { kind: 'out', name: 'Reset (OFF / clear)', ops: ['rst'], labels: ['Device'], steps: 1, def: ['M0'] },
-  PLS: { kind: 'out', name: 'Rising-edge pulse output', ops: ['bitw'], labels: ['Device'], steps: 2, def: ['M10'] },
-  PLF: { kind: 'out', name: 'Falling-edge pulse output', ops: ['bitw'], labels: ['Device'], steps: 2, def: ['M11'] },
-  TMR: { kind: 'box', name: '16-bit timer', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T0', 'K10'] },
-  CNT: { kind: 'box', name: '16-bit counter', ops: ['counter', 'word'], labels: ['Counter', 'Set value'], steps: 4, def: ['C0', 'K10'] },
-  MOV: { kind: 'box', api: 12, name: 'Move', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['K0', 'D0'] },
-  ADD: { kind: 'box', api: 20, name: 'Addition  D = S1 + S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K1', 'D0'] },
-  SUB: { kind: 'box', api: 21, name: 'Subtraction  D = S1 − S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K1', 'D0'] },
-  MUL: { kind: 'box', api: 22, name: 'Multiplication  D+1,D = S1 × S2', ops: ['word', 'word', 'dreg'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'D2'] },
-  DIV: { kind: 'box', api: 23, name: 'Division  D = S1 ÷ S2, D+1 = remainder', ops: ['word', 'word', 'dreg'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'D2'] },
-  INC: { kind: 'box', api: 24, name: 'Increment  D = D + 1', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
-  DEC: { kind: 'box', api: 25, name: 'Decrement  D = D − 1', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
-  CMP: { kind: 'box', api: 10, name: 'Compare → 3 bits (>, =, <)', ops: ['word', 'word', 'bitw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'M10'] },
-  ZRST: { kind: 'box', api: 40, name: 'Zone reset', ops: ['zone', 'zone'], labels: ['D1', 'D2'], steps: 5, pulse: true, def: ['M0', 'M9'] },
-  ALT: { kind: 'box', api: 66, name: 'Alternate (toggle) bit', ops: ['bitw'], labels: ['D'], steps: 3, pulse: true, def: ['M0'], defP: true },
-  MODRW: { kind: 'box', api: 150, name: 'Modbus read / write (COM2)', ops: ['word', 'word', 'word', 'dreg', 'word'], labels: ['Station', 'Function', 'Address', 'Data reg.', 'Length'], steps: 11, def: ['K1', 'K6', 'H2000', 'D0', 'K1'] },
+  OUT: { kind: 'out', cat: 'coil', name: 'Output coil', ops: ['bitw'], labels: ['Device'], steps: 1, def: ['Y0'] },
+  SET: { kind: 'out', cat: 'coil', name: 'Set (latch ON)', ops: ['bitw'], labels: ['Device'], steps: 1, def: ['M0'] },
+  RST: { kind: 'out', cat: 'coil', name: 'Reset (OFF / clear)', ops: ['rst'], labels: ['Device'], steps: 1, def: ['M0'] },
+  PLS: { kind: 'out', cat: 'coil', name: 'Rising-edge pulse output', ops: ['bitw'], labels: ['Device'], steps: 2, def: ['M10'] },
+  PLF: { kind: 'out', cat: 'coil', name: 'Falling-edge pulse output', ops: ['bitw'], labels: ['Device'], steps: 2, def: ['M11'] },
+  TMR: { kind: 'box', cat: 'timer', name: '16-bit timer', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T0', 'K10'] },
+  CNT: { kind: 'box', cat: 'timer', name: '16-bit counter', ops: ['counter', 'word'], labels: ['Counter', 'Set value'], steps: 4, def: ['C0', 'K10'] },
+  // program flow
+  MC: { kind: 'box', cat: 'flow', name: 'Master control start: OFF → the networks up to MCR run with no power', ops: ['nest'], labels: ['Nesting level'], steps: 3, def: ['N0'], flow: true },
+  MCR: { kind: 'box', cat: 'flow', name: 'Master control reset (end of the MC block)', ops: ['nest'], labels: ['Nesting level'], steps: 3, def: ['N0'], flow: true, rail: true },
+  CJ: { kind: 'box', cat: 'flow', api: 0, name: 'Conditional jump to the network with pointer P', ops: ['ptr'], labels: ['Pointer'], steps: 3, pulse: true, def: ['P0'], flow: true },
+  CALL: { kind: 'box', cat: 'flow', api: 1, name: 'Call subroutine P (placed after FEND)', ops: ['ptr'], labels: ['Pointer'], steps: 3, pulse: true, def: ['P1'], flow: true },
+  SRET: { kind: 'box', cat: 'flow', api: 2, name: 'End of a subroutine (return)', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
+  FEND: { kind: 'box', cat: 'flow', api: 6, name: 'End of the main program (subroutines follow)', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
+  RET: { kind: 'box', cat: 'step', name: 'End of the step ladder (STL block)', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
+  // compare & move
+  CMP: { kind: 'box', cat: 'compare', api: 10, name: 'Compare → 3 bits (>, =, <)', ops: ['word', 'word', 'bitw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'M10'] },
+  ZCP: { kind: 'box', cat: 'compare', api: 11, name: 'Zone compare → 3 bits (S < S1, S1 ≤ S ≤ S2, S > S2)', ops: ['word', 'word', 'word', 'bitw'], labels: ['S1 (low)', 'S2 (high)', 'S', 'D'], steps: 9, pulse: true, def: ['K10', 'K20', 'D0', 'M20'] },
+  MOV: { kind: 'box', cat: 'move', api: 12, name: 'Move', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['K0', 'D0'] },
+  CML: { kind: 'box', cat: 'move', api: 14, name: 'Complement (invert every bit)  D = NOT S', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['D0', 'D1'] },
+  BMOV: { kind: 'box', cat: 'move', api: 15, name: 'Block move: n words S… → D…', ops: ['wordw', 'wordw', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'D10', 'K4'] },
+  FMOV: { kind: 'box', cat: 'move', api: 16, name: 'Fill move: S → n words D…', ops: ['word', 'wordw', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['K0', 'D0', 'K10'] },
+  XCH: { kind: 'box', cat: 'move', api: 17, name: 'Exchange two words', ops: ['wordw', 'wordw'], labels: ['D1', 'D2'], steps: 5, pulse: true, def: ['D0', 'D1'], defP: true },
+  BCD: { kind: 'box', cat: 'move', api: 18, name: 'Binary → BCD', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['D0', 'D1'] },
+  BIN: { kind: 'box', cat: 'move', api: 19, name: 'BCD → binary', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['D0', 'D1'] },
+  SWAP: { kind: 'box', cat: 'move', api: 147, name: 'Swap the high and low byte', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
+  // arithmetic
+  ADD: { kind: 'box', cat: 'math', api: 20, name: 'Addition  D = S1 + S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K1', 'D0'] },
+  SUB: { kind: 'box', cat: 'math', api: 21, name: 'Subtraction  D = S1 − S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K1', 'D0'] },
+  MUL: { kind: 'box', cat: 'math', api: 22, name: 'Multiplication  D+1,D = S1 × S2', ops: ['word', 'word', 'dreg'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'D2'] },
+  DIV: { kind: 'box', cat: 'math', api: 23, name: 'Division  D = S1 ÷ S2, D+1 = remainder', ops: ['word', 'word', 'dreg'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'D2'] },
+  INC: { kind: 'box', cat: 'math', api: 24, name: 'Increment  D = D + 1', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
+  DEC: { kind: 'box', cat: 'math', api: 25, name: 'Decrement  D = D − 1', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
+  NEG: { kind: 'box', cat: 'math', api: 29, name: 'Negate  D = −D', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
+  ABS: { kind: 'box', cat: 'math', api: 87, name: 'Absolute value  D = |D|', ops: ['wordw'], labels: ['D'], steps: 3, pulse: true, def: ['D0'], defP: true },
+  SQR: { kind: 'box', cat: 'math', api: 48, name: 'Square root  D = √S', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['D0', 'D1'] },
+  MEAN: { kind: 'box', cat: 'math', api: 45, name: 'Mean of n words S… → D', ops: ['wordw', 'wordw', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'D10', 'K4'] },
+  SCAL: { kind: 'box', cat: 'math', api: 202, name: 'Scale  D = S1 × S2 ÷ 1000 + S3', ops: ['word', 'word', 'word', 'wordw'], labels: ['S1 (value)', 'S2 (slope ×0.001)', 'S3 (offset)', 'D'], steps: 9, pulse: true, def: ['D1110', 'K500', 'K0', 'D0'] },
+  // word logic & bits
+  WAND: { kind: 'box', cat: 'logic', api: 26, name: 'Word AND  D = S1 AND S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'H00FF', 'D1'] },
+  WOR: { kind: 'box', cat: 'logic', api: 27, name: 'Word OR  D = S1 OR S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'H00FF', 'D1'] },
+  WXOR: { kind: 'box', cat: 'logic', api: 28, name: 'Word XOR  D = S1 XOR S2', ops: ['word', 'word', 'wordw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'H00FF', 'D1'] },
+  ROR: { kind: 'box', cat: 'logic', api: 30, name: 'Rotate right n bits', ops: ['wordw', 'n'], labels: ['D', 'n'], steps: 5, pulse: true, def: ['D0', 'K1'], defP: true },
+  ROL: { kind: 'box', cat: 'logic', api: 31, name: 'Rotate left n bits', ops: ['wordw', 'n'], labels: ['D', 'n'], steps: 5, pulse: true, def: ['D0', 'K1'], defP: true },
+  SFTR: { kind: 'box', cat: 'logic', api: 34, name: 'Bit shift right: n2 bits of S enter n1 bits of D', ops: ['bitsrc', 'bitw', 'n', 'n'], labels: ['S', 'D', 'n1', 'n2'], steps: 9, pulse: true, def: ['X0', 'M0', 'K8', 'K1'], defP: true },
+  SFTL: { kind: 'box', cat: 'logic', api: 35, name: 'Bit shift left: n2 bits of S enter n1 bits of D', ops: ['bitsrc', 'bitw', 'n', 'n'], labels: ['S', 'D', 'n1', 'n2'], steps: 9, pulse: true, def: ['X0', 'M0', 'K8', 'K1'], defP: true },
+  ZRST: { kind: 'box', cat: 'logic', api: 40, name: 'Zone reset', ops: ['zone', 'zone'], labels: ['D1', 'D2'], steps: 5, pulse: true, def: ['M0', 'M9'] },
+  DECO: { kind: 'box', cat: 'logic', api: 41, name: 'Decoder: bit number S (n bits) → ON bit in D', ops: ['word', 'bword', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'M0', 'K3'] },
+  ENCO: { kind: 'box', cat: 'logic', api: 42, name: 'Encoder: highest ON bit of S (2ⁿ bits) → D', ops: ['wsrc', 'dreg', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['M0', 'D0', 'K3'] },
+  SUM: { kind: 'box', cat: 'logic', api: 43, name: 'Number of ON bits in S → D', ops: ['word', 'wordw'], labels: ['S', 'D'], steps: 5, pulse: true, def: ['D0', 'D1'] },
+  BON: { kind: 'box', cat: 'logic', api: 44, name: 'Check bit n of S → D', ops: ['word', 'bitw', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'M0', 'K0'] },
+  ALT: { kind: 'box', cat: 'logic', api: 66, name: 'Alternate (toggle) bit', ops: ['bitw'], labels: ['D'], steps: 3, pulse: true, def: ['M0'], defP: true },
+  // communication
+  MODRW: { kind: 'box', cat: 'comm', api: 150, name: 'Modbus read / write (COM2)', ops: ['word', 'word', 'word', 'dreg', 'word'], labels: ['Station', 'Function', 'Address', 'Data reg.', 'Length'], steps: 11, def: ['K1', 'K6', 'H2000', 'D0', 'K1'] },
 };
 
-export const CMP_OPS = ['=', '<>', '>', '>=', '<', '<='];
+/** Instruction picker groups, in order. */
+export const INSTR_GROUPS = [
+  ['contact', 'Contacts'],
+  ['coil', 'Coils'],
+  ['compare', 'Compare'],
+  ['timer', 'Timers & counters'],
+  ['move', 'Data move & conversion'],
+  ['math', 'Arithmetic'],
+  ['logic', 'Word logic, shift & bits'],
+  ['flow', 'Program flow (MC, CJ, CALL, FEND)'],
+  ['step', 'Step ladder (STL / RET)'],
+  ['comm', 'Communication'],
+];
+
+export const CMP_OPS = ['=', '<>', '>', '>=', '<', '<=', '&', '|', '^'];
 
 export const isContactType = (t) => INSTR[t] && (INSTR[t].kind === 'contact' || INSTR[t].kind === 'wire');
 export const isOutputType = (t) => INSTR[t] && (INSTR[t].kind === 'out' || INSTR[t].kind === 'box');
 
 let uid = 0;
 export const rungId = () => 'n' + Date.now().toString(36) + (uid++).toString(36);
+
+export const isRailInstr = (t) => !!(INSTR[t] && INSTR[t].rail);
 
 export function newElement(t, args, extra = {}) {
   const d = INSTR[t];
@@ -83,6 +149,7 @@ export function normalizeProgram(p) {
   for (const r of prog.rungs) {
     r.id = r.id || rungId();
     r.comment = r.comment || '';
+    if (r.label !== undefined && !/^P\d{1,3}$/.test(r.label || '')) delete r.label;
     if (!Array.isArray(r.cells) || !r.cells.length) r.cells = [new Array(prog.cols).fill(null)];
     for (let i = 0; i < r.cells.length; i++) {
       const row = r.cells[i] || [];
@@ -155,7 +222,11 @@ export function placeOutput(rung, r, el) {
   while (r >= rung.cells.length) addRow(rung);
   rung.outs[r] = el;
   const row = rung.cells[r];
-  if (r > 0 && row.every((x) => !x)) {
+  if (isRailInstr(el.t) && row.every((x) => !x || x.t === 'H')) {
+    // FEND, SRET, MCR, RET: a plain line from the left bus bar
+    for (let c = 0; c < row.length; c++) row[c] = { t: 'H', a: [] };
+    if (r > 0) rung.vl[r - 1][row.length - 1] = false;
+  } else if (r > 0 && row.every((x) => !x)) {
     // a parallel output: join to the row above at the output column
     rung.vl[r - 1][row.length - 1] = true;
   } else fillToOutput(rung, r);
@@ -187,6 +258,12 @@ export function rungIsEmpty(rung) {
   return rung.outs.every((x) => !x) && rung.cells.every((row) => row.every((x) => !x));
 }
 
+/** The step relay of a rung that starts with STL (cell 0,0), or null. */
+export function stlOf(rung) {
+  const el = rung.cells[0] && rung.cells[0][0];
+  return el && el.t === 'STL' ? el.a[0] : null;
+}
+
 // ------------------------------------------------------------------ operand checks
 function checkOperand(text, cls, ctx) {
   const op = parseOperand(text);
@@ -202,7 +279,8 @@ export function elementText(el) {
   if (!el) return '';
   if (el.t === 'H') return '';
   if (el.t === 'CC') return `${el.a[0]} ${el.op} ${el.a[1]}`;
-  if (el.t === 'INV') return 'INV';
+  if (el.t === 'INV' || el.t === 'MEP' || el.t === 'MEF') return el.t;
+  if (el.t === 'STL') return `STL ${el.a[0]}`;
   const d = INSTR[el.t];
   if (d.kind === 'box') return `${el.t}${el.p ? 'P' : ''} ${el.a.join(' ')}`;
   return el.a[0] || '';
@@ -299,10 +377,11 @@ class ILWriter {
   leaf(x, mode) {
     const el = x.el, d = INSTR[el.t];
     const i = mode === 'LD' ? 0 : mode === 'AND' ? 1 : 2;
-    if (el.t === 'INV') {
-      if (mode !== 'AND') { this.err = 'INV must follow a contact in series'; return; }
-      this.push('INV', 1, x); return;
+    if (el.t === 'INV' || el.t === 'MEP' || el.t === 'MEF') {
+      if (mode !== 'AND') { this.err = `${el.t} must follow a contact in series`; return; }
+      this.push(el.t, 1, x); return;
     }
+    if (el.t === 'STL') { this.err = 'STL must be the first cell of a network (on the left bus bar)'; return; }
     if (el.t === 'CC') { this.push(`${d.il[i]}${el.op} ${el.a[0]} ${el.a[1]}`, d.steps, x); return; }
     this.push(`${d.il[i]} ${el.a[0]}`, d.steps, x);
   }
@@ -331,10 +410,21 @@ class ILWriter {
 }
 
 /** Instruction list for one rung. Returns {lines, error}. */
-export function rungIL(rung) {
+export function rungIL(rung, onStepBus = false) {
+  const stl = stlOf(rung);
+  if (stl) {
+    // STL Sn starts a new bus: what follows it starts again with LD
+    const rest = { ...rung, cells: rung.cells.map((row, r) => (r === 0 ? [{ t: 'H', a: [] }, ...row.slice(1)] : row)) };
+    const res = rungIL(rest, true);
+    return res.error ? res : { lines: [{ text: `STL ${stl}`, steps: 1, ref: null }, ...res.lines], error: null };
+  }
+  return rungILPlain(rung, onStepBus);
+}
+
+function rungILPlain(rung, onStepBus) {
   const g = buildGraph(rung);
   const w = new ILWriter();
-  const groups = []; // [{node, outs:[el]}]
+  let groups = []; // [{node, outs:[el]}]
   for (let r = 0; r < g.rows; r++) {
     const o = rung.outs[r];
     if (!o) continue;
@@ -344,11 +434,33 @@ export function rungIL(rung) {
     gr.outs.push(o);
   }
   if (!groups.length) return { lines: [], error: 'no output instruction' };
+  // FEND / SRET / MCR / RET stand on the bus bar on their own
+  const railOnly = groups.filter((gr) => gr.outs.every((o) => isRailInstr(o.t)));
+  for (const gr of railOnly) {
+    const x = exprTo(g, gr.node);
+    if (x !== 'none' && x !== null && x.k !== 'T') return { lines: [], error: `${gr.outs.map((o) => o.t).join(', ')} takes no contacts — connect it straight to the left bus bar` };
+  }
+  const mixed = groups.find((gr) => gr.outs.some((o) => isRailInstr(o.t)) && !gr.outs.every((o) => isRailInstr(o.t)));
+  if (mixed) return { lines: [], error: `${mixed.outs.find((o) => isRailInstr(o.t)).t} cannot share a row with other outputs` };
+  const tail = railOnly.flatMap((gr) => gr.outs);
+  groups = groups.filter((gr) => !railOnly.includes(gr));
   for (const gr of groups) {
     gr.x = exprTo(g, gr.node);
     if (gr.x === 'none') return { lines: [], error: 'an output is not connected to the left bus bar' };
     if (gr.x === null) return { lines: [], error: 'this network cannot be converted (bridge circuit)' };
-    if (gr.x.k === 'T') return { lines: [], error: 'an output is connected straight to the left bus bar — add a contact (e.g. M1000)' };
+    if (gr.x.k === 'T' && !onStepBus) return { lines: [], error: 'an output is connected straight to the left bus bar — add a contact (e.g. M1000)' };
+  }
+  if (!groups.length) {
+    for (const o of tail) w.output(o);
+    return { lines: w.lines, error: null };
+  }
+  // on the STL bus an output may follow the step directly
+  const direct = groups.filter((gr) => gr.x.k === 'T');
+  for (const gr of direct) for (const o of gr.outs) w.output(o);
+  groups = groups.filter((gr) => gr.x.k !== 'T');
+  if (!groups.length) {
+    for (const o of tail) w.output(o);
+    return w.err ? { lines: [], error: w.err } : { lines: w.lines, error: null };
   }
   if (groups.length === 1) {
     w.start(groups[0].x);
@@ -371,14 +483,59 @@ export function rungIL(rung) {
       for (const gr of groups) { w.start(gr.x); for (const o of gr.outs) w.output(o); }
     }
   }
+  for (const o of tail) w.output(o);
   if (w.err) return { lines: [], error: w.err };
   return { lines: w.lines, error: null };
 }
 
 // ------------------------------------------------------------------ compiler
+/** Extra operand checks of one instruction: returns an error text or null. */
+function checkInstr(el, ops) {
+  const v = (i) => (ops[i] ? ops[i].val : undefined);
+  const max = (op) => (DEVICES[op.dev] ? DEVICES[op.dev].max : 0);
+  const fits = (op, n) => !op || op.idx === undefined || op.idx + n - 1 <= max(op);
+  switch (el.t) {
+    case 'ZRST': if (ops[0] && ops[1] && (ops[0].dev !== ops[1].dev || ops[0].idx > ops[1].idx)) return 'ZRST: D1 and D2 must be the same device type with D1 ≤ D2'; break;
+    case 'MODRW': if (ops[1] && ops[1].dev !== 'D' && ![3, 6, 16].includes(ops[1].val)) return 'MODRW: function must be K3 (read), K6 (write one) or K16 (write many)'; break;
+    case 'BMOV': case 'FMOV': case 'MEAN': {
+      const n = v(2), lim = el.t === 'MEAN' ? 64 : 512;
+      if (n !== undefined && (n < 1 || n > lim)) return `${el.t}: n must be K1 … K${lim}`;
+      if (n !== undefined && (!fits(ops[1], el.t === 'MEAN' ? 1 : n) || (el.t !== 'FMOV' && !fits(ops[0], n)))) return `${el.t}: the block runs past the last device`;
+      break;
+    }
+    case 'ROR': case 'ROL': if (v(1) !== undefined && (v(1) < 1 || v(1) > 16)) return `${el.t}: n must be K1 … K16`; break;
+    case 'BON': if (v(2) !== undefined && (v(2) < 0 || v(2) > 15)) return 'BON: n must be K0 … K15'; break;
+    case 'SFTR': case 'SFTL': {
+      const n1 = v(2), n2 = v(3);
+      if (n1 !== undefined && n2 !== undefined && (n2 < 1 || n1 < n2 || n1 > 1024)) return `${el.t}: needs 1 ≤ n2 ≤ n1 ≤ 1024`;
+      if (n1 !== undefined && (!fits(ops[1], n1) || !fits(ops[0], n2 || 1))) return `${el.t}: the bits run past the last device`;
+      break;
+    }
+    case 'DECO': {
+      const n = v(2);
+      if (n === undefined || !ops[1]) break;
+      if (ops[1].dev === 'D' ? n < 1 || n > 4 : n < 1 || n > 8) return `DECO: n must be K1 … K${ops[1].dev === 'D' ? 4 : 8}`;
+      if (ops[1].dev !== 'D' && !fits(ops[1], 1 << n)) return 'DECO: the bits run past the last device';
+      break;
+    }
+    case 'ENCO': {
+      const n = v(2);
+      if (n === undefined || !ops[0]) break;
+      const word = ['D', 'T', 'C'].includes(ops[0].dev);
+      if (word ? n < 1 || n > 4 : n < 1 || n > 8) return `ENCO: n must be K1 … K${word ? 4 : 8}`;
+      if (!word && !fits(ops[0], 1 << n)) return 'ENCO: the bits run past the last device';
+      break;
+    }
+    case 'CMP': case 'ZCP': { const d = ops[el.t === 'CMP' ? 2 : 3]; if (d && !fits(d, 3)) return `${el.t}: D uses 3 bits — they run past the last device`; break; }
+    default: break;
+  }
+  return null;
+}
+
 /**
  * Compile a program for the CPU. `model` = { name, inputs, outputs } of the target PLC.
- * Returns { ok, errors:[{rung,row,col,msg}], warnings:[…], rungs (executable), stateCount, steps, il:[{rung, lines, error}] }.
+ * Returns { ok, errors:[{rung,row,col,msg}], warnings:[…], rungs (executable), labels (P → index in rungs),
+ * stateCount, steps, il:[{rung, lines, error}] }.
  */
 export function compileProgram(program, model) {
   const prog = normalizeProgram(program);
@@ -387,10 +544,24 @@ export function compileProgram(program, model) {
   let sid = 0, steps = 0;
   const coilUse = new Map();
   const il = [];
+  const labels = {};
+  const flowUse = []; // {t, op, rung}
+  let step = -1; // the STL step the networks belong to (-1: none)
+  let fendAt = -1; // exec index of the first network with FEND
   prog.rungs.forEach((rung, ri) => {
-    if (rungIsEmpty(rung)) return;
-    const loc = (row, col) => ({ rung: ri, row, col });
+    const label = rung.label ? parseOperand(rung.label) : null;
+    if (label) {
+      if (labels[label.idx] !== undefined) errors.push({ rung: ri, row: 0, col: 0, msg: `Pointer ${label.text} is used by two networks` });
+      else labels[label.idx] = exec.length;
+    }
     const rows = rung.cells.length, cols = rung.cells[0].length;
+    if (rungIsEmpty(rung)) {
+      // an empty network keeps its pointer so jumps to it still work
+      if (label) exec.push({ index: ri, rows, cols, cells: rung.cells.map((row) => row.map(() => null)), outs: rung.outs.map(() => null), merges: Array.from({ length: cols }, () => []), label: label.idx, step, stlHead: false });
+      if (label) il.push({ rung: ri, lines: [], error: null, label: label.text });
+      return;
+    }
+    const loc = (row, col) => ({ rung: ri, row, col });
     const ctxFor = (row, col) => ({ model, warn: (msg) => { if (!warnings.some((w) => w.msg === msg)) warnings.push({ ...loc(row, col), msg }); } });
     const prep = (el, row, col) => {
       if (!el) return null;
@@ -403,15 +574,23 @@ export function compileProgram(program, model) {
         if (r.err) errors.push({ ...loc(row, col), msg: `${mnemonic(el)}: ${r.err}` });
         ops.push(r.op || null);
       });
-      if (el.t === 'ZRST' && ops[0] && ops[1] && (ops[0].dev !== ops[1].dev || ops[0].idx > ops[1].idx)) errors.push({ ...loc(row, col), msg: 'ZRST: D1 and D2 must be the same device type with D1 ≤ D2' });
-      if (el.t === 'MODRW' && ops[1] && ops[1].dev !== 'D' && ![3, 6, 16].includes(ops[1].val)) errors.push({ ...loc(row, col), msg: 'MODRW: function must be K3 (read), K6 (write one) or K16 (write many)' });
+      const bad = checkInstr(el, ops);
+      if (bad) errors.push({ ...loc(row, col), msg: bad });
+      if (el.t === 'STL' && (row !== 0 || col !== 0)) errors.push({ ...loc(row, col), msg: 'STL must be the first cell of a network (row 1, column 1, on the left bus bar)' });
       if ((el.t === 'OUT' || el.t === 'PLS' || el.t === 'PLF') && ops[0]) {
+        // inside a step ladder the same coil may be driven by several steps (only one step is active)
         const k = ops[0].text;
-        if (coilUse.has(k)) warnings.push({ ...loc(row, col), msg: `Double coil: ${k} is also driven in network ${coilUse.get(k) + 1}` });
-        else coilUse.set(k, ri);
+        if (coilUse.has(k) && !(step >= 0 && coilUse.get(k).step >= 0)) warnings.push({ ...loc(row, col), msg: `Double coil: ${k} is also driven in network ${coilUse.get(k).rung + 1}` });
+        else if (!coilUse.has(k)) coilUse.set(k, { rung: ri, step });
       }
-      return { t: el.t, a: ops, op: el.op, p: !!el.p, sid: sid++, r: row, c: col };
+      if (d.flow) flowUse.push({ t: el.t, op: ops[0], rung: ri, exec: exec.length });
+      return { t: el.t, a: ops, op: el.op, p: !!el.p, rail: !!d.rail, sid: sid++, r: row, c: col };
     };
+    // step ladder regions: STL Sn opens one, the next STL, RET or FEND closes it
+    const stlOp = stlOf(rung) ? parseOperand(stlOf(rung)) : null;
+    if (stlOp) step = stlOp.idx;
+    const ends = rung.outs.some((o) => o && (o.t === 'RET' || o.t === 'FEND'));
+    const rungStep = ends && !stlOp ? -1 : step;
     const cells = [], outs = [];
     for (let r = 0; r < rows; r++) {
       cells.push(rung.cells[r].map((el, c) => {
@@ -422,6 +601,8 @@ export function compileProgram(program, model) {
       if (o && INSTR[o.t] && !isOutputType(o.t)) { errors.push({ ...loc(r, 'out'), msg: `${o.t} cannot be placed in the output column` }); outs.push(null); }
       else outs.push(prep(o, r, 'out'));
     }
+    if (ends) step = -1;
+    if (rung.outs.some((o) => o && o.t === 'FEND') && fendAt < 0) fendAt = exec.length;
     // merge groups for every boundary b = 1..cols
     const merges = [];
     for (let b = 1; b <= cols; b++) {
@@ -449,14 +630,27 @@ export function compileProgram(program, model) {
       warnings.push({ ...loc(e.x.r, e.x.c), msg: `Network ${ri + 1}: ${elementText(e.x.el) || e.x.el.t} is not connected (open branch — add a line or a vertical link)` });
     }
     const res = rungIL(rung);
-    il.push({ rung: ri, lines: res.lines, error: res.error });
+    il.push({ rung: ri, lines: res.lines, error: res.error, label: label ? label.text : null });
     if (res.error) errors.push({ ...loc(0, 0), msg: `Network ${ri + 1}: ${res.error}` });
     for (const ln of res.lines) steps += ln.steps;
-    exec.push({ index: ri, rows, cols, cells, outs, merges });
+    exec.push({ index: ri, rows, cols, cells, outs, merges, label: label ? label.idx : -1, step: rungStep, stlHead: !!stlOp });
   });
+  // program flow checks
+  for (const f of flowUse) {
+    const at = { rung: f.rung, row: 0, col: 0 };
+    if ((f.t === 'CJ' || f.t === 'CALL') && f.op) {
+      const target = labels[f.op.idx];
+      if (target === undefined) errors.push({ ...at, msg: `${f.t} ${f.op.text}: no network has the pointer ${f.op.text} (long-press a network number → Pointer label)` });
+      else if (f.t === 'CALL' && (fendAt < 0 || target <= fendAt)) errors.push({ ...at, msg: `CALL ${f.op.text}: subroutines go after FEND — put FEND at the end of the main program and the network with ${f.op.text} after it` });
+      else if (f.t === 'CJ' && fendAt >= 0 && (f.exec <= fendAt) !== (target <= fendAt)) errors.push({ ...at, msg: `CJ ${f.op.text}: cannot jump between the main program and a subroutine` });
+    }
+    if (f.t === 'MC' && f.op && !flowUse.some((x) => x.t === 'MCR' && x.op && x.op.idx === f.op.idx && x.exec >= f.exec)) warnings.push({ ...at, msg: `MC ${f.op.text} has no MCR ${f.op.text} after it — the block runs to the end of the program` });
+    if (f.t === 'SRET' && (fendAt < 0 || f.exec <= fendAt)) warnings.push({ ...at, msg: 'SRET belongs at the end of a subroutine, after FEND' });
+    if (f.t === 'STL' && !flowUse.some((x) => x.t === 'RET') && !warnings.some((w) => /^Step ladder/.test(w.msg))) warnings.push({ ...at, msg: 'Step ladder: end the last step with RET' });
+  }
   steps += 1; // END
   if (!exec.length) warnings.push({ rung: 0, row: 0, col: 0, msg: 'The program is empty' });
-  return { ok: errors.length === 0, errors, warnings, rungs: exec, stateCount: sid, steps, il, comments: { ...prog.comments } };
+  return { ok: errors.length === 0, errors, warnings, rungs: exec, labels, fend: fendAt, stateCount: sid, steps, il, comments: { ...prog.comments } };
 }
 
 /** Full instruction list with step numbers, for display. */
@@ -464,6 +658,7 @@ export function programIL(compiled) {
   const out = [];
   let step = 0;
   for (const r of compiled.il) {
+    if (r.label) out.push({ step: null, text: r.label, rung: r.rung, label: true });
     if (r.error) { out.push({ step: null, text: `; network ${r.rung + 1}: ${r.error}`, rung: r.rung, error: true }); continue; }
     for (const ln of r.lines) { out.push({ step, text: ln.text, rung: r.rung }); step += ln.steps; }
   }
