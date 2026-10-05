@@ -1,0 +1,949 @@
+// 2D wiring schematic of the PLC lab — a lighter alternative to the 3D scene with the same API
+// (picking, markers, selection, focus, live states). Devices are drawn as terminal-block symbols in
+// rows like the panel (rail 1, rail 2, operator console); every wire is routed orthogonally through
+// the "wire ducts" between the rows and the gaps between devices, each on its own track.
+import { DEVICE_DEFS, devicePorts, deviceProps, busName } from '../devices/defs.js';
+import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const P = 28;           // terminal pitch
+const COMM_W = 50;      // width of a communication connector slot
+const SIDE = 14;        // block padding left / right
+const TRACK = 7;        // distance between parallel wires
+const CH_MIN = 44;      // minimum height of a wire duct
+const GAP_MIN = 34;     // minimum gap between devices
+const MARGIN = 26;      // band margin left / right
+const CONSOLE_PER_ROW = 8;
+
+const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', motor: '#94a3b8', pc: '#64748b' };
+const BUS_COLOR = { rs232: '#f59e0b', rs485: '#22d3ee', usb: '#a78bfa' };
+const LAMP = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
+const CAP = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#2a2d33', white: '#e9ecef' };
+const VFD_KEYS = [
+  { k: 'MODE', c: 0, r: 0, label: 'MODE' }, { k: 'UP', c: 1, r: 0, label: '▲' }, { k: 'ENTER', c: 2, r: 0, label: 'ENTER' },
+  { k: 'LEFT', c: 0, r: 1, label: '◀' }, { k: 'DOWN', c: 1, r: 1, label: '▼' },
+  { k: 'RUN', c: 0, r: 2, label: 'RUN', color: '#15803d', span: 1.5 }, { k: 'STOP', c: 1.5, r: 2, label: 'STOP', color: '#b91c1c', span: 1.5 },
+];
+
+const el = (tag, attrs = {}, parent = null, text = null) => {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== undefined && v !== null) e.setAttribute(k, v);
+  if (text !== null) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+};
+/** Set an attribute only when it changed. */
+const set = (e, k, v) => { const c = e._v || (e._v = {}); if (c[k] === v) return false; c[k] = v; e.setAttribute(k, v); return true; };
+const shortLabel = (port) => (port.kind === 'comm' ? (port.id === 'RS485' ? 'RS-485' : port.id) : port.label);
+
+// ====================================================================== symbols
+/** Which edge of the block a terminal sits on. */
+function edgeOf(def, port) {
+  if (['console', 'motor', 'hmi', 'desk'].includes(def.zone)) return 'top';
+  if (def.sim === 'mcb') return 'bottom';
+  if (def.sim === 'plc') return port.kind === 'comm' || port.pos[1] < 45 ? 'bottom' : 'top';
+  if (def.sim === 'vfd') return port.pos[1] > 40 ? 'top' : 'bottom';
+  return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
+}
+
+const BODY_H = { plc: 176, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156 };
+
+function symbolFor(dev) {
+  const def = DEVICE_DEFS[dev.type];
+  const ports = devicePorts(dev);
+  const top = [], bottom = [];
+  for (const p of ports) (edgeOf(def, p) === 'top' ? top : bottom).push(p);
+  const order = (a, b) => (a.kind === 'comm') - (b.kind === 'comm') || b.pos[1] - a.pos[1] || a.pos[0] - b.pos[0];
+  top.sort(order); bottom.sort(order);
+  const slotW = (p) => (p.kind === 'comm' ? COMM_W : P);
+  const rowW = (row) => row.reduce((s, p) => s + slotW(p), 0);
+  const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130 }[def.sim] || 104;
+  const w = Math.max(minW, rowW(top) + SIDE * 2, rowW(bottom) + SIDE * 2);
+  const h = BODY_H[def.sim] || 118;
+  const slots = new Map();
+  const place = (row, y, edge) => {
+    let x = (w - rowW(row)) / 2;
+    for (const p of row) { slots.set(p.id, { x: x + slotW(p) / 2, y, edge, port: p, w: slotW(p) }); x += slotW(p); }
+  };
+  place(top, 0, 'top');
+  place(bottom, h, 'bottom');
+  return { dev, def, w, h, top, bottom, slots };
+}
+
+// ====================================================================== layout + routing
+function bandsFor(devices) {
+  const rail1 = [], rail2 = [], desk = [], hmi = [], consoleDevs = [], motors = [];
+  const ORDER = { mcb: 0, power: 1, plc: 2 };
+  for (const d of devices) {
+    const def = DEVICE_DEFS[d.type];
+    if (!def) continue;
+    ({ rail1, rail2, desk, hmi, console: consoleDevs, motor: motors }[def.zone] || rail1).push(d);
+  }
+  rail1.sort((a, b) => (ORDER[a.type === 'mcb' ? 'mcb' : DEVICE_DEFS[a.type].category] ?? 3) - (ORDER[b.type === 'mcb' ? 'mcb' : DEVICE_DEFS[b.type].category] ?? 3));
+  const bands = [];
+  if (rail1.length) bands.push({ zone: 'rail1', devs: rail1 });
+  const mid = [...desk, ...hmi, ...rail2];
+  if (mid.length) bands.push({ zone: 'rail2', devs: mid });
+  for (let i = 0; i < consoleDevs.length || (i === 0 && motors.length); i += CONSOLE_PER_ROW) {
+    const row = consoleDevs.slice(i, i + CONSOLE_PER_ROW);
+    if (i === 0) row.push(...motors);
+    bands.push({ zone: 'console', devs: row });
+  }
+  return bands;
+}
+
+/**
+ * Lay the devices out and route every connection. Returns
+ * { syms: Map(id → {sym, x, y, band}), wires: Map(connId → points), ducts: [{y0,y1,x0,x1}], box }.
+ */
+export function layoutSchematic(project) {
+  const bands = bandsFor(project.devices).map((b) => ({ ...b, syms: b.devs.map(symbolFor) }));
+  const nb = bands.length;
+  const where = new Map();
+  bands.forEach((b, bi) => b.syms.forEach((s, i) => where.set(s.dev.id, { band: bi, idx: i, sym: s })));
+  const conns = project.conns.filter((c) => where.has(c.a.dev) && where.has(c.b.dev) && where.get(c.a.dev).sym.slots.has(c.a.port) && where.get(c.b.dev).sym.slots.has(c.b.port));
+  let chH = new Array(nb + 1).fill(CH_MIN);
+  let gapW = bands.map((b) => new Array(b.syms.length + 1).fill(0).map((_, g) => (g === 0 || g === b.syms.length ? MARGIN : GAP_MIN)));
+  let geo, plan;
+
+  const placeAll = () => {
+    const pos = new Map();
+    const bandY = [];
+    let y = chH[0];
+    bands.forEach((b, bi) => {
+      const bh = Math.max(...b.syms.map((s) => s.h));
+      const total = gapW[bi].reduce((a, v) => a + v, 0) + b.syms.reduce((a, s) => a + s.w, 0);
+      let x = -total / 2 + gapW[bi][0];
+      const gaps = [];
+      gaps.push({ x0: x - gapW[bi][0], x1: x });
+      b.syms.forEach((s, i) => {
+        pos.set(s.dev.id, { x, y: y + (bh - s.h) / 2, sym: s, band: bi });
+        x += s.w;
+        gaps.push({ x0: x, x1: x + gapW[bi][i + 1] });
+        x += gapW[bi][i + 1];
+      });
+      bandY.push({ y0: y, y1: y + bh, gaps });
+      y += bh + chH[bi + 1];
+    });
+    const chY = [];
+    let cy = 0;
+    for (let c = 0; c <= nb; c++) { chY.push({ y0: cy, y1: cy + chH[c] }); if (c < nb) cy += chH[c] + (bandY[c].y1 - bandY[c].y0); }
+    return { pos, bandY, chY };
+  };
+
+  const term = (end) => {
+    const p = geo.pos.get(end.dev);
+    const sl = p.sym.slots.get(end.port);
+    return { x: p.x + sl.x, y: p.y + sl.y, ch: sl.edge === 'top' ? p.band : p.band + 1 };
+  };
+
+  const route = (c) => {
+    const A = term(c.a), B = term(c.b);
+    const segs = [];
+    let ch = A.ch, x = A.x;
+    while (ch !== B.ch) {
+      const s = B.ch > ch ? 1 : -1;
+      const band = s > 0 ? ch : ch - 1;
+      const gaps = geo.bandY[band].gaps;
+      let best = 0, bc = Infinity;
+      gaps.forEach((g, gi) => { const gx = (g.x0 + g.x1) / 2; const cost = Math.abs(x - gx) + Math.abs(gx - B.x) + (gi === 0 || gi === gaps.length - 1 ? 30 : 0); if (cost < bc) { bc = cost; best = gi; } });
+      const gx = (gaps[best].x0 + gaps[best].x1) / 2;
+      segs.push({ t: 'h', ch, x0: x, x1: gx });
+      segs.push({ t: 'v', band, gap: best });
+      x = gx; ch += s;
+    }
+    segs.push({ t: 'h', ch, x0: x, x1: B.x });
+    return { A, B, segs };
+  };
+
+  for (let iter = 0; iter < 5; iter++) {
+    geo = placeAll();
+    plan = conns.map((c) => ({ c, ...route(c) }));
+    // track assignment: horizontal runs per duct, vertical runs per gap
+    const chRuns = new Array(nb + 1).fill(0).map(() => []);
+    const gapRuns = new Map();
+    for (const r of plan) for (const s of r.segs) {
+      if (s.t === 'h') chRuns[s.ch].push(s);
+      else { const k = s.band + ':' + s.gap; if (!gapRuns.has(k)) gapRuns.set(k, []); gapRuns.get(k).push(s); }
+    }
+    const needCh = chRuns.map((runs) => {
+      runs.sort((a, b) => Math.min(a.x0, a.x1) - Math.min(b.x0, b.x1));
+      const ends = [];
+      for (const s of runs) {
+        const lo = Math.min(s.x0, s.x1), hi = Math.max(s.x0, s.x1);
+        let t = ends.findIndex((e) => e < lo - TRACK);
+        if (t < 0) { t = ends.length; ends.push(hi); } else ends[t] = hi;
+        s.track = t;
+      }
+      return ends.length;
+    });
+    for (const runs of gapRuns.values()) runs.forEach((s, i) => { s.track = i; s.of = runs.length; });
+    let changed = false;
+    const nh = chH.map((h0, c) => Math.max(h0, CH_MIN, 26 + (needCh[c] - 1) * TRACK + 18));
+    const nw = gapW.map((arr, bi) => arr.map((w0, g) => { const n = (gapRuns.get(bi + ':' + g) || []).length; return Math.max(w0, n ? 20 + (n - 1) * TRACK + 14 : 0); }));
+    if (nh.some((v, i) => v !== chH[i]) || nw.some((arr, bi) => arr.some((v, g) => v !== gapW[bi][g]))) changed = true;
+    chH = nh; gapW = nw;
+    if (!changed) break;
+  }
+  geo = placeAll();
+  // final points (the plan's gap choices and tracks stay; positions are final)
+  const trackY = (ch, t, n) => { const c = geo.chY[ch]; const used = Math.max(0, n - 1) * TRACK; return (c.y0 + c.y1) / 2 - used / 2 + t * TRACK; };
+  const chCount = new Array(nb + 1).fill(0);
+  for (const r of plan) for (const s of r.segs) if (s.t === 'h') chCount[s.ch] = Math.max(chCount[s.ch], s.track + 1);
+  const wires = new Map();
+  for (const r of plan) {
+    const A = term(r.c.a), B = term(r.c.b);
+    const pts = [[A.x, A.y]];
+    let x = A.x;
+    for (let i = 0; i < r.segs.length; i++) {
+      const s = r.segs[i];
+      if (s.t === 'h') {
+        const y = trackY(s.ch, s.track, chCount[s.ch]);
+        const nx = i === r.segs.length - 1 ? B.x : null;
+        pts.push([x, y]);
+        if (nx !== null) { pts.push([nx, y]); x = nx; } else {
+          const v = r.segs[i + 1];
+          const g = geo.bandY[v.band].gaps[v.gap];
+          const gx = (g.x0 + g.x1) / 2 - ((v.of - 1) * TRACK) / 2 + v.track * TRACK;
+          pts.push([gx, y]);
+          x = gx;
+        }
+      }
+    }
+    pts.push([B.x, B.y]);
+    wires.set(r.c.id, dedupe(pts));
+  }
+  let x0 = Infinity, y0 = 0, x1 = -Infinity, y1 = geo.chY[nb] ? geo.chY[nb].y1 : 0;
+  for (const p of geo.pos.values()) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x + p.sym.w); }
+  geo.bandY.forEach((b) => { x0 = Math.min(x0, b.gaps[0].x0); x1 = Math.max(x1, b.gaps[b.gaps.length - 1].x1); });
+  if (!Number.isFinite(x0)) { x0 = -200; x1 = 200; y1 = 200; }
+  const ducts = geo.chY.map((c) => ({ y0: c.y0 + 8, y1: c.y1 - 8, x0, x1 }));
+  return { syms: geo.pos, wires, ducts, box: { x0, y0, x1, y1 }, bands: geo.bandY, zones: bands.map((b) => b.zone) };
+}
+
+function dedupe(pts) {
+  const out = [];
+  for (const p of pts) {
+    const q = out[out.length - 1];
+    if (q && Math.abs(q[0] - p[0]) < 0.01 && Math.abs(q[1] - p[1]) < 0.01) continue;
+    out.push(p);
+  }
+  // drop collinear middle points
+  for (let i = out.length - 2; i > 0; i--) {
+    const [a, b, c] = [out[i - 1], out[i], out[i + 1]];
+    if ((Math.abs(a[0] - b[0]) < 0.01 && Math.abs(b[0] - c[0]) < 0.01) || (Math.abs(a[1] - b[1]) < 0.01 && Math.abs(b[1] - c[1]) < 0.01)) out.splice(i, 1);
+  }
+  return out;
+}
+
+function pathD(pts, r = 5) {
+  if (pts.length < 2) return '';
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
+    const l1 = Math.hypot(cx - px, cy - py), l2 = Math.hypot(nx - cx, ny - cy);
+    const k = Math.min(r, l1 / 2, l2 / 2);
+    const ax = cx - ((cx - px) / (l1 || 1)) * k, ay = cy - ((cy - py) / (l1 || 1)) * k;
+    const bx = cx + ((nx - cx) / (l2 || 1)) * k, by = cy + ((ny - cy) / (l2 || 1)) * k;
+    d += ` L${ax.toFixed(1)} ${ay.toFixed(1)} Q${cx.toFixed(1)} ${cy.toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}`;
+  }
+  const last = pts[pts.length - 1];
+  return d + ` L${last[0].toFixed(1)} ${last[1].toFixed(1)}`;
+}
+
+// ====================================================================== device drawing
+/** Draw a device symbol into group g (local coordinates, 0,0 = top-left). Returns {controls, update}. */
+function drawDevice(g, sym) {
+  const { dev, def, w, h } = sym;
+  const props = deviceProps(dev);
+  const cat = CAT_COLOR[def.category] || '#64748b';
+  el('rect', { class: 'sd-body', x: 0, y: 0, width: w, height: h, rx: 10, style: `--cat:${cat}` }, g);
+  el('rect', { class: 'sd-stripe', x: 0.5, y: 14, width: 3, height: h - 28, rx: 1.5, fill: cat }, g);
+  // terminals + labels
+  for (const sl of sym.slots.values()) {
+    const p = sl.port;
+    const top = sl.edge === 'top';
+    if (p.kind === 'comm') {
+      const cw = sl.w - 10;
+      el('rect', { class: 'sd-comm', x: sl.x - cw / 2, y: top ? -7 : h - 7, width: cw, height: 14, rx: 3, stroke: BUS_COLOR[p.bus] || '#94a3b8' }, g);
+      el('text', { class: 'sd-tlabel comm', x: sl.x, y: top ? 20 : h - 13 }, g, shortLabel(p));
+    } else {
+      el('rect', { class: 'sd-term' + (p.kind === 'sock' ? ' sock' : ''), x: sl.x - 6, y: top ? -5 : h - 5, width: 12, height: 10, rx: p.kind === 'sock' ? 5 : 2 }, g);
+      el('text', { class: 'sd-tlabel', x: sl.x, y: top ? 18 : h - 11 }, g, p.label);
+    }
+  }
+  const title = def.category === 'field' && props.label ? props.label : def.short;
+  const controls = [];
+  const ctl = (x, y, cw, ch, action, extra = {}) => { controls.push({ x0: x, y0: y, x1: x + cw, y1: y + ch, action, devId: dev.id, ...extra }); };
+  const led = (x, y, color, r = 4) => {
+    const e = el('circle', { class: 'sd-led', cx: x, cy: y, r, style: `--on:${color}` }, g);
+    return e;
+  };
+  const ledOn = (e, on) => set(e, 'class', on ? 'sd-led on' : 'sd-led');
+  const txt = (x, y, s, cls = 'sd-text', parent = g) => el('text', { class: cls, x, y }, parent, s);
+  let update = () => {};
+
+  switch (def.sim) {
+    case 'plc': {
+      const xl = [], yl = [];
+      for (const sl of sym.slots.values()) {
+        if (/^X\d/.test(sl.port.id)) xl.push([Number.parseInt(sl.port.id.slice(1), 8), led(sl.x, 30, '#36ff6a', 3.6)]);
+        if (/^Y\d/.test(sl.port.id)) yl.push([Number.parseInt(sl.port.id.slice(1), 8), led(sl.x, h - 26, '#ffb020', 3.6)]);
+      }
+      txt(w / 2, h / 2 - 6, def.short, 'sd-title big');
+      txt(w / 2, h / 2 + 12, 'Delta · ' + def.part, 'sd-sub');
+      const pw = led(26, h / 2 - 16, '#36ff6a'), run = led(26, h / 2, '#36ff6a'), err = led(26, h / 2 + 16, '#ff3b30');
+      txt(36, h / 2 - 13, 'POW', 'sd-mini l'); txt(36, h / 2 + 3, 'RUN', 'sd-mini l'); txt(36, h / 2 + 19, 'ERR', 'sd-mini l');
+      const sw = el('g', { class: 'sd-switch' }, g);
+      el('rect', { x: w - 52, y: h / 2 - 22, width: 34, height: 44, rx: 6, class: 'sd-well' }, sw);
+      const knob = el('rect', { x: w - 47, y: h / 2 - 18, width: 24, height: 18, rx: 4, class: 'sd-knob' }, sw);
+      txt(w - 35, h / 2 + 34, 'RUN/STOP', 'sd-mini');
+      ctl(w - 58, h / 2 - 28, 46, 56, 'toggle', { label: 'RUN / STOP switch' });
+      update = (rt, t) => {
+        const cpu = rt.cpu, p = cpu.powered;
+        ledOn(pw, p); ledOn(run, p && cpu.running); ledOn(err, p && cpu.errorFlag && Math.floor(t * 3) % 2);
+        for (const [i, e] of xl) ledOn(e, p && cpu.X[i]);
+        for (const [i, e] of yl) ledOn(e, p && cpu.Y[i]);
+        set(knob, 'y', rt.dev.state.run !== false ? h / 2 - 18 : h / 2);
+      };
+      break;
+    }
+    case 'mcb': {
+      txt(w / 2, 32, 'MAINS 230 V', 'sd-title');
+      el('rect', { x: w / 2 - 16, y: 44, width: 32, height: 46, rx: 5, class: 'sd-well' }, g);
+      const lever = el('rect', { x: w / 2 - 11, y: 48, width: 22, height: 18, rx: 3, class: 'sd-lever' }, g);
+      const st = txt(w / 2, 104, 'ON', 'sd-state');
+      txt(w / 2, 118 - 4, def.part, 'sd-sub');
+      ctl(w / 2 - 24, 38, 48, 58, 'toggle', { label: 'MCB' });
+      update = (rt) => {
+        const on = !!rt.dev.state.on;
+        set(lever, 'y', on ? 48 : 68);
+        set(lever, 'class', on ? 'sd-lever on' : 'sd-lever');
+        const s = rt.tripped && !on ? 'TRIPPED' : on ? 'ON' : 'OFF';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (s === 'TRIPPED' ? ' err' : on ? ' ok' : '')); }
+      };
+      break;
+    }
+    case 'psu': {
+      txt(w / 2, h / 2 - 8, '24 V DC', 'sd-title');
+      txt(w / 2, h / 2 + 8, def.part, 'sd-sub');
+      const ok = led(w / 2 - 22, h / 2 + 24, '#36ff6a');
+      const st = txt(w / 2 - 12, h / 2 + 28, 'DC OK', 'sd-mini l');
+      update = (rt) => {
+        ledOn(ok, rt.powered && !rt.short);
+        const s = rt.short ? 'SHORT' : 'DC OK';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-mini l' + (rt.short ? ' err' : '')); }
+      };
+      break;
+    }
+    case 'vfd': {
+      el('rect', { x: w / 2 - 70, y: 34, width: 140, height: 34, rx: 5, class: 'sd-lcd' }, g);
+      const disp = txt(w / 2 + 62, 59, '', 'sd-seg');
+      const leds = {};
+      ['RUN', 'STOP', 'FWD', 'REV'].forEach((k, i) => { const x = w / 2 - 54 + i * 36; leds[k] = led(x, 80, k === 'STOP' ? '#ff3b30' : '#36ff6a', 3.4); txt(x + 6, 83, k, 'sd-mini l'); });
+      const kw = 40, kh = 22, kx0 = w / 2 - (3 * kw + 8) / 2;
+      const keyEls = {};
+      for (const k of VFD_KEYS) {
+        const x = kx0 + k.c * (kw + 4), y = 94 + k.r * (kh + 5), ww = (k.span || 1) * kw + ((k.span || 1) - 1) * 4;
+        const r = el('rect', { x, y, width: ww, height: kh, rx: 5, class: 'sd-key', fill: k.color || null }, g);
+        txt(x + ww / 2, y + kh / 2 + 3.5, k.label, 'sd-key-t');
+        keyEls[k.k] = r;
+        ctl(x, y, ww, kh, 'vfdKey', { key: k.k, label: k.label });
+      }
+      txt(w / 2, h - 34, 'MS300  ·  ' + def.part, 'sd-sub');
+      update = (rt, t) => {
+        const d = rt.vfd.display(t);
+        const s = d.off ? '' : String(d.text);
+        if (disp.textContent !== s) disp.textContent = s;
+        set(disp, 'class', 'sd-seg' + (d.fault ? ' blink' : ''));
+        for (const k of Object.keys(leds)) ledOn(leds[k], !!d.leds[k]);
+      };
+      sym.press = (key) => { const r = keyEls[key]; if (!r) return; r.classList.add('down'); setTimeout(() => r.classList.remove('down'), 140); };
+      break;
+    }
+    case 'hmi': {
+      const sw = w - 30, sh = sw * 0.6;
+      el('rect', { x: 11, y: 30, width: sw + 8, height: sh + 8, rx: 6, class: 'sd-bezel' }, g);
+      const img = el('image', { x: 15, y: 34, width: sw, height: sh, preserveAspectRatio: 'none', class: 'sd-screen' }, g);
+      el('rect', { x: 15, y: 34, width: sw, height: sh, class: 'sd-screen-edge' }, g);
+      txt(w / 2, h - 12, 'Delta ' + def.short, 'sd-sub');
+      ctl(15, 34, sw, sh, 'hmi', { screen: { x: 15, y: 34, w: sw, h: sh } });
+      sym.screen = img;
+      break;
+    }
+    case 'laptop': {
+      const sw = w - 40, sh = sw * 0.625;
+      el('rect', { x: 16, y: 26, width: sw + 8, height: sh + 8, rx: 6, class: 'sd-bezel' }, g);
+      const img = el('image', { x: 20, y: 30, width: sw, height: sh, preserveAspectRatio: 'none', class: 'sd-screen' }, g);
+      el('path', { d: `M8 ${h - 34} L${w - 8} ${h - 34} L${w - 18} ${h - 24} L18 ${h - 24} Z`, class: 'sd-well' }, g);
+      txt(w / 2, h - 10, 'ISPSoft · tap to program', 'sd-sub');
+      ctl(16, 26, sw + 8, sh + 8, 'laptop', { label: 'Laptop' });
+      sym.screen = img;
+      break;
+    }
+    case 'motor': {
+      const cx = w / 2, cy = h / 2 + 10;
+      el('circle', { cx, cy, r: 42, class: 'sd-motor' }, g);
+      const fan = el('g', { class: 'sd-fan' }, g);
+      for (let i = 0; i < 3; i++) el('line', { x1: cx, y1: cy, x2: cx + Math.cos(i * 2.094) * 34, y2: cy + Math.sin(i * 2.094) * 34 }, fan);
+      el('circle', { cx, cy, r: 20, class: 'sd-motor-in' }, g);
+      txt(cx, cy + 5, 'M 3~', 'sd-title');
+      const rpm = txt(cx, h - 6, '0 rpm', 'sd-sub');
+      update = (rt) => {
+        set(fan, 'transform', `rotate(${((rt.angle || 0) * 180 / Math.PI).toFixed(1)} ${cx} ${cy})`);
+        const s = `${Math.round(rt.rpm || 0)} rpm`;
+        if (rpm.textContent !== s) rpm.textContent = s;
+        set(fan, 'class', Math.abs(rt.rpm || 0) > 5 ? 'sd-fan on' : 'sd-fan');
+      };
+      break;
+    }
+    case 'pb': {
+      const cx = w / 2, cy = 58;
+      el('circle', { cx, cy, r: 24, class: 'sd-bezelr' }, g);
+      const cap = el('circle', { cx, cy, r: 19, fill: CAP[props.color] || CAP.green, class: 'sd-cap' }, g);
+      txt(cx, h - 12, title, 'sd-label');
+      txt(cx, 25 + 8, props.contact === 'NC' ? 'NC' : 'NO', 'sd-mini');
+      ctl(cx - 28, cy - 28, 56, 56, 'press', { label: title });
+      update = (rt) => { set(cap, 'r', rt.pressed ? 15 : 19); set(cap, 'class', rt.pressed ? 'sd-cap down' : 'sd-cap'); };
+      break;
+    }
+    case 'estop': {
+      const cx = w / 2, cy = 58;
+      el('circle', { cx, cy, r: 26, fill: '#f2b705', class: 'sd-ring' }, g);
+      const cap = el('circle', { cx, cy, r: 19, fill: '#d62828', class: 'sd-cap' }, g);
+      const st = txt(cx, 33, '', 'sd-mini err');
+      txt(cx, h - 12, title, 'sd-label');
+      ctl(cx - 28, cy - 28, 56, 56, 'toggle', { label: title });
+      update = (rt) => { const p = !!rt.dev.state.pressed; set(cap, 'r', p ? 15 : 19); const s = p ? 'LATCHED' : ''; if (st.textContent !== s) st.textContent = s; };
+      break;
+    }
+    case 'selector': {
+      const cx = w / 2, cy = 60;
+      el('circle', { cx, cy, r: 21, class: 'sd-bezelr' }, g);
+      const bar = el('rect', { x: cx - 4, y: cy - 18, width: 8, height: 36, rx: 3, class: 'sd-knob' }, g);
+      txt(cx - 28, 34, props.pos0 || '0', 'sd-mini');
+      txt(cx + 28, 34, props.pos1 || '1', 'sd-mini');
+      txt(cx, h - 12, title, 'sd-label');
+      ctl(cx - 28, cy - 28, 56, 56, 'toggle', { label: title });
+      update = (rt) => set(bar, 'transform', `rotate(${rt.dev.state.on ? 40 : -40} ${cx} ${cy})`);
+      break;
+    }
+    case 'lamp': {
+      const cx = w / 2, cy = 58, col = LAMP[props.color] || LAMP.green;
+      const glow = el('circle', { cx, cy, r: 30, fill: col, class: 'sd-glow' }, g);
+      el('circle', { cx, cy, r: 22, class: 'sd-bezelr' }, g);
+      const lens = el('circle', { cx, cy, r: 17, fill: col, class: 'sd-lens' }, g);
+      txt(cx, h - 12, title, 'sd-label');
+      update = (rt) => { set(lens, 'class', rt.on ? 'sd-lens on' : 'sd-lens'); set(glow, 'class', rt.on ? 'sd-glow on' : 'sd-glow'); };
+      break;
+    }
+    case 'buzzer': {
+      const cx = w / 2, cy = 58;
+      const ring = el('circle', { cx, cy, r: 26, class: 'sd-wave' }, g);
+      el('circle', { cx, cy, r: 20, class: 'sd-bezelr' }, g);
+      el('circle', { cx, cy, r: 4, fill: '#000' }, g);
+      txt(cx, h - 12, title, 'sd-label');
+      update = (rt) => set(ring, 'class', rt.on ? 'sd-wave on' : 'sd-wave');
+      break;
+    }
+    case 'prox': {
+      const cy = 58;
+      el('rect', { x: 14, y: cy - 11, width: 46, height: 22, rx: 4, class: 'sd-well' }, g);
+      el('rect', { x: 58, y: cy - 9, width: 6, height: 18, rx: 2, fill: '#f97316' }, g);
+      const l = led(24, cy, '#ffb020', 3.4);
+      const target = el('rect', { x: 72, y: cy - 14, width: 16, height: 28, rx: 2, class: 'sd-target' }, g);
+      txt(w / 2, h - 12, title, 'sd-label');
+      ctl(8, cy - 26, w - 16, 52, 'toggle', { label: 'Metal part in front of the sensor' });
+      update = (rt) => { const here = !!rt.dev.state.target; ledOn(l, rt.powered && here); set(target, 'x', here ? 72 : 84); set(target, 'class', here ? 'sd-target on' : 'sd-target'); };
+      break;
+    }
+    case 'pot': {
+      const cx = w / 2, cy = 60;
+      el('circle', { cx, cy, r: 22, class: 'sd-bezelr' }, g);
+      const kn = el('g', {}, g);
+      el('circle', { cx, cy, r: 16, class: 'sd-knobc' }, kn);
+      el('line', { x1: cx, y1: cy, x2: cx, y2: cy - 14, class: 'sd-ptr' }, kn);
+      const val = txt(cx, 33, '', 'sd-mini');
+      txt(cx, h - 12, title, 'sd-label');
+      ctl(cx - 28, cy - 28, 56, 56, 'pot', { label: title });
+      update = (rt) => { const p = rt.dev.state.pos ?? 0.5; set(kn, 'transform', `rotate(${((p - 0.5) * 270).toFixed(0)} ${cx} ${cy})`); const s = Math.round(p * 100) + '%'; if (val.textContent !== s) val.textContent = s; };
+      break;
+    }
+    default:
+      txt(w / 2, h / 2, title, 'sd-title');
+  }
+  return { controls, update };
+}
+
+// ====================================================================== the view
+export class LabSchematic {
+  constructor(host, { hmiCanvas, laptopCanvas } = {}) {
+    this.host = host;
+    this.hmiCanvas = hmiCanvas;
+    this.laptopCanvas = laptopCanvas;
+    this.view = { x: 0, y: 0, z: 0.5 };
+    this.controls = { enabled: true };
+    this.renderer = { shadowMap: {} };
+    this.visible = true;
+    this.dirty = true;
+    this.running = false;
+    this.t = 0;
+    this.devs = new Map();
+    this.wireEls = new Map();
+    this.sel = { devs: new Set(), conns: new Set() };
+    this.markers = [];
+    this.svg = el('svg', { class: 'schem', width: '100%', height: '100%' });
+    this.svg.innerHTML = '<defs><pattern id="schGrid" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="1" fill="rgba(148,163,184,.16)"/></pattern></defs>';
+    this.vp = el('g', { class: 'schem-vp' }, this.svg);
+    this.gridRect = el('rect', { fill: 'url(#schGrid)', class: 'schem-grid' }, this.vp);
+    this.layerDucts = el('g', { class: 'schem-ducts' }, this.vp);
+    this.layerWires = el('g', { class: 'schem-wires' }, this.vp);
+    this.layerDevs = el('g', { class: 'schem-devs' }, this.vp);
+    this.layerOver = el('g', { class: 'schem-over' }, this.vp);
+    host.appendChild(this.svg);
+    this.pointers = new Map();
+    this.svg.addEventListener('pointerdown', (e) => this.onDown(e));
+    this.svg.addEventListener('pointermove', (e) => this.onMove(e));
+    this.svg.addEventListener('pointerup', (e) => this.onUp(e));
+    this.svg.addEventListener('pointercancel', (e) => this.onUp(e));
+    this.svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(host);
+    const loop = (now) => {
+      this.raf = requestAnimationFrame(loop);
+      const dt = Math.min(0.1, (now - (this.lastNow || now)) / 1000);
+      this.lastNow = now;
+      this.tick(dt);
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+
+  dispose() { cancelAnimationFrame(this.raf); this.ro.disconnect(); this.svg.remove(); }
+
+  resize() {
+    const r = this.host.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    if (this.lastSize && this.fitted) this.fit(false);
+    else if (this.lastSize) { this.view.x += (r.width - this.lastSize.w) / 2; this.view.y += (r.height - this.lastSize.h) / 2; }
+    this.lastSize = { w: r.width, h: r.height };
+    if (this.pendingFit) { this.pendingFit = false; this.fit(false); }
+    this.applyView();
+  }
+
+  // ------------------------------------------------------------------ project
+  setProject(project) { this.project = project; this.syncDevices(true); }
+
+  syncDevices() {
+    if (!this.project) return;
+    this.layerDevs.innerHTML = '';
+    this.devs.clear();
+    const layout = layoutSchematic(this.project);
+    for (const dev of this.project.devices) {
+      const pl = layout.syms.get(dev.id);
+      if (!pl) continue;
+      const g = el('g', { class: 'sd', 'data-id': dev.id }, this.layerDevs);
+      const d = drawDevice(g, pl.sym);
+      this.devs.set(dev.id, { dev, g, x: 0, y: 0, sym: pl.sym, controls: d.controls, update: d.update });
+    }
+    this.hmiStamp = 0; this.lapStamp = 0;
+    this.hmiDirty = true; this.laptopDirty = true;
+    this.syncCables(layout);
+  }
+
+  /** Re-route every wire (a new wire can widen a duct and move the devices a little). */
+  syncCables(layout = null) {
+    if (!this.project) return;
+    this.layout = layout || layoutSchematic(this.project);
+    for (const [id, d] of this.devs) {
+      const pl = this.layout.syms.get(id);
+      if (!pl) continue;
+      d.x = pl.x; d.y = pl.y;
+      d.g.setAttribute('transform', `translate(${pl.x} ${pl.y})`);
+    }
+    this.layerDucts.innerHTML = '';
+    for (const dct of this.layout.ducts) {
+      if (dct.y1 - dct.y0 < 10) continue;
+      el('rect', { class: 'schem-duct', x: dct.x0 - 10, y: dct.y0, width: dct.x1 - dct.x0 + 20, height: dct.y1 - dct.y0, rx: 6 }, this.layerDucts);
+    }
+    this.layerWires.innerHTML = '';
+    this.wireEls.clear();
+    for (const c of this.project.conns) {
+      const pts = this.layout.wires.get(c.id);
+      if (!pts) continue;
+      const g = el('g', { class: 'sw' + (c.comm ? ' comm' : '') + (c.color === 'pe' ? ' pe' : ''), 'data-id': c.id }, this.layerWires);
+      const d = pathD(pts);
+      el('path', { class: 'sw-hl', d }, g);
+      el('path', { class: 'sw-out', d }, g);
+      const core = el('path', { class: 'sw-core', d }, g);
+      if (c.comm) {
+        const pa = this.portOf(c.a.dev, c.a.port);
+        core.setAttribute('stroke', (pa && BUS_COLOR[pa.bus]) || '#94a3b8');
+      } else core.setAttribute('stroke', c.color === 'pe' ? '#2f9e44' : c.color || '#f97316');
+      if (c.color === 'pe') el('path', { class: 'sw-pe', d }, g);
+      el('path', { class: 'sw-flow', d }, g);
+      for (const p of [pts[0], pts[pts.length - 1]]) el('circle', { class: 'sw-end', cx: p[0], cy: p[1], r: 2.6 }, g);
+      this.wireEls.set(c.id, { g, pts, conn: c });
+    }
+    this.applySelection();
+    this.drawMarkers();
+    this.dirty = true;
+  }
+
+  portOf(devId, portId) { const d = this.devs.get(devId); const s = d && d.sym.slots.get(portId); return s ? s.port : null; }
+
+  // ------------------------------------------------------------------ frame
+  tick(dt) {
+    this.t += dt;
+    if (this.anim) this.stepAnim();
+    if (this.visible === false || !this.system) return;
+    // device states (≈ 30 fps is plenty for LEDs and text)
+    this.acc = (this.acc || 0) + dt;
+    if (this.acc < 0.033 && !this.dirty) return;
+    this.acc = 0;
+    for (const [id, d] of this.devs) {
+      const rt = this.system.rts.get(id);
+      if (!rt) continue;
+      try { d.update(rt, this.t); } catch (e) { /* keep the others going */ }
+    }
+    // live HMI / laptop screens
+    const now = performance.now();
+    if (this.hmiDirty && now - (this.hmiStamp || 0) > 140) { this.hmiDirty = false; this.hmiStamp = now; this.drawScreen('hmi', this.hmiCanvas); }
+    if (this.laptopDirty && now - (this.lapStamp || 0) > 600) { this.laptopDirty = false; this.lapStamp = now; this.drawScreen('laptop', this.laptopCanvas); }
+    this.dirty = false;
+  }
+
+  drawScreen(sim, canvas) {
+    if (!canvas) return;
+    for (const d of this.devs.values()) {
+      if (DEVICE_DEFS[d.dev.type].sim !== sim || !d.sym.screen) continue;
+      if (!this.shot) { this.shot = document.createElement('canvas'); }
+      const c = this.shot;
+      const w = sim === 'hmi' ? 400 : 320, hh = sim === 'hmi' ? 240 : 200;
+      if (c.width !== w) c.width = w;
+      if (c.height !== hh) c.height = hh;
+      c.getContext('2d').drawImage(canvas, 0, 0, w, hh);
+      d.sym.screen.setAttribute('href', c.toDataURL('image/jpeg', 0.8));
+    }
+  }
+
+  setSystem(sys) { this.system = sys; this.dirty = true; }
+  setRunning(on) {
+    this.running = on;
+    if (!on) for (const w of this.wireEls.values()) w.g.classList.remove('flow', 'data');
+    this.dirty = true;
+  }
+
+  updateFlows(liveConn, busyLinks) {
+    for (const w of this.wireEls.values()) {
+      const c = w.conn;
+      const mode = !this.running ? null : c.comm ? (busyLinks(c) ? 'data' : null) : liveConn(c) ? 'flow' : null;
+      w.g.classList.toggle('flow', mode === 'flow');
+      w.g.classList.toggle('data', mode === 'data');
+    }
+  }
+
+  // ------------------------------------------------------------------ view
+  applyView() {
+    const { x, y, z } = this.view;
+    this.vp.setAttribute('transform', `translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${z.toFixed(4)})`);
+    const r = this.host.getBoundingClientRect();
+    const w0 = -x / z, h0 = -y / z;
+    this.gridRect.setAttribute('x', Math.floor(w0 / 28) * 28 - 28);
+    this.gridRect.setAttribute('y', Math.floor(h0 / 28) * 28 - 28);
+    this.gridRect.setAttribute('width', r.width / z + 84);
+    this.gridRect.setAttribute('height', r.height / z + 84);
+    this.svg.classList.toggle('far', z < 0.42);
+    this.svg.style.setProperty('--z', z);
+  }
+
+  toScreen(wx, wy) { const r = this.svg.getBoundingClientRect(); return [wx * this.view.z + this.view.x + r.left, wy * this.view.z + this.view.y + r.top]; }
+  toWorld(cx, cy) { const r = this.svg.getBoundingClientRect(); return [(cx - r.left - this.view.x) / this.view.z, (cy - r.top - this.view.y) / this.view.z]; }
+
+  /** View that shows the world box [x0,y0,x1,y1]. */
+  viewFor(b, pad = 24, zmax = 2.2) {
+    const r = this.host.getBoundingClientRect();
+    const tools = this.host.parentElement && this.host.parentElement.querySelector('.lab-tools');
+    const tw = tools && tools.offsetParent ? tools.getBoundingClientRect().width + 10 : 0;
+    const top = 50, bottom = 48;
+    const w = Math.max(60, r.width - tw - pad * 2), hh = Math.max(60, r.height - top - bottom);
+    const z = Math.max(0.08, Math.min(zmax, w / (b[2] - b[0] || 1), hh / (b[3] - b[1] || 1)));
+    return { z, x: pad + w / 2 - ((b[0] + b[2]) / 2) * z, y: top + hh / 2 - ((b[1] + b[3]) / 2) * z };
+  }
+
+  fit(animate = true) {
+    if (!this.layout) return;
+    const r = this.host.getBoundingClientRect();
+    if (!r.width || !r.height) { this.pendingFit = true; return; }
+    const b = this.layout.box;
+    this.fitted = true;
+    this.go(this.viewFor([b.x0, b.y0, b.x1, b.y1], 14, 1.6), animate);
+  }
+
+  go(target, animate = true, dur = 320) {
+    if (!animate) { this.anim = null; this.view = target; this.applyView(); return; }
+    this.anim = { t0: performance.now(), dur, from: { ...this.view }, to: target };
+  }
+
+  stepAnim() {
+    const a = this.anim;
+    let k = (performance.now() - a.t0) / a.dur;
+    if (k >= 1) { k = 1; this.anim = null; }
+    const e = 1 - Math.pow(1 - k, 3);
+    this.view = { x: a.from.x + (a.to.x - a.from.x) * e, y: a.from.y + (a.to.y - a.from.y) * e, z: a.from.z + (a.to.z - a.from.z) * e };
+    this.applyView();
+  }
+
+  focus(target = 'overview', animate = true) {
+    if (!this.layout) return;
+    if (target === 'overview') { this.fit(animate); return; }
+    let b = null;
+    const grow = (x0, y0, x1, y1) => { b = b ? [Math.min(b[0], x0), Math.min(b[1], y0), Math.max(b[2], x1), Math.max(b[3], y1)] : [x0, y0, x1, y1]; };
+    if (target === 'panel' || target === 'console') {
+      for (const d of this.devs.values()) {
+        const zone = DEVICE_DEFS[d.dev.type].zone;
+        if ((target === 'console') === (zone === 'console')) grow(d.x - 20, d.y - 40, d.x + d.sym.w + 20, d.y + d.sym.h + 40);
+      }
+    } else {
+      const d = this.devs.get(target);
+      if (d) grow(d.x - 30, d.y - 46, d.x + d.sym.w + 30, d.y + d.sym.h + 46);
+    }
+    if (!b) return;
+    this.fitted = false;
+    this.go(this.viewFor(b, 16, target === 'panel' || target === 'console' ? 1.6 : 2.4), animate);
+  }
+
+  getView() { return { x: Math.round(this.view.x), y: Math.round(this.view.y), z: +this.view.z.toFixed(4) }; }
+  setView(v) { if (!v || !Number.isFinite(v.z)) return; this.fitted = false; this.view = { x: v.x, y: v.y, z: v.z }; this.applyView(); }
+
+  // zoom gestures (double-tap slide and double tap)
+  zoomStart(x, y) { this.anim = null; this.zg = { view: { ...this.view }, x, y }; this.fitted = false; }
+  zoomTo(f) {
+    const g = this.zg;
+    if (!g) return;
+    const r = this.svg.getBoundingClientRect();
+    const z = Math.max(0.08, Math.min(6, g.view.z * f));
+    const k = z / g.view.z;
+    const px = g.x - r.left, py = g.y - r.top;
+    this.view = { z, x: px - (px - g.view.x) * k, y: py - (py - g.view.y) * k };
+    this.applyView();
+  }
+  zoomAt(f, x, y) {
+    const r = this.svg.getBoundingClientRect();
+    const z = Math.max(0.08, Math.min(6, this.view.z * f));
+    const k = z / this.view.z;
+    const px = x - r.left, py = y - r.top;
+    this.fitted = false;
+    this.go({ z, x: px - (px - this.view.x) * k, y: py - (py - this.view.y) * k });
+  }
+
+  // ------------------------------------------------------------------ pan / pinch / wheel
+  onDown(e) {
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { this.svg.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    this.anim = null;
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, view: { ...this.view } };
+      this.drag = null;
+      return;
+    }
+    this.drag = this.controls.enabled ? { id: e.pointerId, x: e.clientX, y: e.clientY, view: { ...this.view } } : null;
+  }
+
+  onMove(e) {
+    if (!this.pointers.has(e.pointerId)) return;
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pinch && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()];
+      const p = this.pinch;
+      const z = Math.max(0.08, Math.min(6, p.view.z * (Math.hypot(a.x - b.x, a.y - b.y) / (p.d || 1))));
+      const r = this.svg.getBoundingClientRect();
+      const k = z / p.view.z;
+      const px = p.mx - r.left, py = p.my - r.top;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      this.fitted = false;
+      this.view = { z, x: px - (px - p.view.x) * k + (mx - p.mx), y: py - (py - p.view.y) * k + (my - p.my) };
+      this.applyView();
+      return;
+    }
+    const d = this.drag;
+    if (!d || d.id !== e.pointerId) return;
+    if (!this.controls.enabled) { this.drag = null; return; }
+    if (!d.moving && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    d.moving = true;
+    this.fitted = false;
+    this.view = { ...this.view, x: d.view.x + (e.clientX - d.x), y: d.view.y + (e.clientY - d.y) };
+    this.applyView();
+  }
+
+  onUp(e) {
+    this.pointers.delete(e.pointerId);
+    try { this.svg.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (this.pinch && this.pointers.size < 2) {
+      this.pinch = null;
+      // continue panning with the finger that stays down
+      const rest = [...this.pointers.entries()][0];
+      this.drag = rest && this.controls.enabled ? { id: rest[0], x: rest[1].x, y: rest[1].y, view: { ...this.view }, moving: true } : null;
+      return;
+    }
+    if (this.drag && this.drag.id === e.pointerId) this.drag = null;
+  }
+
+  onWheel(e) {
+    e.preventDefault();
+    this.anim = null;
+    this.fitted = false;
+    if (e.ctrlKey || e.deltaMode === 1 || Math.abs(e.deltaY) >= 50) {
+      const r = this.svg.getBoundingClientRect();
+      const z = Math.max(0.08, Math.min(6, this.view.z * Math.exp(-e.deltaY * 0.0022)));
+      const k = z / this.view.z;
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      this.view = { z, x: px - (px - this.view.x) * k, y: py - (py - this.view.y) * k };
+    } else { this.view.x -= e.deltaX; this.view.y -= e.deltaY; }
+    this.applyView();
+  }
+
+  // ------------------------------------------------------------------ picking
+  /** Ports near a screen point, nearest first: [{devId, dev, port, d, sx, sy}]. */
+  portsNear(x, y, px = 30, filter) {
+    const out = [];
+    const [wx, wy] = this.toWorld(x, y);
+    const z = this.view.z;
+    for (const d of this.devs.values()) {
+      if (wx < d.x - px / z - 30 || wx > d.x + d.sym.w + px / z + 30 || wy < d.y - px / z - 30 || wy > d.y + d.sym.h + px / z + 30) continue;
+      for (const sl of d.sym.slots.values()) {
+        if (filter && !filter(d.dev, sl.port)) continue;
+        const dist = Math.hypot((d.x + sl.x - wx) * z, (d.y + sl.y - wy) * z);
+        if (dist <= px) { const [sx, sy] = this.toScreen(d.x + sl.x, d.y + sl.y); out.push({ devId: d.dev.id, dev: d.dev, port: sl.port, d: dist, sx, sy }); }
+      }
+    }
+    return out.sort((a, b) => a.d - b.d);
+  }
+
+  pickControl(x, y) {
+    const [wx, wy] = this.toWorld(x, y);
+    const pad = 4 / this.view.z;
+    for (const d of this.devs.values()) {
+      for (const c of d.controls) {
+        if (wx < d.x + c.x0 - pad || wx > d.x + c.x1 + pad || wy < d.y + c.y0 - pad || wy > d.y + c.y1 + pad) continue;
+        const out = { ...c };
+        if (c.screen) out.uv = { x: Math.max(0, Math.min(1, (wx - d.x - c.screen.x) / c.screen.w)), y: 1 - Math.max(0, Math.min(1, (wy - d.y - c.screen.y) / c.screen.h)) };
+        return out;
+      }
+    }
+    return null;
+  }
+
+  pickDevice(x, y) {
+    const [wx, wy] = this.toWorld(x, y);
+    for (const d of this.devs.values()) if (wx >= d.x && wx <= d.x + d.sym.w && wy >= d.y && wy <= d.y + d.sym.h) return d.dev.id;
+    return null;
+  }
+
+  pickCable(x, y, px = 16) {
+    let best = null, bd = px;
+    for (const [id, w] of this.wireEls) {
+      const pts = w.pts.map(([a, b]) => this.toScreen(a, b));
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d = segDist(x, y, pts[i], pts[i + 1]);
+        if (d < bd) { bd = d; best = id; }
+      }
+    }
+    return best;
+  }
+
+  /** Devices and cables caught by a selection rectangle (client px). */
+  itemsInRect(rect, mode) {
+    const devs = [], conns = [];
+    for (const d of this.devs.values()) {
+      const [x0, y0] = this.toScreen(d.x, d.y), [x1, y1] = this.toScreen(d.x + d.sym.w, d.y + d.sym.h);
+      if (boxInSelection(rect, { x0, y0, x1, y1 }, mode)) devs.push(d.dev.id);
+    }
+    for (const [id, w] of this.wireEls) if (polylineInSelection(rect, w.pts.map(([a, b]) => this.toScreen(a, b)), mode)) conns.push(id);
+    return { devs, conns };
+  }
+
+  modelOf(id) { const d = this.devs.get(id); return d && d.sym.press ? { press: (k) => d.sym.press(k) } : null; }
+
+  // ------------------------------------------------------------------ markers + selection
+  setMarkers(list) { this.markers = list || []; this.drawMarkers(); }
+
+  drawMarkers() {
+    this.layerOver.querySelectorAll('.sm').forEach((m) => m.remove());
+    for (const it of this.markers) {
+      const d = this.devs.get(it.devId);
+      const sl = d && d.sym.slots.get(it.portId);
+      if (!sl) continue;
+      el('circle', { class: 'sm' + (it.pulse ? ' pulse' : ''), cx: d.x + sl.x, cy: d.y + sl.y, r: sl.port.kind === 'comm' ? 16 : 10, stroke: it.color || '#34d399' }, this.layerOver);
+    }
+  }
+
+  selectDevice(id) { this.sel.devs = new Set(id ? [id] : []); this.applySelection(); }
+  selectCable(id) { this.sel.conns = new Set(id ? [id] : []); this.applySelection(); }
+  selectMany(devs = [], conns = []) { this.sel = { devs: new Set(devs), conns: new Set(conns) }; this.applySelection(); }
+
+  applySelection() {
+    this.layerOver.querySelectorAll('.ssel').forEach((m) => m.remove());
+    for (const id of this.sel.devs) {
+      const d = this.devs.get(id);
+      if (d) el('rect', { class: 'ssel', x: d.x - 7, y: d.y - 7, width: d.sym.w + 14, height: d.sym.h + 14, rx: 14 }, this.layerOver);
+    }
+    for (const [id, w] of this.wireEls) w.g.classList.toggle('selected', this.sel.conns.has(id));
+  }
+
+  // ------------------------------------------------------------------ images
+  thumbnail(dev) { return deviceThumbnail(dev); }
+
+  /** Small JPEG of the whole schematic (for the lab list). */
+  snapshot(w = 240, h = 150) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    g.fillStyle = '#0a1226'; g.fillRect(0, 0, w, h);
+    const b = this.layout ? this.layout.box : { x0: 0, y0: 0, x1: 1, y1: 1 };
+    const k = Math.min((w - 16) / (b.x1 - b.x0 || 1), (h - 16) / (b.y1 - b.y0 || 1));
+    const ox = (w - (b.x1 - b.x0) * k) / 2 - b.x0 * k, oy = (h - (b.y1 - b.y0) * k) / 2 - b.y0 * k;
+    g.lineWidth = Math.max(0.8, 2.2 * k);
+    for (const wr of this.wireEls.values()) {
+      g.strokeStyle = wr.conn.comm ? '#64748b' : wr.conn.color === 'pe' ? '#2f9e44' : wr.conn.color || '#f97316';
+      g.beginPath();
+      wr.pts.forEach(([x, y], i) => (i ? g.lineTo(ox + x * k, oy + y * k) : g.moveTo(ox + x * k, oy + y * k)));
+      g.stroke();
+    }
+    for (const d of this.devs.values()) {
+      g.fillStyle = '#1b2438'; g.strokeStyle = CAT_COLOR[DEVICE_DEFS[d.dev.type].category] || '#64748b';
+      g.lineWidth = 1;
+      g.beginPath(); g.rect(ox + d.x * k, oy + d.y * k, d.sym.w * k, d.sym.h * k); g.fill(); g.stroke();
+    }
+    return c.toDataURL('image/jpeg', 0.72);
+  }
+}
+
+/** SVG data URL of one device symbol (device library, settings sheet). */
+export function deviceThumbnail(dev) {
+  const sym = symbolFor(dev);
+  const pad = 14;
+  const svg = el('svg', { xmlns: SVGNS, viewBox: `${-pad} ${-pad} ${sym.w + pad * 2} ${sym.h + pad * 2}`, width: sym.w + pad * 2, height: sym.h + pad * 2 });
+  el('style', {}, svg, THUMB_CSS);
+  drawDevice(el('g', {}, svg), sym);
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+}
+
+function segDist(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - a[0]) * dx + (py - a[1]) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
+
+// styles embedded in device thumbnails (the live view uses plc.css)
+const THUMB_CSS = `
+.sd-body{fill:#18223a;stroke:#3a4a6b;stroke-width:1.5}.sd-term{fill:#cbd5e1;stroke:#64748b}.sd-term.sock{fill:#111827;stroke:#94a3b8}
+.sd-comm{fill:#0b1222;stroke-width:2}text{font-family:Inter,system-ui,sans-serif;text-anchor:middle;fill:#cbd5e1}
+.sd-tlabel{font-size:9px;font-weight:700;fill:#94a3b8}.sd-title{font-size:15px;font-weight:800;fill:#e2e8f0}.sd-title.big{font-size:22px}
+.sd-sub{font-size:9px;fill:#64748b}.sd-mini{font-size:8px;font-weight:700;fill:#94a3b8}.sd-mini.l{text-anchor:start}.sd-label{font-size:11px;font-weight:800;fill:#e2e8f0}
+.sd-led{fill:#1f2937;stroke:#0b1222}.sd-well,.sd-bezel{fill:#0b1222;stroke:#334155}.sd-knob,.sd-lever{fill:#cbd5e1}.sd-bezelr{fill:#9ca3af;stroke:#475569}
+.sd-lcd{fill:#1a0505;stroke:#3f1d1d}.sd-key{fill:#4a505b}.sd-key-t{font-size:9px;font-weight:800;fill:#fff}.sd-screen-edge{fill:#020305;stroke:#1e293b}
+.sd-motor{fill:#475569;stroke:#94a3b8;stroke-width:2}.sd-motor-in{fill:#334155}.sd-fan line{stroke:#94a3b8;stroke-width:4}.sd-glow{opacity:0}.sd-lens{opacity:.45}
+.sd-wave{fill:none}.sd-target{fill:#8892a0;opacity:.35}.sd-knobc{fill:#111827;stroke:#64748b}.sd-ptr{stroke:#fff;stroke-width:2.5}.sd-state{font-size:12px;font-weight:800}`;

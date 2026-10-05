@@ -17,7 +17,7 @@ import { LAB_TASKS } from '../tasks.js';
 import { Sheet } from '../../ui/widgets.js';
 
 const TABS = [
-  ['panel', 'cube', '3D Lab'],
+  ['panel', 'cube', 'Lab'],
   ['ladder', 'ladder', 'Ladder'],
   ['hmi', 'screen', 'HMI'],
   ['vfd', 'gauge', 'VFD'],
@@ -74,7 +74,9 @@ export class LabScreen {
       h('button', { class: 'fs-btn', title: 'Exit full screen', html: icon('fullscreenExit', 20), onclick: () => this.setFullscreen(false) }),
       this.fsRun = h('button', { class: 'fs-btn fs-run', html: icon('play', 20), onclick: () => this.toggleSim() }),
       ...TABS.map(([id, ic]) => h('button', { class: 'fs-btn', 'data-tab': id, html: icon(ic, 20), onclick: () => this.setTab(id) })));
-    this.root.append(this.top, this.status, this.main, this.nav, this.fsBar);
+    // full screen hides every menu; this small handle brings them back
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
+    this.root.append(this.top, this.status, this.main, this.nav, this.fsBar, this.fsHandle);
     this.updateSub();
     this.ro = new ResizeObserver(() => this.updateLayout());
     this.ro.observe(this.root);
@@ -152,8 +154,18 @@ export class LabScreen {
   setFullscreen(on) {
     this.fullscreen = on;
     this.root.classList.toggle('fs', on);
+    this.setChrome(!on, false);
+    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (top right) for the menus'); }
     Native.setImmersive(on);
     Native.vibrate(8);
+  }
+
+  /** Full screen: show (on) or hide the menus and tool bars. */
+  setChrome(on, buzz = true) {
+    this.root.classList.toggle('fs-clean', !on);
+    this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
+    this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (buzz) Native.vibrate(6);
   }
 
   updateSub() {
@@ -224,7 +236,7 @@ export class LabScreen {
   saveNow() {
     const sys = this.sys;
     if (sys && sys.plc && sys.plc.cpu.powered) sys.saveLatched(sys.plc);
-    if (this.scene) this.project.view = this.scene.getView();
+    if (this.scene) { const v = this.scene.views(); if (v.view) this.project.view = v.view; if (v.view2d) this.project.view2d = v.view2d; }
     if (!saveLab(this.project)) toast('Storage is full — could not save', 'error');
   }
 
@@ -272,11 +284,12 @@ export class LabScreen {
     dialog({
       title: 'Delta PLC Lab',
       body: `<div class="lab-help">
-        <p><b>1 · Wire it.</b> In <b>3D Lab</b> choose <b>⚡ Wire</b>, tap a terminal, then tap the other end. Green rings show where it can go. Tap a cable to recolour or delete it.</p>
+        <p><b>1 · Wire it.</b> In <b>Lab</b> choose <b>⚡ Wire</b>, tap a terminal, then tap the other end. Green rings show where it can go. Tap a cable to recolour or delete it. <b>2D / 3D</b> (bottom left) switches between the wiring schematic and the 3D panel.</p>
         <p><b>2 · Program it.</b> In <b>Ladder</b> tap a cell, then a contact / coil / instruction button. Enter the device with the keypad (X/Y are octal). Press <b>Download</b> to write it to the PLC over USB.</p>
         <p><b>3 · Power it.</b> Press <b>Simulate</b>. Switch the MCB ON and the PLC to RUN. In <b>✋ Operate</b> mode press buttons, the HMI touch screen and the VFD keypad right in 3D.</p>
         <p><b>4 · Watch it.</b> Ladder shows live power flow, <b>Monitor</b> shows devices and the real Modbus frames on COM1 / COM2.</p>
-        <p class="muted">Pinch to zoom, drag to orbit, two fingers to pan. Use the chips at the bottom to jump to a device.</p></div>`,
+        <p class="muted">Pinch to zoom — or double-tap, hold and slide down / up (like Google Maps). In 3D drag to orbit and use two fingers to pan; in 2D drag to move. Use the chips at the bottom to jump to a device.</p>
+        <p class="muted"><b>Select</b> (dashed-box tool, or press and hold, then drag): drag to the right for a <b>window</b> (only what is fully inside), to the left for a <b>crossing</b> box (everything it touches) — like AutoCAD.</p></div>`,
       actions: [{ label: 'Got it', value: true, cls: 'btn-primary' }],
     });
   }

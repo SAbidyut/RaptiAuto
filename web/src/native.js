@@ -90,7 +90,7 @@ export const Native = {
   version() {
     const n = N();
     if (n) try { return n.getAppVersion(); } catch (e) { /* ignore */ }
-    return '2.0.0';
+    return '2.1.0';
   },
 
   exit() { const n = N(); if (n) try { n.exitApp(); } catch (e) { /* ignore */ } },

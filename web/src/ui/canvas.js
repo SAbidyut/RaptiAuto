@@ -1,5 +1,6 @@
 // Touch-first circuit canvas (SVG): pan / pinch zoom, part placement with breadboard snapping,
-// wiring (tap pin → tap pin, or drag), selection, and live simulation visuals.
+// wiring (tap pin → tap pin, or drag), selection (tap, or an AutoCAD-style window / crossing box),
+// Google-Maps-style double-tap-and-slide zoom, and live simulation visuals.
 import {
   getDef, pinsOf, toWorld, toLocal, worldBox, partTransform, partProps, newId, PITCH,
 } from '../components/registry.js';
@@ -7,6 +8,7 @@ import { SHARED_DEFS } from '../components/draw.js';
 import { pluggedPins } from '../sim/netlist.js';
 import { h } from './widgets.js';
 import { Native } from '../native.js';
+import { TapTracker, SelectBox, slideZoomFactor, boxInSelection, polylineInSelection } from './gestures.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const svgEl = (tag, attrs = {}) => {
@@ -44,6 +46,8 @@ export class CircuitCanvas {
     this.partEls = new Map();
     this.wireEls = new Map();
     this.flowPhase = 0;
+    this.taps = new TapTracker();
+    this.selectTool = false; // "Select" tool: one-finger drag draws a selection box instead of panning
 
     this.svg = svgEl('svg', { class: 'circuit-svg', width: '100%', height: '100%' });
     this.svg.innerHTML = `<defs>${SHARED_DEFS}
@@ -60,6 +64,7 @@ export class CircuitCanvas {
     this.svg.appendChild(this.vp);
     this.tip = h('div', { class: 'pin-tip' });
     this.host.append(this.svg, this.tip);
+    this.box = new SelectBox(this.host);
 
     const opts = { passive: false };
     this.svg.addEventListener('pointerdown', (e) => this.onDown(e), opts);
@@ -179,6 +184,16 @@ export class CircuitCanvas {
     this.applyView();
   }
 
+  /** Animated zoom by f around a screen point (double tap). */
+  zoomAt(f, cx, cy) {
+    const r = this.svg.getBoundingClientRect();
+    const z = Math.max(0.12, Math.min(10, this.view.z * f));
+    const k = z / this.view.z;
+    const px = cx - r.left, py = cy - r.top;
+    this.autoFit = false;
+    this.animateTo({ z, x: px - (px - this.view.x) * k, y: py - (py - this.view.y) * k });
+  }
+
   onWheel(e) {
     e.preventDefault();
     this.autoFit = false;
@@ -279,7 +294,7 @@ export class CircuitCanvas {
       const ends = el.querySelectorAll('.wire-end');
       ends[0].setAttribute('cx', pts[0][0]); ends[0].setAttribute('cy', pts[0][1]);
       ends[1].setAttribute('cx', pts[pts.length - 1][0]); ends[1].setAttribute('cy', pts[pts.length - 1][1]);
-      el.classList.toggle('selected', !!(this.selection && this.selection.kind === 'wire' && this.selection.id === w.id));
+      el.classList.toggle('selected', this.isWireSelected(w.id));
     }
     for (const [id, el] of this.wireEls) if (!seen.has(id)) { el.remove(); this.wireEls.delete(id); }
   }
@@ -313,6 +328,14 @@ export class CircuitCanvas {
             ov.appendChild(svgEl('circle', { class: 'pin-dot', cx: x, cy: y, r: 2.4 }));
           }
         }
+      }
+    }
+    if (sel && sel.kind === 'multi') {
+      for (const id of sel.parts) {
+        const part = this.project.parts.find((p) => p.id === id);
+        if (!part) continue;
+        const [x0, y0, x1, y1] = worldBox(part);
+        ov.appendChild(svgEl('rect', { class: 'sel-box multi', x: x0 - 4, y: y0 - 4, width: x1 - x0 + 8, height: y1 - y0 + 8, rx: 6 }));
       }
     }
     if (sel && sel.kind === 'wire') {
@@ -481,6 +504,7 @@ export class CircuitCanvas {
       this.cancelLongPress();
       if (this.down && this.down.dragging === 'part') this.finishPartDrag(false);
       if (this.down && this.down.simPointer) this.releaseSimPointer(this.down.simPointer);
+      this.box.cancel();
       const [a, b] = [...this.pointers.values()];
       this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, view: { ...this.view } };
       this.down = null;
@@ -488,14 +512,20 @@ export class CircuitCanvas {
     }
     if (this.pointers.size > 2) return;
     const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
+    // second press of a double tap: sliding it zooms (Google Maps)
+    const first = this.taps.second(e.clientX, e.clientY);
     if (this.mode === 'sim') {
       this.simDown(e, wx, wy);
+      const sp = this.down.simPointer;
+      if (first && !sp) this.down.zoomCand = first;
       return;
     }
     const hit = this.hit(wx, wy, !!this.wiring);
-    this.down = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx, wy, hit, t: performance.now(), dragging: null, view: { ...this.view } };
+    const d = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx, wy, hit, t: performance.now(), dragging: null, view: { ...this.view }, zoomCand: first, mouse: e.pointerType === 'mouse', button: e.button };
+    this.down = d;
     if (hit.kind === 'pin' && !this.wiring) this.showTip(hit.pin, e.clientX, e.clientY);
     if (hit.kind === 'part' || hit.kind === 'wire' || (hit.kind === 'pin' && hit.part && !getDef(hit.part.type).connectorOnly)) {
+      if (this.selectTool && this.boxable(hit)) return;
       this.longPress = setTimeout(() => {
         if (!this.down || this.down.dragging) return;
         Native.vibrate(18);
@@ -505,7 +535,23 @@ export class CircuitCanvas {
         this.down = null;
         this.ed.contextMenu && this.ed.contextMenu(target, e.clientX, e.clientY);
       }, 520);
+    } else if (hit.kind === 'none' && !this.wiring && !first) {
+      // press and hold on empty space, then drag: selection box
+      this.longPress = setTimeout(() => {
+        if (this.down !== d || d.dragging) return;
+        d.boxArmed = true;
+        this.box.start(d.sx, d.sy);
+        Native.vibrate(14);
+      }, 380);
     }
+  }
+
+  /** Can a drag that starts on this hit draw a selection box (with the Select tool on)? */
+  boxable(hit) {
+    if (hit.kind === 'none') return true;
+    if (hit.kind === 'pin') return hit.pin.bb && !(hit.part && this.isPartSelected(hit.part.id) && getDef(hit.part.type).layer !== -1);
+    if (hit.kind === 'part') return getDef(hit.part.type).layer === -1 && !this.isPartSelected(hit.part.id);
+    return false;
   }
 
   cancelLongPress() { if (this.longPress) { clearTimeout(this.longPress); this.longPress = null; } }
@@ -536,13 +582,27 @@ export class CircuitCanvas {
       if (this.wiring) this.updateWiringCursor(e);
       return;
     }
-    if (d.simPointer) { this.simMove(e, d); return; }
     const dist = Math.hypot(e.clientX - d.sx, e.clientY - d.sy);
+    if (d.zoomCand && !d.dragging && dist > 7) this.startSlideZoom(d);
+    if (d.dragging === 'zoom') {
+      const z = Math.max(0.12, Math.min(10, d.view.z * slideZoomFactor(e.clientY - d.sy)));
+      const r = this.svg.getBoundingClientRect();
+      const k = z / d.view.z;
+      const px = d.sx - r.left, py = d.sy - r.top;
+      this.view = { z, x: px - (px - d.view.x) * k, y: py - (py - d.view.y) * k };
+      this.applyView();
+      return;
+    }
+    if (d.simPointer) { this.simMove(e, d); return; }
     if (!d.dragging && dist > (e.pointerType === 'mouse' ? 3 : 7)) {
       this.cancelLongPress();
       const hit = d.hit;
       if (this.wiring) d.dragging = 'pan';
-      else if (hit.kind === 'pin' && !(hit.part && this.isSelectedPart(hit.part) && !hit.pin.bb && false)) {
+      else if (this.mode === 'edit' && (d.boxArmed || (this.selectTool && this.boxable(hit)) || (d.mouse && d.button === 0 && hit.kind === 'none'))) {
+        d.dragging = 'box';
+        if (!this.box.active) this.box.start(d.sx, d.sy);
+        this.hideTip();
+      } else if (hit.kind === 'pin') {
         // dragging from a pin draws a wire
         this.startWiring({ part: hit.pin.part, pin: hit.pin.pin });
         d.dragging = 'wire';
@@ -561,6 +621,8 @@ export class CircuitCanvas {
       this.view = { ...this.view, x: d.view.x + (e.clientX - d.sx), y: d.view.y + (e.clientY - d.sy) };
       this.applyView();
       if (this.wiring) this.updateWiringCursor(e);
+    } else if (d.dragging === 'box') {
+      this.box.update(e.clientX, e.clientY);
     } else if (d.dragging === 'part') {
       this.dragPart(d, wx, wy);
     } else if (d.dragging === 'wire') {
@@ -578,6 +640,20 @@ export class CircuitCanvas {
     }
   }
 
+  /** The second press of a double tap started to slide: zoom instead, and undo what the first tap began. */
+  startSlideZoom(d) {
+    this.cancelLongPress();
+    this.hideTip();
+    this.box.cancel();
+    const ex = d.zoomCand.extra || {};
+    if (this.wiring && ex.wiringStarted) this.cancelWiring();
+    else if (this.wiring && ex.bend) { this.wiring.points.pop(); this.renderOverlay(); }
+    d.simPointer = null;
+    d.dragging = 'zoom';
+    d.view = { ...this.view };
+    this.autoFit = false;
+  }
+
   onUp(e, cancelled = false) {
     this.pointers.delete(e.pointerId);
     try { this.svg.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -589,14 +665,27 @@ export class CircuitCanvas {
     const d = this.down;
     if (!d || d.id !== e.pointerId) return;
     this.down = null;
-    if (d.simPointer) { this.releaseSimPointer(d.simPointer); return; }
-    if (cancelled) { if (d.dragging === 'part') this.finishPartDrag(false); this.hideTip(); return; }
-    const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
-    if (!d.dragging) {
-      this.onTap(d, wx, wy, e);
+    if (d.dragging === 'zoom') return;
+    const still = Math.hypot(e.clientX - d.sx, e.clientY - d.sy) <= 7;
+    if (this.mode === 'sim') {
+      if (d.simPointer) this.releaseSimPointer(d.simPointer);
+      if (cancelled || !still || d.dragging) return;
+      if (d.zoomCand) { this.taps.clear(); this.zoomAt(2, e.clientX, e.clientY); return; }
+      if (!d.simPointer) this.taps.tap(e.clientX, e.clientY);
       return;
     }
-    if (d.dragging === 'part') this.finishPartDrag(true);
+    if (cancelled) { if (d.dragging === 'part') this.finishPartDrag(false); if (d.dragging === 'box' || d.boxArmed) this.box.cancel(); this.hideTip(); return; }
+    const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
+    if (!d.dragging) {
+      if (d.boxArmed) this.box.cancel();
+      const wasWiring = this.wiring, nPts = wasWiring ? wasWiring.points.length : 0;
+      this.onTap(d, wx, wy, e);
+      if (d.zoomCand) this.taps.clear();
+      else this.taps.tap(e.clientX, e.clientY, { wiringStarted: !wasWiring && !!this.wiring, bend: !!wasWiring && this.wiring === wasWiring && wasWiring.points.length > nPts });
+      return;
+    }
+    if (d.dragging === 'box') this.boxSelect(this.box.end());
+    else if (d.dragging === 'part') this.finishPartDrag(true);
     else if (d.dragging === 'wire') {
       const target = this.pinAt(wx, wy, 22, (p) => p.part === this.wiring.from.part && p.pin === this.wiring.from.pin);
       if (target) this.finishWiring(target);
@@ -635,12 +724,17 @@ export class CircuitCanvas {
     const now = performance.now();
     const dbl = this.lastTap && now - this.lastTap.t < 320 && Math.hypot(e.clientX - this.lastTap.x, e.clientY - this.lastTap.y) < 25;
     this.lastTap = { t: now, x: e.clientX, y: e.clientY };
+    if (this.selectTool && hit.kind !== 'none' && !this.boxable(hit)) {
+      // Select tool: a tap adds the object to the selection, or removes it again
+      const part = hit.part || (hit.pin && this.project.parts.find((p) => p.id === hit.pin.part));
+      if (hit.wire) this.toggleInSelection([], [hit.wire.id]);
+      else if (part) this.toggleInSelection([part.id], []);
+      return;
+    }
     if (hit.kind === 'pin') {
-      const part = this.project.parts.find((p) => p.id === hit.pin.part);
       // tapping a pin of the selected part / any pin starts a wire
       this.startWiring({ part: hit.pin.part, pin: hit.pin.pin });
       Native.vibrate(8);
-      void part;
       return;
     }
     if (hit.kind === 'part') {
@@ -658,10 +752,61 @@ export class CircuitCanvas {
       this.select({ kind: 'wire', id: w.id });
       return;
     }
+    // double tap on empty space zooms in
+    if (d.zoomCand) { this.zoomAt(2, e.clientX, e.clientY); return; }
     this.select(null);
   }
 
-  isSelectedPart(part) { return this.selection && this.selection.kind === 'part' && this.selection.id === part.id; }
+  // ------------------------------------------------------------------ selection box / multi selection
+  /** Select what the box caught: window = completely inside, crossing = touching. */
+  boxSelect(res) {
+    if (!res) return;
+    const { rect, mode } = res;
+    const parts = [], wires = [];
+    for (const p of this.project.parts) {
+      const def = getDef(p.type);
+      if (!def) continue;
+      const [x0, y0, x1, y1] = worldBox(p);
+      const [sx0, sy0] = this.worldToScreen(x0, y0), [sx1, sy1] = this.worldToScreen(x1, y1);
+      // a breadboard is only taken when it lies completely inside — a crossing box over the parts
+      // plugged into it should not grab the board underneath
+      if (boxInSelection(rect, { x0: sx0, y0: sy0, x1: sx1, y1: sy1 }, def.layer === -1 ? 'window' : mode)) parts.push(p.id);
+    }
+    for (const w of this.project.wires) {
+      const pts = this.wirePoints(w);
+      if (pts && polylineInSelection(rect, pts.map(([x, y]) => this.worldToScreen(x, y)), mode)) wires.push(w.id);
+    }
+    // with the Select tool every new box adds to the selection, as in AutoCAD
+    if (this.selectTool) { const cur = this.selectedIds(); parts.unshift(...cur.parts.filter((id) => !parts.includes(id))); wires.unshift(...cur.wires.filter((id) => !wires.includes(id))); }
+    this.select(makeSelection(parts, wires));
+    Native.vibrate(8);
+  }
+
+  /** {parts:[ids], wires:[ids]} of the current selection. */
+  selectedIds() {
+    const s = this.selection;
+    if (!s) return { parts: [], wires: [] };
+    if (s.kind === 'multi') return { parts: [...s.parts], wires: [...s.wires] };
+    return s.kind === 'part' ? { parts: [s.id], wires: [] } : { parts: [], wires: [s.id] };
+  }
+
+  toggleInSelection(partIds, wireIds) {
+    const cur = this.selectedIds();
+    const flip = (arr, ids) => { for (const id of ids) { const i = arr.indexOf(id); if (i >= 0) arr.splice(i, 1); else arr.push(id); } };
+    flip(cur.parts, partIds); flip(cur.wires, wireIds);
+    this.select(makeSelection(cur.parts, cur.wires));
+    Native.vibrate(6);
+  }
+
+  isPartSelected(id) { const s = this.selection; return !!s && (s.kind === 'multi' ? s.parts.includes(id) : s.kind === 'part' && s.id === id); }
+  isWireSelected(id) { const s = this.selection; return !!s && (s.kind === 'multi' ? s.wires.includes(id) : s.kind === 'wire' && s.id === id); }
+
+  setSelectTool(on) {
+    this.selectTool = on;
+    this.svg.classList.toggle('select-tool', on);
+    if (on) this.cancelWiring();
+  }
+
 
   hover(e) {
     const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
@@ -748,14 +893,19 @@ export class CircuitCanvas {
   // ------------------------------------------------------------------ part dragging
   startPartDrag(part, d) {
     d.dragging = 'part';
-    this.select({ kind: 'part', id: part.id }, true);
-    const def = getDef(part.type);
-    const group = [part];
-    if (def.socket) {
+    // dragging one part of a multi selection moves the whole selection
+    const multi = this.selection && this.selection.kind === 'multi' && this.selection.parts.includes(part.id);
+    if (!multi) this.select({ kind: 'part', id: part.id }, true);
+    const roots = multi ? this.selection.parts.map((id) => this.project.parts.find((p) => p.id === id)).filter(Boolean) : [part];
+    const group = [part, ...roots.filter((p) => p !== part)];
+    let plugged = null;
+    for (const root of roots) {
+      const def = getDef(root.type);
+      if (!def.socket) continue;
       // carry parts that are plugged into this one (components on a breadboard)
-      const plugged = pluggedPins(this.project);
+      plugged = plugged || pluggedPins(this.project);
       for (const other of this.project.parts) {
-        if (other === part || getDef(other.type).layer === -1) continue;
+        if (group.includes(other) || getDef(other.type).layer === -1) continue;
         if (getDef(other.type).socket && getDef(other.type).layer !== -1 && def.layer !== -1) continue;
         const pins = pinsOf(other);
         let pluggedHere = false;
@@ -763,7 +913,7 @@ export class CircuitCanvas {
           const key = other.id + ':' + pin.id;
           if (!plugged.has(key)) continue;
           const [x, y] = toWorld(other, pin.x, pin.y);
-          if (this.pinIndex.some((p) => p.part === part.id && Math.abs(p.x - x) < 1 && Math.abs(p.y - y) < 1)) { pluggedHere = true; break; }
+          if (this.pinIndex.some((p) => p.part === root.id && Math.abs(p.x - x) < 1 && Math.abs(p.y - y) < 1)) { pluggedHere = true; break; }
         }
         if (pluggedHere) group.push(other);
       }
@@ -962,6 +1112,13 @@ export class CircuitCanvas {
       fl.style.opacity = Math.min(1, 0.45 + Math.log10(1 + i * 1000) / 3).toFixed(2);
     }
   }
+}
+
+/** Selection object for lists of part / wire ids: null, a single part or wire, or 'multi'. */
+export function makeSelection(parts, wires) {
+  if (parts.length + wires.length === 0) return null;
+  if (parts.length + wires.length === 1) return parts.length ? { kind: 'part', id: parts[0] } : { kind: 'wire', id: wires[0] };
+  return { kind: 'multi', parts, wires };
 }
 
 function segDist(px, py, a, b) {

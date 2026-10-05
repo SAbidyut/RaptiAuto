@@ -7,6 +7,7 @@ import { buildModel, disposeModel } from './models.js';
 import { buildCable, disposeCable, setCableFlow, setCableHighlight } from './cables.js';
 import { layoutDevices, toWorld, dirToWorld } from '../devices/layout.js';
 import { DEVICE_DEFS, devicePorts, deviceProps } from '../devices/defs.js';
+import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
 
 const ringTexCache = new Map();
 function ringTexture(color) {
@@ -175,6 +176,7 @@ export class LabScene {
       this.cableGroup.add(cab);
     }
     if (this.selConn) { const c = this.cables.get(this.selConn); if (c) setCableHighlight(c, true); }
+    for (const id of this.multiConns || []) { const c = this.cables.get(id); if (c) setCableHighlight(c, true); }
     this.renderer.shadowMap.needsUpdate = true;
     this.dirty = true;
   }
@@ -214,7 +216,11 @@ export class LabScene {
     if (dirty && this.visible !== false) {
       this.renderer.render(this.scene, this.camera);
       this.dirty = false;
-    }
+      // frame-time sample (lets the lab fall back to 2D on slow phones)
+      const p = this.perf || (this.perf = { skip: 4, n: 0, sum: 0 });
+      if (p.skip > 0) p.skip--; else if (this.lastRenderAt) { p.n++; p.sum += Math.min(0.5, (this.lastNow - this.lastRenderAt) / 1000); }
+      this.lastRenderAt = this.lastNow;
+    } else this.lastRenderAt = 0;
   }
 
   setSystem(sys) { this.system = sys; this.dirty = true; }
@@ -447,6 +453,70 @@ export class LabScene {
     this.dirty = true;
   }
 
+  /** Highlight several devices and cables (box selection). */
+  selectMany(devIds = [], connIds = []) {
+    this.selectDevice(null);
+    this.selectCable(null);
+    for (const b of this.multiBoxes || []) { this.scene.remove(b); b.geometry.dispose(); }
+    for (const id of this.multiConns || []) { const c = this.cables.get(id); if (c) setCableHighlight(c, false); }
+    this.multiBoxes = [];
+    this.multiConns = [...connIds];
+    for (const id of devIds) {
+      const e = this.models.get(id);
+      if (!e) continue;
+      const b = new THREE.Box3Helper(new THREE.Box3().setFromObject(e.model.group).expandByScalar(4), 0x60a5fa);
+      this.scene.add(b);
+      this.multiBoxes.push(b);
+    }
+    for (const id of connIds) { const c = this.cables.get(id); if (c) setCableHighlight(c, true); }
+    this.dirty = true;
+  }
+
+  /** Devices and cables caught by a selection rectangle (client px): window = inside, crossing = touching. */
+  itemsInRect(rect, mode) {
+    const devs = [], conns = [];
+    const v = new THREE.Vector3();
+    for (const [id, e] of this.models) {
+      const box = new THREE.Box3().setFromObject(e.model.group);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, behind = false;
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+        const s = this.toScreen(v.set(x, y, z).toArray());
+        if (s.behind) behind = true;
+        x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y);
+      }
+      if (!behind && boxInSelection(rect, { x0, y0, x1, y1 }, mode)) devs.push(id);
+    }
+    for (const [id, cab] of this.cables) {
+      const pos = cab.userData.tube.geometry.attributes.position;
+      const step = Math.max(1, Math.floor(pos.count / 60));
+      const pts = [];
+      for (let i = 0; i < pos.count; i += step) { const s = this.toScreen([pos.getX(i), pos.getY(i), pos.getZ(i)]); if (!s.behind) pts.push([s.x, s.y]); }
+      if (polylineInSelection(rect, pts, mode)) conns.push(id);
+    }
+    return { devs, conns };
+  }
+
+  // zoom gestures (double-tap slide and double tap): dolly toward the orbit target
+  zoomStart() { this.anim = null; this.zg = { dist: this.camera.position.distanceTo(this.controls.target) }; }
+  zoomTo(f) {
+    if (!this.zg) return;
+    const c = this.controls;
+    const d = Math.max(c.minDistance, Math.min(c.maxDistance, this.zg.dist / f));
+    const dir = this.camera.position.clone().sub(c.target).normalize();
+    this.camera.position.copy(c.target).addScaledVector(dir, d);
+    this.dirty = true;
+  }
+  zoomAt(f, x, y) {
+    const c = this.controls;
+    const hit = this.raycast(x, y, [this.world])[0];
+    const c1 = c.target.clone();
+    if (hit) c1.lerp(hit.point, 1 - 1 / f);
+    const off = this.camera.position.clone().sub(c.target);
+    const d = Math.max(c.minDistance, Math.min(c.maxDistance, off.length() / f));
+    const p1 = c1.clone().addScaledVector(off.normalize(), d);
+    this.anim = { t0: performance.now(), dur: 320, p0: this.camera.position.clone(), p1, c0: c.target.clone(), c1 };
+  }
+
   modelOf(id) { const e = this.models.get(id); return e ? e.model : null; }
 
   /** Render a device thumbnail (data URL) — used by the device library. */
@@ -508,6 +578,11 @@ export class NullScene {
   focus() {}
   selectDevice() {}
   selectCable() {}
+  selectMany() {}
+  itemsInRect() { return { devs: [], conns: [] }; }
+  zoomStart() {}
+  zoomTo() {}
+  zoomAt() {}
   setMarkers() {}
   modelOf() { return null; }
   portsNear() { return []; }

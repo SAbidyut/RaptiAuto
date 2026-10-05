@@ -352,7 +352,7 @@ export class LadderView {
   async download() {
     const c = this.compile();
     if (!c.ok) { this.showOutput(true); toast(`Fix ${c.errors.length} error(s) before downloading`, 'error'); Native.vibrate(40); return; }
-    if (!this.lab.plcDevice()) { toast('Add a Delta PLC in the 3D lab first', 'warn'); return; }
+    if (!this.lab.plcDevice()) { toast('Add a Delta PLC in the Lab tab first', 'warn'); return; }
     const plc = await this.lab.ensureOnline();
     if (!plc) return;
     if (plc.cpu.running) {

@@ -127,7 +127,7 @@ export class HmiView {
       this.offMsg.innerHTML = '';
       this.offMsg.append(h('div', { html: icon('screen', 34) }),
         h('b', {}, !hasHmi ? 'No HMI in this lab' : !this.lab.sys ? 'The HMI is off' : 'The HMI has no 24 V power'),
-        h('p', {}, !hasHmi ? 'Add a Delta DOP-107BV from the 3D lab (＋), or design the screens now.' : !this.lab.sys ? 'Press Simulate to power the lab, or switch to Design to edit the screens.' : 'Wire HMI + and − to the 24 V supply in the 3D lab.'),
+        h('p', {}, !hasHmi ? 'Add a Delta DOP-107BV from the Lab tab (＋), or design the screens now.' : !this.lab.sys ? 'Press Simulate to power the lab, or switch to Design to edit the screens.' : 'Wire HMI + and − to the 24 V supply in the Lab tab.'),
         !this.lab.sys && hasHmi ? h('button', { class: 'btn btn-primary sm', html: `${icon('play', 16)}<span>Simulate</span>`, onclick: () => this.lab.startSim() }) : h('button', { class: 'btn btn-ghost sm', html: `${icon('edit', 16)}<span>Design screens</span>`, onclick: () => this.setDesign(true) }));
     }
     if (this.designing) this.drawDesign();

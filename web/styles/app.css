@@ -663,3 +663,25 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
   .fs-btn { width: 38px; height: 38px; }
   .editor.fs:not(.split):not(.runsplit) .pane-code, .editor.fs:not(.split):not(.runsplit) .pane-serial { padding-left: calc(54px + var(--safe-l)); }
 }
+
+/* ---------------------------------------------------------------- selection box (AutoCAD: window → right, crossing ← left) */
+.select-box { position: absolute; z-index: 5; pointer-events: none; border: 1.5px solid #3b82f6; background: rgba(59, 130, 246, .14); border-radius: 2px; }
+.select-box.crossing { border: 1.5px dashed #22c55e; background: rgba(34, 197, 94, .13); }
+.select-box-tag { position: absolute; left: 4px; top: -20px; font-size: 10.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #bfdbfe; background: rgba(30, 58, 138, .85); padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.select-box.crossing .select-box-tag { color: #bbf7d0; background: rgba(20, 83, 45, .88); }
+.tool.on { color: #04121a; background: var(--accent); }
+.tool.on:active { background: var(--accent); }
+.simulating .tool-edit { display: none; }
+.sel-box.multi { stroke: #60a5fa; animation: none; }
+.circuit-svg.select-tool { cursor: crosshair; }
+
+/* ---------------------------------------------------------------- full screen without menus: a small handle shows them again */
+.fs-handle { display: none; }
+.editor.fs .fs-handle, .lab.fs .fs-handle { display: grid; place-items: center; position: absolute; right: calc(8px + var(--safe-r)); top: calc(8px + var(--safe-t)); z-index: 22; width: 36px; height: 36px; border-radius: 12px; color: #dbe5f7; background: rgba(10, 16, 32, .5); border: 1px solid rgba(148, 163, 184, .25); backdrop-filter: blur(10px); opacity: .75; transition: opacity .15s, background .15s; }
+.editor.fs .fs-handle:active, .lab.fs .fs-handle:active { opacity: 1; background: rgba(34, 211, 238, .25); }
+.editor.fs:not(.fs-clean) .fs-handle, .lab.fs:not(.fs-clean) .fs-handle { opacity: 1; color: var(--accent); }
+.editor.fs:not(.fs-clean) .side-tools, .lab.fs:not(.fs-clean) .lab-tools { top: calc(52px + var(--safe-t)) !important; }
+.editor.fs.fs-clean .fs-bar, .editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar { display: none !important; }
+.editor.fs.fs-clean .pane-code, .editor.fs.fs-clean .pane-serial { padding-left: var(--safe-l) !important; }
+.lab.fs.fs-clean .lab-fs-bar, .lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
+.lab.fs.fs-clean .lab-pane:not(.pane-panel) { padding-left: var(--safe-l) !important; }
