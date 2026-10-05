@@ -5,7 +5,7 @@ import { Native } from '../../native.js';
 import { AudioEngine } from '../../ui/audio.js';
 import { saveLab, exportLab, saveLabThumb } from '../store.js';
 import { LabSystem } from '../sim/system.js';
-import { DEVICE_DEFS, deviceProps } from '../devices/defs.js';
+import { DEVICE_DEFS, deviceProps, devicePorts } from '../devices/defs.js';
 import { renderHmi } from './hmi-render.js';
 import { renderLaptop } from './laptop-screen.js';
 import { PanelView } from './panel.js';
@@ -169,6 +169,7 @@ export class LabScreen {
 
   /** Commit a hardware change (devices / wiring). */
   commitHardware(label, { devices = true } = {}) {
+    this.pruneConns();
     const snap = this.hwSerialize();
     if (snap !== this.snapshot) {
       this.history.push(this.snapshot);
@@ -182,6 +183,27 @@ export class LabScreen {
     for (const v of Object.values(this.views)) if (v !== this.views.panel && v.onHardwareChanged) v.onHardwareChanged();
     this.save();
     void label;
+  }
+
+  /** Keep wires valid after a device's terminals changed (e.g. push button NO ↔ NC). */
+  pruneConns() {
+    const P = this.project;
+    const remap = { NO: { 11: '13', 12: '14' }, NC: { 13: '11', 14: '12' } };
+    const before = P.conns.length;
+    P.conns = P.conns.filter((c) => {
+      for (const end of [c.a, c.b]) {
+        const dev = P.devices.find((d) => d.id === end.dev);
+        if (!dev) return false;
+        const ports = devicePorts(dev);
+        if (ports.some((p) => p.id === end.port)) continue;
+        const contact = dev.type === 'pb' ? deviceProps(dev).contact || 'NO' : null;
+        const to = contact && remap[contact][end.port];
+        if (to && ports.some((p) => p.id === to)) { end.port = to; continue; }
+        return false;
+      }
+      return true;
+    });
+    if (P.conns.length < before) toast(`${before - P.conns.length} wire(s) removed — their terminals no longer exist`, 'warn');
   }
 
   restoreHw(snap) {
@@ -200,6 +222,8 @@ export class LabScreen {
   redo() { if (!this.future.length) { toast('Nothing to redo'); return; } this.history.push(this.snapshot); this.restoreHw(this.future.pop()); Native.vibrate(6); }
 
   saveNow() {
+    const sys = this.sys;
+    if (sys && sys.plc && sys.plc.cpu.powered) sys.saveLatched(sys.plc);
     if (this.scene) this.project.view = this.scene.getView();
     if (!saveLab(this.project)) toast('Storage is full — could not save', 'error');
   }
@@ -210,8 +234,9 @@ export class LabScreen {
   }
 
   leave() {
-    this.saveNow();
     try { if (this.scene && this.scene.visible !== false) saveLabThumb(this.project.id, this.scene.snapshot()); } catch (e) { /* ignore */ }
+    this.stopSim(true);
+    this.saveNow();
     this.app.showHome('plclab');
   }
 
@@ -380,7 +405,7 @@ export class LabScreen {
       Native.vibrate(25);
       if (this.settings.sound !== false) { this.audio.set('task', 880, 0.5, 'sine'); setTimeout(() => this.audio.set('task', 1320, 0.5, 'sine'), 110); setTimeout(() => this.audio.set('task', 0, 0), 260); }
       toast(`Task ${i + 1} done: ${t.text}`, 'ok', 3800);
-      if (done.length === this.tasks.length) setTimeout(() => dialog({ title: 'Exercise complete! 🎉', body: `<p>You finished all ${this.tasks.length} tasks of <b>${this.project.name}</b>.</p><p class="muted">Try another lab exercise, or change this one and make it your own.</p>`, actions: [{ label: 'Great', value: true, cls: 'btn-primary' }] }), 900);
+      if (done.length === this.tasks.length) setTimeout(() => dialog({ title: 'Exercise complete! 🎉', body: `<p>You finished all ${this.tasks.length} tasks of <b>${esc(this.project.name)}</b>.</p><p class="muted">Try another lab exercise, or change this one and make it your own.</p>`, actions: [{ label: 'Great', value: true, cls: 'btn-primary' }] }), 900);
     });
     this.views.panel.updateTaskPill();
   }
@@ -483,6 +508,7 @@ export class LabScreen {
   /** Make sure the simulation runs and the PC ↔ PLC link is up. Resolves to the PLC runtime or null. */
   async ensureOnline() {
     if (!this.sys) { this.startSim(); toast('Simulation started'); await new Promise((r) => setTimeout(r, 350)); }
+    if (!this.sys) return null;
     const link = this.sys.pcLink();
     if (!link.ok) {
       const go = await dialog({
@@ -498,3 +524,5 @@ export class LabScreen {
 
   confirm(title, msg, ok = 'OK', danger = false) { return confirmDialog(title, msg, ok, danger); }
 }
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

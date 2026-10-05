@@ -356,6 +356,7 @@ export class LadderView {
       if (!(await confirmDialog('PLC is in RUN', 'Stop the PLC and download the program?', 'Stop & download'))) return;
     }
     await this.progress('Writing program to PLC…', 900);
+    if (!this.lab.sys || !this.lab.sys.pcLink().ok) { toast('Download cancelled — the connection to the PLC was lost', 'error'); return; }
     const res = this.lab.sys.download(this.prog);
     this.lab.save();
     if (!res || !res.ok) { toast('Download failed', 'error'); return; }
@@ -386,7 +387,7 @@ export class LadderView {
 
   async plcRun(on) {
     const plc = await this.lab.ensureOnline();
-    if (!plc) return;
+    if (!plc || !this.lab.sys) return;
     if (on && !plc.cpu.prog) { toast('The PLC has no program — Download first', 'warn'); return; }
     plc.cpu.setRun(on);
     toast(on ? 'PLC → RUN' : 'PLC → STOP', on ? 'ok' : 'info');

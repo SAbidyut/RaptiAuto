@@ -45,7 +45,10 @@ export function normalizeLab(p) {
   p.id = p.id || labId('lab');
   p.name = p.name || 'PLC lab';
   p.devices = Array.isArray(p.devices) ? p.devices.filter((d) => DEVICE_DEFS[d.type]) : [];
-  for (const d of p.devices) { d.id = d.id || labId(); d.props = d.props || {}; d.state = d.state || {}; }
+  for (const d of p.devices) {
+    d.id = d.id || labId(); d.props = d.props || {}; d.state = d.state || {};
+    for (const k of ['label', 'pos0', 'pos1']) if (typeof d.props[k] === 'string') d.props[k] = d.props[k].slice(0, 16);
+  }
   const ids = new Set(p.devices.map((d) => d.id));
   p.conns = (Array.isArray(p.conns) ? p.conns : []).filter((c) => c && c.a && c.b && ids.has(c.a.dev) && ids.has(c.b.dev));
   for (const c of p.conns) c.id = c.id || labId('c');

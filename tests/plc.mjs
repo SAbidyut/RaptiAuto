@@ -1,6 +1,7 @@
 // Headless tests of the Delta PLC lab: node tests/plc.mjs
 import { parseOperand } from '../web/src/plc/sim/address.js';
-import { compileProgram, rungIL } from '../web/src/plc/sim/ladder.js';
+import { compileProgram, rungIL, addRow } from '../web/src/plc/sim/ladder.js';
+import { VfdMS300 } from '../web/src/plc/sim/vfd.js';
 import { rung, program } from '../web/src/plc/sim/dsl.js';
 import { PlcCpu } from '../web/src/plc/sim/plc.js';
 import { crc16, lrc, requestBytes, encodeFrame } from '../web/src/plc/sim/modbus.js';
@@ -203,6 +204,42 @@ for (const ex of LAB_EXAMPLES) {
   check('PSU recovers after removing the short', !s.rts.get('psu').short && s.rts.get('lstop').on);
   p.conns.push(makeConn(p.devices, 'mcb', 'L', 'mcb', 'N')); run(50);
   check('L–N short trips the MCB', p.devices.find((d) => d.id === 'mcb').state.on === false);
+}
+
+// ---------------------------------------------------------------- regressions
+{
+  const r = rung('', ['X0| X1 => OUT Y0', 'Y0']);
+  addRow(r, 1);
+  const res = rungIL(r);
+  check('addRow keeps an existing OR branch linked', !res.error && res.lines.map((l) => l.text).join('; ') === 'LD X0; OR Y0; AND X1; OUT Y0', res.error || res.lines.map((l) => l.text).join('; '));
+  const r2 = rung('', ['X0| X1 => OUT Y0', 'Y0']);
+  addRow(r2, 2);
+  check('addRow at the end adds an unlinked row', rungIL(r2).lines.map((l) => l.text).join('; ') === 'LD X0; OR Y0; AND X1; OUT Y0');
+}
+{
+  const v = new VfdMS300({ '02-00': 2, '00-21': 1, '00-20': 0 });
+  v.powerOn(); v.bootT = 0; v.fKey = 50;
+  v.MI = [0, 0, 1, 0, 0, 0];
+  v.stepSim(0.01);
+  v.MI = [1, 0, 1, 0, 0, 0];
+  for (let i = 0; i < 100; i++) v.stepSim(0.01);
+  check('MS300 3-wire: MI3 is STOP, not multi-step speed 1', v.fcmd === 50 && v.runCmd, 'fcmd=' + v.fcmd + ' run=' + v.runCmd);
+}
+{
+  const cpu = new PlcCpu({ name: 'T', inputs: 8, outputs: 8 });
+  cpu.load(compileProgram(program([rung('', ['M1000 => TMR T250 K100'])]), cpu.model));
+  cpu.powerOn();
+  cpu.step(1000);
+  const tv = cpu.TV[250];
+  cpu.M[2600] = 1;
+  cpu.enterStop(); cpu.enterRun();
+  check('STOP→RUN clears M2600 (non-latched)', cpu.M[2600] === 0);
+  const snap = cpu.latchedSnapshot();
+  cpu.powerOff();
+  const cpu2 = new PlcCpu({ name: 'T', inputs: 8, outputs: 8 });
+  cpu2.load(compileProgram(program([rung('', ['M1000 => TMR T250 K100'])]), cpu2.model));
+  cpu2.powerOn(snap);
+  check('accumulative T250 survives a power cycle', cpu2.TV[250] === tv && tv > 0, `before=${tv} after=${cpu2.TV[250]}`);
 }
 
 // ---------------------------------------------------------------- lab tasks (self-checking exercises)

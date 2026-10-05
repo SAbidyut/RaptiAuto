@@ -30,6 +30,7 @@ export class LabSystem {
   // ------------------------------------------------------------------ runtimes
   /** Create/drop device runtimes to match project.devices. */
   sync() {
+    this._cn = null;
     const ids = new Set();
     for (const dev of this.project.devices) {
       ids.add(dev.id);
@@ -335,6 +336,14 @@ export class LabSystem {
   // ------------------------------------------------------------------ communication
   /** Comm networks: union of comm ports joined by cables. Returns find(dev, port) → root key. */
   commNet() {
+    const conns = this.project.conns;
+    if (this._cn && this._cnArr === conns && this._cnLen === conns.length) return this._cn;
+    this._cn = this.buildCommNet();
+    this._cnArr = conns; this._cnLen = conns.length;
+    return this._cn;
+  }
+
+  buildCommNet() {
     const parent = new Map();
     const f = (k) => { while (parent.get(k) && parent.get(k) !== k) k = parent.get(k); return k; };
     for (const c of this.project.conns) {

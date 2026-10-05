@@ -99,13 +99,14 @@ export function rowCount(rung) { return rung.cells.length; }
 
 export function addRow(rung, at = rung.cells.length) {
   const cols = rung.cells[0].length;
+  const n = rung.cells.length;
   rung.cells.splice(at, 0, new Array(cols).fill(null));
   rung.outs.splice(at, 0, null);
-  // links: inserting a row between r-1 and r keeps the old link r-1↔r as r-1↔(new) only when needed;
-  // a fresh row starts unlinked.
-  if (at <= rung.vl.length) rung.vl.splice(at, 0, new Array(cols).fill(false));
+  // vl[i] joins row i and i+1. A row inserted between two linked rows keeps them linked
+  // (the vertical line simply passes through the new row).
+  if (at > 0 && at < n) rung.vl.splice(at, 0, rung.vl[at - 1].slice());
+  else if (at === 0) rung.vl.unshift(new Array(cols).fill(false));
   else rung.vl.push(new Array(cols).fill(false));
-  while (rung.vl.length > rung.cells.length - 1) rung.vl.pop();
 }
 
 export function deleteRow(rung, r) {

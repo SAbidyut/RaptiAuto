@@ -417,10 +417,10 @@ export class Shell {
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New lab</span>`, onclick: () => this.newLab() }),
           h('button', { class: 'btn btn-glass', html: `${icon('play', 18)}<span>Full demo</span>`, onclick: () => this.openLabExample('vfd-modbus-hmi') })))));
-    const labs = listLabs().map((m) => loadLab(m.id)).filter(Boolean);
+    const labs = listLabs();
     if (labs.length) {
       const list = h('div', { class: 'proj-list' });
-      for (const p of labs) list.appendChild(this.labCard(p));
+      for (const m of labs) list.appendChild(this.labCard(m));
       el.appendChild(h('section', { class: 'home-sec' }, secHead('My labs', `${labs.length} saved on this phone`, 'folder'), list));
     }
     const grid = h('div', { class: 'ex-grid lab-ex-grid' });
@@ -435,19 +435,24 @@ export class Shell {
     el.appendChild(h('section', { class: 'home-sec' }, secHead('Lab exercises', 'Ready-wired, programmed — press Simulate', 'book'), grid));
   }
 
-  labCard(p) {
-    const plc = p.devices.find((d) => DEVICE_DEFS[d.type] && DEVICE_DEFS[d.type].category === 'plc');
-    const thumb = labThumb(p.id);
-    const more = h('button', { class: 'icon-btn sm', 'aria-label': 'More', html: icon('dots', 20), onclick: (e) => { e.stopPropagation(); this.labMenu(e.currentTarget, p); } });
-    return h('div', { class: 'proj-card', onclick: () => this.app.openLab(p) },
-      h('div', { class: 'proj-thumb lab-thumb', html: thumb ? `<img src="${thumb}" alt="">` : labArt() }),
+  /** Card from the saved-lab index (the full lab is only loaded when it is opened). */
+  labCard(m) {
+    const plcDef = m.plc && DEVICE_DEFS[m.plc];
+    const thumb = labThumb(m.id);
+    const more = h('button', { class: 'icon-btn sm', 'aria-label': 'More', html: icon('dots', 20), onclick: (e) => { e.stopPropagation(); this.labMenu(e.currentTarget, m); } });
+    const img = h('div', { class: 'proj-thumb lab-thumb' });
+    if (thumb && /^data:image\/(jpeg|png);base64,/.test(thumb)) img.appendChild(h('img', { src: thumb, alt: '' })); else img.innerHTML = labArt();
+    return h('div', { class: 'proj-card', onclick: () => { const p = loadLab(m.id); if (p) this.app.openLab(p); else toast('This lab could not be loaded', 'error'); } },
+      img,
       h('div', { class: 'proj-body' },
-        h('div', { class: 'proj-name' }, p.name),
-        h('div', { class: 'proj-meta' }, `${plc ? DEVICE_DEFS[plc.type].short : 'No PLC'} · ${p.devices.length} devices · ${p.program.rungs.length} networks · ${timeAgo(p.updated || Date.now())}`)),
+        h('div', { class: 'proj-name' }, m.name),
+        h('div', { class: 'proj-meta' }, `${plcDef ? plcDef.short : 'No PLC'} · ${m.devices || 0} devices · ${m.rungs || 0} networks · ${timeAgo(m.updated || Date.now())}`)),
       more);
   }
 
-  labMenu(anchor, p) {
+  labMenu(anchor, m) {
+    const p = loadLab(m.id);
+    if (!p) return;
     popupMenu(anchor, [
       { icon: 'edit', label: 'Rename', action: async () => { const n = await promptDialog('Rename lab', p.name); if (n) { p.name = n; saveLab(p); this.render(true); } } },
       { icon: 'copy', label: 'Duplicate', action: () => { const c = cloneLab(p, p.name + ' (copy)'); saveLab(c); this.render(true); toast('Duplicated', 'ok'); } },

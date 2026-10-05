@@ -179,7 +179,7 @@ export class PlcCpu {
   clearNonLatched() {
     const clr = (arr, dev, lim) => { for (let i = 0; i < lim; i++) if (!isLatched(dev, i)) arr[i] = 0; };
     clr(this.M, 'M', 1000);
-    clr(this.M.subarray(2000), 'M', 2096);
+    for (let i = 2000; i < 4096; i++) if (!isLatched('M', i)) this.M[i] = 0;
     clr(this.S, 'S', 1024);
     for (let i = 0; i < 256; i++) if (!isLatched('T', i)) { this.T[i] = 0; this.TV[i] = 0; this.tacc[i] = 0; }
     for (let i = 0; i < 256; i++) if (!isLatched('C', i)) { this.C[i] = 0; this.CV[i] = 0; }
@@ -208,7 +208,8 @@ export class PlcCpu {
   }
 
   latchedSnapshot() {
-    const snap = { M: {}, D: {}, C: {}, S: {} };
+    const snap = { M: {}, D: {}, C: {}, S: {}, T: {} };
+    for (let i = 240; i <= 255; i++) if (this.TV[i] || this.T[i]) snap.T[i] = [this.TV[i], this.tacc[i], this.T[i]];
     for (let i = 500; i <= 999; i++) if (this.M[i]) snap.M[i] = 1;
     for (let i = 200; i <= 999; i++) if (this.D[i]) snap.D[i] = this.D[i];
     for (let i = 100; i <= 199; i++) if (this.CV[i] || this.C[i]) snap.C[i] = [this.CV[i], this.C[i]];
@@ -221,6 +222,7 @@ export class PlcCpu {
     for (const [k, v] of Object.entries(snap.D || {})) this.D[+k] = v;
     for (const [k, v] of Object.entries(snap.C || {})) { this.CV[+k] = v[0]; this.C[+k] = v[1]; }
     for (const [k, v] of Object.entries(snap.S || {})) this.S[+k] = v ? 1 : 0;
+    for (const [k, v] of Object.entries(snap.T || {})) { this.TV[+k] = v[0]; this.tacc[+k] = v[1]; this.T[+k] = v[2]; }
   }
 
   // ------------------------------------------------------------------ scan

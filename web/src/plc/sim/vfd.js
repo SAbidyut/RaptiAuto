@@ -137,14 +137,17 @@ export class VfdMS300 {
 
   // ------------------------------------------------------------------ control
   /** Multi-function input active? fn = function code. */
-  miFn(fn) {
+  /** Multi-function inputs (MI3 is the STOP input in 3-wire mode, not a multi-function input). */
+  miMap() {
     const map = [['02-01', 2], ['02-02', 3], ['02-03', 4]];
-    for (const [id, i] of map) if (this.P(id) === fn && this.MI[i]) return true;
+    return this.P('02-00') === 2 ? map.slice(1) : map;
+  }
+  miFn(fn) {
+    for (const [id, i] of this.miMap()) if (this.P(id) === fn && this.MI[i]) return true;
     return false;
   }
   miRise(fn) {
-    const map = [['02-01', 2], ['02-02', 3], ['02-03', 4]];
-    for (const [id, i] of map) if (this.P(id) === fn && this.MI[i] && !this.prevMI[i]) return true;
+    for (const [id, i] of this.miMap()) if (this.P(id) === fn && this.MI[i] && !this.prevMI[i]) return true;
     return false;
   }
 

@@ -316,7 +316,7 @@ export class PanelView {
     }
     const kind = port.kind === 'comm' ? `${busName(port.bus)} cable` : 'wire';
     bar.append(
-      h('div', { class: 'wire-info', html: `${icon(port.kind === 'comm' ? 'plug' : 'wire', 18)}<span><b>${this.lab.deviceName(dev)} · ${port.label}</b> — tap the other end of the ${kind}</span>` }),
+      h('div', { class: 'wire-info', html: `${icon(port.kind === 'comm' ? 'plug' : 'wire', 18)}<span><b>${esc(this.lab.deviceName(dev))} · ${esc(port.label)}</b> — tap the other end of the ${kind}</span>` }),
       port.kind === 'comm' ? null : pal,
       h('div', { class: 'wire-actions' }, h('button', { class: 'btn btn-ghost sm', html: `${icon('close', 17)}<span>Cancel</span>`, onclick: () => this.cancelWiring() })));
     bar.classList.remove('hidden');
@@ -619,3 +619,5 @@ function starterScreen() {
     { id: id(), type: 'alarm', x: 40, y: 350, w: 730, h: 50, bit: 'M100', text: 'ALARM (M100)' },
   ];
 }
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
