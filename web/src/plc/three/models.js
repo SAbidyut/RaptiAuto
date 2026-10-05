@@ -725,6 +725,103 @@ function buildMotor(dev) {
   };
 }
 
+// ---------------------------------------------------------------- laptop keyboard
+// A real laptop layout (15 key units wide): a half-height function row, number row, QWERTY rows,
+// wide Tab / Caps / Shift / Enter / Backspace keys, a bottom row with a long space bar and the
+// inverted-T arrow keys. Keycaps are raised chiclet keys sitting in a dark well; the legends are
+// printed on a transparent decal that lies exactly on the key tops.
+const KB_U = 18.6;         // key pitch (mm)
+const KB_GAP = 2.8;        // gap between caps
+const KB_DECK = 14;        // top of the laptop base
+const KB_CAP_H = 1.5;      // how far the caps stand out of the deck
+const KB_Z = 82;           // centre of the keyboard well (z)
+const KB_W = 296, KB_H = 118;
+function kbLayout() {
+  const L = (t, w = 1, o = {}) => ({ t, w, ...o });
+  const chars = (s) => [...s].map((c) => L(c.toUpperCase()));
+  const rows = [
+    { h: 0.6, keys: [L('esc'), ...Array.from({ length: 12 }, (_, i) => L('F' + (i + 1), 1, { small: true })), L('prt sc', 1, { small: true }), L('del')] },
+    { keys: [L('`', 1, { sub: '~' }), ...'1234567890'.split('').map((c, i) => L(c, 1, { sub: '!@#$%^&*()'[i] })), L('-', 1, { sub: '_' }), L('=', 1, { sub: '+' }), L('backspace', 2, { mod: 'right' })] },
+    { keys: [L('tab', 1.5, { mod: 'left' }), ...chars('qwertyuiop'), L('[', 1, { sub: '{' }), L(']', 1, { sub: '}' }), L('\\', 1.5, { sub: '|' })] },
+    { keys: [L('caps lock', 1.75, { mod: 'left' }), ...chars('asdfghjkl'), L(';', 1, { sub: ':' }), L("'", 1, { sub: '"' }), L('enter', 2.25, { mod: 'right' })] },
+    { keys: [L('shift', 2.25, { mod: 'left' }), ...chars('zxcvbnm'), L(',', 1, { sub: '<' }), L('.', 1, { sub: '>' }), L('/', 1, { sub: '?' }), L('shift', 2.75, { mod: 'right' })] },
+    { keys: [L('ctrl', 1, { small: true }), L('fn', 1, { small: true }), L('win', 1, { small: true, win: true }), L('alt', 1, { small: true }), L('', 6), L('alt', 1, { small: true }), L('ctrl', 1, { small: true }), L('←', 1, { arrow: true }), L('↑↓', 1, { arrows: true }), L('→', 1, { arrow: true })] },
+  ];
+  const caps = [];
+  const totalH = rows.reduce((a, r) => a + (r.h || 1) * KB_U, 0);
+  let y = (KB_H - totalH) / 2;
+  const x0 = (KB_W - 15 * KB_U) / 2;
+  for (const r of rows) {
+    const rh = (r.h || 1) * KB_U;
+    let x = x0;
+    for (const k of r.keys) {
+      const w = k.w * KB_U;
+      if (k.arrows) {
+        // up and down share one key slot, each half as tall
+        const hh = (rh - KB_GAP) / 2 - KB_GAP / 4;
+        caps.push({ ...k, t: '↑', x: x + KB_GAP / 2, y: y + KB_GAP / 2, w: w - KB_GAP, h: hh, arrow: true });
+        caps.push({ ...k, t: '↓', x: x + KB_GAP / 2, y: y + KB_GAP / 2 + hh + KB_GAP / 2, w: w - KB_GAP, h: hh, arrow: true });
+      } else if (k.arrow) {
+        // ← and → are half height, at the bottom of the row (inverted T)
+        const hh = (rh - KB_GAP) / 2 - KB_GAP / 4;
+        caps.push({ ...k, x: x + KB_GAP / 2, y: y + rh - KB_GAP / 2 - hh, w: w - KB_GAP, h: hh });
+      } else {
+        caps.push({ ...k, x: x + KB_GAP / 2, y: y + KB_GAP / 2, w: w - KB_GAP, h: rh - KB_GAP, fnRow: !!r.h });
+      }
+      x += w;
+    }
+    y += rh;
+  }
+  return caps;
+}
+
+function buildKeyboard(group) {
+  const caps = kbLayout();
+  // the well the keys sit in
+  const well = decal(KB_W, KB_H, (g, W, H) => { g.fillStyle = '#0b0c0f'; rrect(g, 0, 0, W, H, 4); g.fill(); }, { ppm: 2, transparent: false });
+  well.rotation.x = -Math.PI / 2; well.position.set(0, KB_DECK + 0.05, KB_Z);
+  group.add(well);
+  // raised keycaps (merged into one mesh)
+  const B = new Builder();
+  const capMat = mat('keycap', { color: 0x2a2e37, metalness: 0.05, roughness: 0.58 });
+  const top = KB_DECK + KB_CAP_H;
+  for (const c of caps) {
+    const cx = c.x + c.w / 2 - KB_W / 2, cz = KB_Z - KB_H / 2 + c.y + c.h / 2;
+    B.add(rbox(c.w, KB_CAP_H + 1, c.h, Math.min(1.4, c.h / 2 - 0.1), 2), capMat, M4(cx, top - (KB_CAP_H + 1) / 2, cz));
+  }
+  B.build(group, { shadow: false });
+  // printed legends on the key tops
+  const ink = '#d3d8e0', dim = '#9aa3b2';
+  const legends = decal(KB_W, KB_H, (g) => {
+    for (const c of caps) {
+      if (!c.t) continue;
+      const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+      if (c.win) {
+        // the four-pane logo
+        const s = 1.5, gp = 0.35;
+        g.fillStyle = ink;
+        for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) g.fillRect(cx + dx * (s + gp) + gp / 2, cy + dy * (s + gp) + gp / 2, s, s);
+      } else if (c.mod) {
+        const left = c.mod === 'left';
+        txt(g, c.t, left ? c.x + 2.2 : c.x + c.w - 2.2, c.y + c.h - 3, { size: 2.7, color: ink, weight: 500, align: left ? 'left' : 'right' });
+      } else if (c.sub) {
+        txt(g, c.sub, cx, cy - 2.6, { size: 3, color: dim, weight: 500 });
+        txt(g, c.t, cx, cy + 2.4, { size: 3.6, color: ink, weight: 600 });
+      } else if (c.arrow) {
+        txt(g, c.t, cx, cy + 0.2, { size: 3.4, color: ink, weight: 600 });
+      } else if (c.fnRow) {
+        txt(g, c.t, cx, cy + 0.2, { size: 2.6, color: c.t === 'esc' || c.t === 'del' ? ink : dim, weight: 600 });
+      } else if (c.small) {
+        txt(g, c.t, cx, cy + 0.3, { size: 2.8, color: ink, weight: 500 });
+      } else {
+        txt(g, c.t, cx, cy + 0.3, { size: 4.6, color: ink, weight: 600 });
+      }
+    }
+  }, { ppm: 7, transparent: true, rough: 0.62 });
+  legends.rotation.x = -Math.PI / 2; legends.position.set(0, top + 0.04, KB_Z);
+  group.add(legends);
+}
+
 // ====================================================================== laptop
 function buildLaptop(dev, ctx) {
   const group = new THREE.Group();
@@ -733,24 +830,11 @@ function buildLaptop(dev, ctx) {
   B.add(rbox(320, 14, 220, 6), shell, M4(0, 7, 110));
   B.add(box(4, 5, 12), MAT.blackPlastic, M4(-159.5, 8, 150));
   B.build(group);
-  const kb = decal(296, 118, (g, W, H) => {
-    g.fillStyle = '#1b1e24'; rrect(g, 0, 0, W, H, 4); g.fill();
-    const rows = [14, 14, 13, 12, 11];
-    const kw = 18.2, kh = 16, gap = 2.4;
-    rows.forEach((n, r) => {
-      const y = 6 + r * (kh + gap);
-      const total = n * kw + (n - 1) * gap;
-      let x = (W - total) / 2;
-      for (let i = 0; i < n; i++) {
-        g.fillStyle = '#2b2f37'; rrect(g, x, y, kw, kh, 2); g.fill();
-        x += kw + gap;
-      }
-    });
-    g.fillStyle = '#2b2f37'; rrect(g, W / 2 - 60, 6 + 5 * (kh + gap), 120, kh - 3, 2); g.fill();
-  }, { ppm: 2.5, transparent: false });
-  kb.rotation.x = -Math.PI / 2; kb.position.set(0, 14.05, 82);
-  group.add(kb);
-  const pad = decal(100, 58, (g, W, H) => { g.fillStyle = '#323741'; rrect(g, 0, 0, W, H, 5); g.fill(); }, { ppm: 2, transparent: true });
+  buildKeyboard(group);
+  const pad = decal(104, 62, (g, W, H) => {
+    g.fillStyle = '#2a2e36'; rrect(g, 0, 0, W, H, 5); g.fill();
+    g.fillStyle = '#353a44'; rrect(g, 0.8, 0.8, W - 1.6, H - 1.6, 4.4); g.fill();
+  }, { ppm: 4, transparent: true, rough: 0.3 });
   pad.rotation.x = -Math.PI / 2; pad.position.set(0, 14.06, 178);
   group.add(pad);
   const lid = new THREE.Group();
