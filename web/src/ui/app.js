@@ -5,7 +5,6 @@ import { Shell } from './shell.js';
 import { Editor } from './editor.js';
 import { popBack, toast } from './widgets.js';
 import { SHARED_DEFS } from '../components/draw.js';
-import { LabScreen } from '../plc/ui/lab.js';
 
 export class App {
   constructor(root) {
@@ -52,12 +51,14 @@ export class App {
     this.editor.mount(this.root);
   }
 
-  /** Open a Delta PLC lab project. */
-  openLab(p) {
+  /** Open a Delta PLC lab project (the 3D lab code is loaded on first use). */
+  async openLab(p) {
+    let mod;
+    try { mod = await loadLabModule(); } catch (e) { toast('Could not load the PLC lab', 'error'); return; }
     if (this.home) this.home.unmount();
     if (this.editor) { this.editor.unmount(); this.editor = null; }
     if (this.lab) this.lab.unmount();
-    this.lab = new LabScreen(this, p);
+    this.lab = new mod.LabScreen(this, p);
     this.lab.mount(this.root);
   }
 
@@ -81,4 +82,23 @@ export class App {
   onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); if (this.lab) this.lab.root.classList.toggle('kb', h > 0); }
 
   persist(p) { saveProject(p); }
+}
+
+let labModule = null;
+/** Load build/www/lab.js once (three.js + the lab screens). */
+function loadLabModule() {
+  if (window.__raptiLab) return Promise.resolve(window.__raptiLab);
+  if (labModule) return labModule;
+  const veil = document.createElement('div');
+  veil.className = 'lab-loading';
+  veil.innerHTML = '<div class="ll-box"><div class="ll-spin"></div><span>Loading the 3D lab…</span></div>';
+  const t = setTimeout(() => document.body.appendChild(veil), 120);
+  labModule = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'lab.js';
+    s.onload = () => (window.__raptiLab ? resolve(window.__raptiLab) : reject(new Error('lab bundle')));
+    s.onerror = () => { labModule = null; reject(new Error('lab bundle')); };
+    document.head.appendChild(s);
+  }).finally(() => { clearTimeout(t); veil.remove(); });
+  return labModule;
 }

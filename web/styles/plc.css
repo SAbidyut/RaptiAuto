@@ -447,3 +447,6 @@
 .task.done { opacity: .7; }
 .task.done .task-ic { background: #22c55e; color: #052e12; }
 .task.done b { text-decoration: line-through; text-decoration-color: rgba(148, 163, 184, .5); }
+.lab-loading { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(2, 5, 14, .55); }
+.ll-box { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-radius: 18px; background: #121c36; border: 1px solid var(--line2); font-weight: 600; }
+.ll-spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(34, 211, 238, .25); border-top-color: #22d3ee; animation: spin .8s linear infinite; }
