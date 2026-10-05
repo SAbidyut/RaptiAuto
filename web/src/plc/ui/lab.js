@@ -13,6 +13,8 @@ import { LadderView } from './ladder-view.js';
 import { HmiView } from './hmi-view.js';
 import { VfdView } from './vfd-view.js';
 import { MonitorView } from './monitor.js';
+import { LAB_TASKS } from '../tasks.js';
+import { Sheet } from '../../ui/widgets.js';
 
 const TABS = [
   ['panel', 'cube', '3D Lab'],
@@ -39,6 +41,9 @@ export class LabScreen {
     this.laptopCanvas = document.createElement('canvas');
     this.laptopCanvas.width = 1024; this.laptopCanvas.height = 640;
     this.snapshot = this.hwSerialize();
+    this.tasks = LAB_TASKS[project.fromExample] || null;
+    if (this.tasks) project.tasksDone = Array.isArray(project.tasksDone) ? project.tasksDone : [];
+    this.taskMemo = {};
     this.build();
   }
 
@@ -222,6 +227,7 @@ export class LabScreen {
       { icon: 'fullscreen', label: 'Full screen', action: () => this.setFullscreen(true) },
       { icon: 'sliders', label: `3D quality: ${this.settings.labQuality === 'low' ? 'Fast' : 'High'}`, action: () => { this.settings.labQuality = this.settings.labQuality === 'low' ? 'high' : 'low'; this.app.saveSettings(); toast('Re-open the lab to apply the 3D quality'); } },
       '-',
+      this.tasks ? { icon: 'target', label: `Lab tasks (${this.project.tasksDone.length}/${this.tasks.length})`, action: () => this.showTasks() } : null,
       { icon: 'help', label: 'How to use the lab', action: () => this.help() },
     ]);
   }
@@ -324,7 +330,79 @@ export class LabScreen {
         if (Date.now() - (this.lastAutoSave || 0) > 8000) { this.lastAutoSave = Date.now(); this.save(); }
       }
     }
+    this.taskAcc = (this.taskAcc || 0) + dt;
+    if (this.tasks && this.taskAcc > 0.4) { this.taskAcc = 0; this.checkTasks(); }
+    if (sys) this.sounds(sys);
     for (const v of Object.values(this.views)) if (v.visible && v.frame) v.frame(dt);
+  }
+
+  sounds(sys) {
+    const on = this.settings.sound !== false;
+    for (const m of sys.byKind('motor')) {
+      const r = Math.abs(m.rpm);
+      this.audio.set('mot' + m.dev.id, on && r > 8 ? 55 + (r / 1420) * 420 : 0, Math.min(1, r / 260) * 0.16, 'sawtooth');
+    }
+    const plc = sys.plc;
+    let mask = 0;
+    if (plc && plc.cpu.powered) for (let i = 0; i < 16; i++) if (plc.cpu.Y[i]) mask |= 1 << i;
+    for (const m of sys.byKind('mcb')) if (m.dev.state.on) mask |= 1 << 20;
+    if (this.lastRelayMask !== undefined && mask !== this.lastRelayMask && on) this.audio.click(0.45);
+    this.lastRelayMask = mask;
+  }
+
+  // ------------------------------------------------------------------ lab tasks
+  taskCtx() {
+    const sys = this.sys;
+    const P = this.project;
+    const v = sys && sys.byKind('vfd')[0];
+    return {
+      sys, lab: this, P, memo: this.taskMemo,
+      rt: (id) => (sys ? sys.rts.get(id) : null),
+      dev: (id) => P.devices.find((d) => d.id === id),
+      cpu: sys && sys.plc && sys.plc.cpu.powered ? sys.plc.cpu : null,
+      vfd: v ? v.vfd : null,
+      motor: sys ? sys.byKind('motor')[0] || null : null,
+      dl: JSON.stringify((P.plc && P.plc.downloaded) || {}),
+    };
+  }
+
+  checkTasks() {
+    const done = this.project.tasksDone;
+    if (done.length >= this.tasks.length) return;
+    const ctx = this.taskCtx();
+    this.tasks.forEach((t, i) => {
+      if (done.includes(i)) return;
+      let ok = false;
+      try { ok = !!t.check(ctx); } catch (e) { ok = false; }
+      if (!ok) return;
+      done.push(i);
+      this.save();
+      Native.vibrate(25);
+      if (this.settings.sound !== false) { this.audio.set('task', 880, 0.5, 'sine'); setTimeout(() => this.audio.set('task', 1320, 0.5, 'sine'), 110); setTimeout(() => this.audio.set('task', 0, 0), 260); }
+      toast(`Task ${i + 1} done: ${t.text}`, 'ok', 3800);
+      if (done.length === this.tasks.length) setTimeout(() => dialog({ title: 'Exercise complete! 🎉', body: `<p>You finished all ${this.tasks.length} tasks of <b>${this.project.name}</b>.</p><p class="muted">Try another lab exercise, or change this one and make it your own.</p>`, actions: [{ label: 'Great', value: true, cls: 'btn-primary' }] }), 900);
+    });
+    this.views.panel.updateTaskPill();
+  }
+
+  showTasks() {
+    const done = this.project.tasksDone || [];
+    const content = h('div', { class: 'task-list' });
+    content.appendChild(h('div', { class: 'task-progress' }, h('i', { style: { width: (done.length / this.tasks.length * 100).toFixed(0) + '%' } })));
+    let next = true;
+    this.tasks.forEach((t, i) => {
+      const ok = done.includes(i);
+      const cur = !ok && next;
+      if (cur) next = false;
+      content.appendChild(h('div', { class: 'task' + (ok ? ' done' : '') + (cur ? ' current' : '') },
+        h('span', { class: 'task-ic', html: ok ? icon('check', 16) : String(i + 1) }),
+        h('div', { class: 'task-text' }, h('b', {}, t.text), t.hint ? h('small', {}, t.hint) : null)));
+    });
+    content.appendChild(h('div', { class: 'props-actions' },
+      h('button', { class: 'btn btn-ghost', html: `${icon('restart', 16)}<span>Reset progress</span>`, onclick: () => { this.project.tasksDone = []; this.taskMemo = {}; this.save(); sheet.close(); this.views.panel.updateTaskPill(); } }),
+      h('button', { class: 'btn btn-primary', onclick: () => sheet.close() }, 'OK')));
+    const sheet = new Sheet({ title: `Lab tasks · ${done.length}/${this.tasks.length}`, content, icon: 'target', cls: 'sheet-tall' });
+    sheet.open();
   }
 
   updateFlows() {

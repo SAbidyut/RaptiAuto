@@ -234,6 +234,12 @@ const scenarios = {
     await page.click('.vp-row >> text=01-12'); await sleep(700);
     await page.screenshot({ path: join(outDir, 'labqa-vfdparam.png') });
   },
+  async labtasks(page) {
+    await page.evaluate(() => window.__rapti.home.openLabExample('vfd-modbus-hmi')); await sleep(2600);
+    await page.screenshot({ path: join(outDir, 'labtasks-pill.png') });
+    await page.click('.task-pill'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labtasks-sheet.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);

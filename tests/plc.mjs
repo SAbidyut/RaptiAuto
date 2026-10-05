@@ -7,6 +7,7 @@ import { crc16, lrc, requestBytes, encodeFrame } from '../web/src/plc/sim/modbus
 import { LabSystem } from '../web/src/plc/sim/system.js';
 import { LAB_EXAMPLES, buildExample } from '../web/src/plc/examples.js';
 import { makeConn } from '../web/src/plc/store.js';
+import { LAB_TASKS } from '../web/src/plc/tasks.js';
 
 let failures = 0;
 function check(name, cond, detail = '') {
@@ -202,6 +203,58 @@ for (const ex of LAB_EXAMPLES) {
   check('PSU recovers after removing the short', !s.rts.get('psu').short && s.rts.get('lstop').on);
   p.conns.push(makeConn(p.devices, 'mcb', 'L', 'mcb', 'N')); run(50);
   check('L–N short trips the MCB', p.devices.find((d) => d.id === 'mcb').state.on === false);
+}
+
+// ---------------------------------------------------------------- lab tasks (self-checking exercises)
+function taskRunner(id, mutate) {
+  const env = sim(id, mutate);
+  const memo = {};
+  const lab = { tab: '3d', views: { monitor: { sub: 'devices' } } };
+  const ctx = () => {
+    const v = env.s.byKind('vfd')[0];
+    return { sys: env.s, lab, P: env.p, memo, rt: (x) => env.s.rts.get(x), dev: (x) => env.p.devices.find((d) => d.id === x),
+      cpu: env.s.plc && env.s.plc.cpu.powered ? env.s.plc.cpu : null, vfd: v ? v.vfd : null, motor: env.s.byKind('motor')[0] || null,
+      dl: JSON.stringify(env.p.plc.downloaded || {}) };
+  };
+  const tasks = LAB_TASKS[id];
+  const done = (i) => !!tasks[i].check(ctx());
+  return { ...env, lab, done };
+}
+for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArray(LAB_TASKS[ex.id]) && LAB_TASKS[ex.id].length >= 3);
+{
+  const t = taskRunner('start-stop');
+  t.run(400);
+  check('task start-stop #1 (RUN)', t.done(0));
+  t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(100);
+  check('task start-stop #2 (latched)', t.done(1));
+  t.s.act('stop', 'press', true); t.run(100); t.s.act('stop', 'press', false); t.run(100);
+  check('task start-stop #3 (stopped)', t.done(2));
+  check('task start-stop #5 not done before editing', !t.done(4));
+}
+{
+  const t = taskRunner('vfd-modbus-hmi');
+  t.run(2000);
+  t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(7000);
+  check('task modbus #1 (motor started)', t.done(0));
+  t.s.plc.cpu.D[10] = 4500; t.run(5000);
+  check('task modbus #2 (45 Hz)', t.done(1));
+  t.s.act('es', 'toggle'); t.run(10000);
+  check('task modbus #4 (E-stop)', t.done(3));
+}
+{
+  const t = taskRunner('vfd-modbus-hmi', (p) => { const c = p.conns.find((x) => x.b.dev === 'motor' && x.b.port === 'V'); c.b.port = 'W'; const d = p.conns.find((x) => x.a.port === 'W/T3' && x.b.dev === 'motor'); d.b.port = 'V'; });
+  t.run(2000);
+  t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(4000);
+  check('task modbus #6 (reverse by phase swap)', t.done(5), 'rpm=' + t.s.rts.get('motor').rpm);
+}
+{
+  const t = taskRunner('vfd-terminals');
+  t.run(1500);
+  t.s.act('fwd', 'press', true); t.run(100); t.s.act('fwd', 'press', false); t.run(3000);
+  check('task terminals #1 (15 Hz)', t.done(0));
+  const v = t.s.rts.get('vfd').vfd; v.setParam('01-12', 0.1);
+  t.s.act('spd', 'toggle'); t.run(1000);
+  check('task terminals #5 (ocA trip)', t.done(4), 'fault=' + v.fault);
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');

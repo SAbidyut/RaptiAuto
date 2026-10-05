@@ -52,8 +52,14 @@ export class PanelView {
     const p = this.lab.project;
     this.scene.setProject(p);
     this.scene.setSystem(this.lab.idleSystem());
-    if (p.view) this.scene.setView(p.view); else requestAnimationFrame(() => this.scene.focus('overview', false));
+    if (p.view) this.scene.setView(p.view);
+    else requestAnimationFrame(() => {
+      // intro: sweep in from high above
+      if (this.scene.camera) { this.scene.camera.position.set(-900, 2600, 3600); this.scene.controls.target.set(0, 250, 200); }
+      this.scene.focus('overview', true, 1600);
+    });
     this.refresh();
+    this.updateTaskPill();
     if (!localStorage.getItem('raptiauto.plc.hinted')) {
       try { localStorage.setItem('raptiauto.plc.hinted', '1'); } catch (e) { /* ignore */ }
       setTimeout(() => this.hint('Drag to orbit · pinch to zoom · tap a chip below to jump to a device. Press Simulate to power the lab.', 6500), 600);
@@ -94,8 +100,18 @@ export class PanelView {
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
     this.chooser = h('div', { class: 'port-chooser hidden' });
-    this.el.append(this.modeSeg, this.tools, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser);
+    this.taskPill = h('button', { class: 'task-pill hidden', onclick: () => this.lab.showTasks() });
+    this.el.append(this.modeSeg, this.tools, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill);
     this.setMode('wire');
+  }
+
+  updateTaskPill() {
+    const t = this.lab.tasks;
+    if (!t) { this.taskPill.classList.add('hidden'); return; }
+    const n = (this.lab.project.tasksDone || []).length;
+    const html = `${icon(n >= t.length ? 'award' : 'target', 15)}<span>Tasks <b>${n}/${t.length}</b></span>`;
+    if (html !== this.lastPill) { this.lastPill = html; this.taskPill.innerHTML = html; this.taskPill.classList.toggle('all', n >= t.length); }
+    this.taskPill.classList.remove('hidden');
   }
 
   setMode(m) {
@@ -405,11 +421,18 @@ export class PanelView {
       dev.props = [{ label: 'RUN', color: 'green' }, { label: 'FAULT', color: 'red' }, { label: 'READY', color: 'yellow' }, { label: 'POWER', color: 'white' }][n % 4];
     }
     P.devices.push(dev);
+    let tip = `${def.short} added. In ⚡ Wire mode tap one of its terminals, then the terminal it connects to.`;
+    if (def.sim === 'hmi') {
+      tip = 'HMI added. Wire + / − to the 24 V supply and COM1 to PLC COM1. A starter screen uses M10 = START, M11 = STOP, Y0 = RUN.';
+      if (P.hmi.screens.every((s) => !s.elements.length)) P.hmi.screens[0].elements = starterScreen();
+    } else if (def.sim === 'vfd') tip = 'Drive added. Wire MCB L / N → R/L1 · S/L2 and U/T1 V/T2 W/T3 → motor. For Modbus, plug RS-485 (RJ45) into PLC COM2.';
+    else if (def.sim === 'motor') tip = 'Motor added. Tap U/T1 on the drive, then U on the motor — V and W are connected for you.';
+    else if (def.sim === 'psu') tip = 'Power supply added. Tap L on the MCB, then L on the supply — N and ⏚ follow automatically.';
     this.lab.commitHardware('Add ' + def.short);
     this.select({ kind: 'dev', id: dev.id });
     setTimeout(() => this.scene.focus(dev.id), 60);
     this.setMode('wire');
-    this.hint(`${def.short} added. In ⚡ Wire mode tap one of its terminals, then the terminal it connects to.`, 5200);
+    this.hint(tip, 6500);
     Native.vibrate(10);
   }
 
@@ -578,4 +601,20 @@ export class PanelView {
   }
 
   closePot() { if (this.potCard) { this.potCard.remove(); this.potCard = null; } }
+}
+
+/** Default HMI screen created when an HMI is added to a lab without screens. */
+function starterScreen() {
+  const id = () => 'e' + Math.random().toString(36).slice(2, 9);
+  return [
+    { id: id(), type: 'rect', x: 12, y: 10, w: 776, h: 58, fill: '#10224a', stroke: '#2b4470', radius: 14, title: '' },
+    { id: id(), type: 'text', x: 30, y: 22, w: 560, h: 36, text: 'MACHINE CONTROL', size: 26, color: '#e2e8f0', align: 'left', bold: true },
+    { id: id(), type: 'lamp', x: 660, y: 18, w: 110, h: 42, bit: 'Y0', text: 'RUN', onColor: '#22c55e', offColor: '#334155', shape: 'rect' },
+    { id: id(), type: 'button', x: 40, y: 110, w: 220, h: 90, text: 'START', bit: 'M10', mode: 'momentary', color: 'green' },
+    { id: id(), type: 'button', x: 40, y: 220, w: 220, h: 90, text: 'STOP', bit: 'M11', mode: 'momentary', color: 'red' },
+    { id: id(), type: 'motor', x: 300, y: 110, w: 200, h: 200, bit: 'Y0', text: 'MOTOR' },
+    { id: id(), type: 'num', x: 540, y: 110, w: 230, h: 80, word: 'D0', dec: 0, unit: '', label: 'VALUE D0' },
+    { id: id(), type: 'input', x: 540, y: 220, w: 230, h: 80, word: 'D10', dec: 0, unit: '', label: 'SET POINT D10', min: 0, max: 9999 },
+    { id: id(), type: 'alarm', x: 40, y: 350, w: 730, h: 50, bit: 'M100', text: 'ALARM (M100)' },
+  ];
 }

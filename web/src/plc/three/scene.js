@@ -231,7 +231,7 @@ export class LabScene {
   }
 
   // ------------------------------------------------------------------ camera
-  focus(target = 'overview', animate = true) {
+  focus(target = 'overview', animate = true, dur = 650) {
     const box = new THREE.Box3();
     const aspect = this.camera.aspect || 1;
     const portrait = aspect < 0.85;
@@ -270,7 +270,7 @@ export class LabScene {
     const dist = this.fitDistance(box, center, dir, margin);
     const pos = center.clone().add(dir.multiplyScalar(dist));
     if (!animate) { this.camera.position.copy(pos); this.controls.target.copy(center); this.controls.update(); this.camera.updateMatrixWorld(); this.dirty = true; return; }
-    this.anim = { t0: performance.now(), dur: 650, p0: this.camera.position.clone(), p1: pos, c0: this.controls.target.clone(), c1: center };
+    this.anim = { t0: performance.now(), dur, p0: this.camera.position.clone(), p1: pos, c0: this.controls.target.clone(), c1: center };
   }
 
   /** Smallest camera distance (along dir from center) at which every corner of box is on screen. */
