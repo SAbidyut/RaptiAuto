@@ -42,7 +42,9 @@ export class LabScene {
   constructor(host, { quality = 'high', hmiCanvas, laptopCanvas } = {}) {
     this.host = host;
     this.quality = quality;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    // stencil: true makes Android GPUs pick a 24-bit depth + 8-bit stencil buffer; without it many
+    // (Mali, older Adreno) hand out a 16-bit depth buffer and close surfaces flicker (z-fighting)
+    const renderer = new THREE.WebGLRenderer({ antialias: true, depth: true, stencil: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     if (!renderer.getContext()) throw new Error('no WebGL');
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'low' ? 1 : 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;

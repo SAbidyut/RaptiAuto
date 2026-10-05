@@ -338,7 +338,15 @@ function drawDevice(g, sym) {
     }
     case 'vfd': {
       el('rect', { x: w / 2 - 70, y: 34, width: 140, height: 34, rx: 5, class: 'sd-lcd' }, g);
+      // right-aligned inside the LCD window; squeezed (never spilling out) when the text is long
       const disp = txt(w / 2 + 62, 59, '', 'sd-seg');
+      const fitDisp = (text) => {
+        disp.removeAttribute('textLength'); disp.removeAttribute('lengthAdjust');
+        if (text.length <= 6) return; // "599.00" fits
+        let tw = 0;
+        try { tw = disp.getComputedTextLength(); } catch (e) { /* not rendered yet */ }
+        if (tw > 124) { disp.setAttribute('textLength', 124); disp.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+      };
       const leds = {};
       ['RUN', 'STOP', 'FWD', 'REV'].forEach((k, i) => { const x = w / 2 - 54 + i * 36; leds[k] = led(x, 80, k === 'STOP' ? '#ff3b30' : '#36ff6a', 3.4); txt(x + 6, 83, k, 'sd-mini l'); });
       const kw = 40, kh = 22, kx0 = w / 2 - (3 * kw + 8) / 2;
@@ -354,7 +362,7 @@ function drawDevice(g, sym) {
       update = (rt, t) => {
         const d = rt.vfd.display(t);
         const s = d.off ? '' : String(d.text);
-        if (disp.textContent !== s) disp.textContent = s;
+        if (disp.textContent !== s) { disp.textContent = s; fitDisp(s); }
         set(disp, 'class', 'sd-seg' + (d.fault ? ' blink' : ''));
         for (const k of Object.keys(leds)) ledOn(leds[k], !!d.leds[k]);
       };

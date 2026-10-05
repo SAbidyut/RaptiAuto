@@ -521,8 +521,8 @@
 .sd-knobc { fill: #111827; stroke: #64748b; stroke-width: 1.5; }
 .sd-ptr { stroke: #fff; stroke-width: 2.5; stroke-linecap: round; }
 .sd-lcd { fill: #1a0505; stroke: #3f1d1d; }
-.sd-seg { font-family: var(--mono); font-size: 22px; font-weight: 600; fill: #ff3b2f; text-anchor: end; letter-spacing: 2px; }
-.sd-seg.blink { fill: #ff7b72; }
+.schem .sd-seg { font-family: var(--mono); font-size: 22px; font-weight: 600; fill: #ff3b2f; text-anchor: end; letter-spacing: 1px; }
+.schem .sd-seg.blink { fill: #ff7b72; }
 .sd-key { fill: #4a505b; stroke: rgba(0, 0, 0, .4); }
 .sd-key.down { filter: brightness(1.6); }
 .sd-key-t { font-size: 9px; font-weight: 800; fill: #fff; }
@@ -555,3 +555,33 @@
 @keyframes smPulse { from { stroke-width: 2; opacity: .7; } to { stroke-width: 4; opacity: 1; } }
 .ssel { fill: rgba(34, 211, 238, .05); stroke: #22d3ee; stroke-width: 2; stroke-dasharray: 7 5; }
 @media (max-width: 480px) { .lab.fs .pane-panel .task-pill, .lab.fs .pane-panel .lab-hint { left: calc(70px + var(--safe-l)); } }
+
+/* ---------------------------------------------------------------- overlay glass over the 3D / 2D view
+   app.css (imported after this file) gives .segmented and .chip an almost transparent background with the
+   same specificity, which made "Wire", 2D / 3D and the focus chips fade into a bright 3D panel */
+.panel-view .lab-mode { background: rgba(10, 16, 32, .84); border-color: var(--line2); }
+.panel-view .lab-view-seg { background: rgba(10, 16, 32, .86); border-color: var(--line2); }
+.panel-view .lab-chip { height: 32px; background: rgba(10, 16, 32, .84); color: #dbe5f7; border-color: rgba(148, 163, 184, .28); }
+.panel-view .lab-mode .seg:not(.active) { color: #aab6cc; }
+.panel-view .lab-hint { top: 54px; left: 10px; right: 64px; }
+@media (max-width: 480px) { .panel-view .lab-hint { top: 94px; } }
+
+/* ---------------------------------------------------------------- full screen: keep clear of the camera cut-out
+   In immersive mode the page runs under the status-bar area; --safe-* is the measured overlap of the
+   display cut-out (punch-hole camera / notch), so every floating control starts below it. */
+.lab.fs .pane-panel .lab-mode { top: calc(10px + var(--safe-t)); }
+.lab.fs .pane-panel .task-pill { top: calc(10px + var(--safe-t)); }
+.lab.fs .pane-panel .lab-hint, .lab.fs .pane-panel .lab-wirebar { top: calc(54px + var(--safe-t)); }
+.lab.fs .pane-panel .lab-view-seg, .lab.fs .pane-panel .lab-chips { bottom: calc(10px + var(--safe-b)); }
+@media (max-width: 480px) {
+  .lab.fs .pane-panel .task-pill { top: calc(52px + var(--safe-t)); }
+  .lab.fs .pane-panel .lab-hint, .lab.fs .pane-panel .lab-wirebar { top: calc(94px + var(--safe-t)); }
+}
+/* ladder / HMI / VFD / monitor: their own tool bars move below the cut-out (the bar colour fills the strip
+   behind the camera) and leave room on the right for the ☰ handle */
+.lab.fs .lad-bar { padding-top: calc(6px + var(--safe-t)); padding-right: calc(52px + var(--safe-r)); }
+.lab.fs .hv-bar { padding-top: calc(7px + var(--safe-t)); padding-right: calc(52px + var(--safe-r)); }
+.lab.fs .mv-head { padding-top: calc(8px + var(--safe-t)); padding-right: calc(52px + var(--safe-r)); }
+.lab.fs .pane-vfd { padding-top: var(--safe-t); }
+.lab.fs .pane-vfd .vv-body { padding-right: calc(52px + var(--safe-r)); }
+.lab.fs .lab-pane:not(.pane-panel) { padding-right: var(--safe-r); padding-bottom: var(--safe-b); }
