@@ -1,8 +1,23 @@
 # RaptiAuto
 
-An Android app for designing and simulating Arduino and microcontroller projects on a phone, in the spirit of Wokwi. Made for RAPTI (Resonance Automation Professional Training Institute).
+An Android app for designing and simulating Arduino and microcontroller projects — and now a 3D **Delta PLC / HMI / VFD** automation lab — on a phone, in the spirit of Wokwi. Made for RAPTI (Resonance Automation Professional Training Institute).
 
-**Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed, ~0.7 MB.
+**Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
+
+## Delta PLC Lab (new in 2.0)
+
+A virtual industrial-automation trainer with Delta equipment, built for touch screens:
+
+- **3D trainer (three.js):** a control panel with DIN rails and wire ducts, a Delta **DVP-16ES2 / 32ES2 / 20EX2** PLC, **DOP-107BV** 7" HMI on a stand, **MS300** VFD, Delta CliQ 24 V supply, MCB, an operator console (push buttons, E-stop, selector, pilot lamps, buzzer, PNP proximity sensor, speed pot), a 0.75 kW induction motor and the programming laptop. Orbit / pinch / pan, focus chips per device.
+- **Wiring in 3D:** tap a terminal, tap the other end. Panel wires with ferrules, banana patch cords on the console, real connectors for COM1 (RS-232 mini-DIN ↔ D-sub), COM2 (RS-485 ↔ RJ45) and USB. Valid ends glow; U/V/W and L/N/PE are completed automatically; a wiring list editor is included.
+- **Operate in 3D:** press buttons, flip the MCB and RUN/STOP switch, tap the live HMI touch screen and the VFD keypad. LEDs, lamps, the 7-segment drive display and the motor shaft react; powered wires show current flow, busy comm cables show data pulses.
+- **Electrical model:** supply nets, sink/source inputs via S/S, relay output groups, VFD NPN/PNP inputs, 0–10 V analog (pot, AVI, EX2 AI/AO), shorts trip the PSU or the MCB, swapped motor phases reverse rotation.
+- **Ladder editor (ISPSoft-style):** cursor grid, NO/NC/edge/parallel contacts, compare contacts, OUT/SET/RST/PLS/PLF, TMR, CNT, MOV/ADD/SUB/MUL/DIV/INC/DEC/CMP/ZRST/ALT/MODRW with pulse versions, an octal-aware operand keypad, device comments, live compile with errors, Delta IL listing (LD/AND/OR/ANB/ORB/MPS/MPP), download over USB, PLC RUN/STOP, live power flow and online force/set.
+- **DVP CPU:** X/Y octal addressing, M/S/T/C/D, 100/10/1 ms and accumulative timers, counters, latched ranges, special relays (M1000, M1002, M1013 …), scan time D1010, COM2 settings D1120/M1143, MODRW Modbus master.
+- **HMI (DOPSoft-style):** screens with buttons, lamps, numeric display/input with an on-screen keypad, meters, bars, trends, motor icons, screen buttons and alarm banners; drag/resize designer; Delta DVP protocol on COM1/COM2 with comm-error handling.
+- **MS300 drive:** keypad (F/H/A/U, parameter mode), 35 parameters (00-20/00-21 sources, accel/decel, multi-step, MI functions, relay, RS-485 09-xx), terminal / RS-485 / AVI control, ramps, motor current and slip, ocA/ovd/EoL1/EF/CE10 faults, Modbus registers 2000H/2001H/21xxH.
+- **Monitor:** device monitor (X/Y/M/T/C/D), watch list, and a communication analyser showing real Modbus RTU / ASCII frames with CRC / LRC.
+- **Lab exercises:** start/stop latch, traffic light timers, part counter with HMI, VFD FWD/REV multi-speed, VFD speed via Modbus RTU + HMI, analog speed (pot → EX2 → AVI), and a blank lab.
 
 ## Features
 
@@ -29,6 +44,7 @@ Other scripts:
 | --- | --- |
 | `node tests/examples.mjs` | Run every example headless, with functional checks |
 | `node tests/devices.mjs` | Device and library tests |
+| `node tests/plc.mjs` | PLC lab: ladder/IL, CPU, Modbus, VFD, wiring and full lab simulations |
 | `node tools/icons.mjs` | Regenerate launcher icons and the splash logo from the logo SVG |
 | `node tools/shot.mjs <dir> home run:<example>:<ms>` | Screenshots in a phone-sized Chromium |
 
@@ -40,3 +56,7 @@ Other scripts:
 - `web/src/components/`: component definitions (artwork plus simulation models).
 - `web/src/ui/`: the app screens.
 - `web/src/examples/`: the example gallery.
+- `web/src/plc/sim/`: PLC lab simulation (DVP CPU, ladder compiler/IL, MS300 drive, Modbus, HMI runtime, lab system).
+- `web/src/plc/devices/`: Delta device catalogue (ports, terminals) and the automatic 3D layout.
+- `web/src/plc/three/`: three.js scene, procedural device models, cables.
+- `web/src/plc/ui/`: lab screen, 3D panel, ladder editor, HMI designer, VFD view, monitor.

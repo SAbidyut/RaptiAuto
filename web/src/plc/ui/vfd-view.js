@@ -1,0 +1,248 @@
+// VFD tab: a large Delta MS300 keypad (same behaviour as in 3D), live drive status with a trend
+// chart, the parameter table (edit online or offline) and a Modbus register reference.
+import { h, toast, Sheet } from '../../ui/widgets.js';
+import { icon } from '../../ui/icons.js';
+import { Native } from '../../native.js';
+import { VFD_PARAMS, PARAM_GROUPS, GROUP_NAMES, VfdMS300, FAULTS, paramAddr, defaultParams } from '../sim/vfd.js';
+import { drawSegDisplay } from '../three/sevenseg.js';
+import { deviceProps } from '../devices/defs.js';
+
+const KEYS = [['MODE', 'MODE'], ['UP', '▲'], ['ENTER', 'ENTER'], ['LEFT', '◀'], ['DOWN', '▼'], ['RUN', 'RUN'], ['STOP', 'STOP / RESET']];
+
+export class VfdView {
+  constructor(lab) {
+    this.lab = lab;
+    this.idx = 0;
+    this.trend = [];
+    this.q = '';
+    this.el = h('section', { class: 'vfd-view' });
+    this.build();
+  }
+
+  vfdDevs() { return this.lab.project.devices.filter((d) => d.type === 'ms300'); }
+  dev() { const l = this.vfdDevs(); return l[Math.min(this.idx, l.length - 1)] || null; }
+  rt() { const d = this.dev(); return d && this.lab.sys ? this.lab.sys.rts.get(d.id) : null; }
+
+  build() {
+    this.picker = h('div', { class: 'vv-pick' });
+    this.disp = document.createElement('canvas');
+    this.disp.width = 360; this.disp.height = 100;
+    this.disp.className = 'vv-disp';
+    this.leds = h('div', { class: 'vv-leds' }, ...['RUN', 'STOP', 'FWD', 'REV'].map((t) => h('span', { 'data-led': t }, h('i'), t)));
+    this.ind = h('div', { class: 'vv-ind' }, ...['F', 'H', 'A', 'U'].map((t) => h('b', { 'data-i': t }, t)));
+    const keys = h('div', { class: 'vv-keys' });
+    for (const [k, label] of KEYS) {
+      keys.appendChild(h('button', { class: 'vv-key k-' + k.toLowerCase(), onpointerdown: (e) => { e.preventDefault(); this.press(k); } }, label));
+    }
+    this.pad = h('div', { class: 'vv-pad' },
+      h('div', { class: 'vv-brand', html: '<b>▲ DELTA</b><span>MS300</span>' }),
+      h('div', { class: 'vv-window' }, this.disp, this.ind), this.leds, keys,
+      h('div', { class: 'vv-model' }, 'VFD7A5MS21ANSAA · 1.5 kW · 230 V'));
+    this.cards = h('div', { class: 'vv-cards' });
+    this.chart = document.createElement('canvas');
+    this.chart.className = 'vv-chart';
+    this.paramsEl = h('div', { class: 'vv-params' });
+    this.search = h('input', { class: 'input', type: 'search', placeholder: 'Search parameters (e.g. 00-20, accel, RS-485)', autocomplete: 'off' });
+    this.search.addEventListener('input', () => { this.q = this.search.value.trim().toLowerCase(); this.drawParams(); });
+    this.right = h('div', { class: 'vv-right' },
+      this.cards,
+      h('div', { class: 'vv-sec' }, h('h4', {}, 'Live trend · output Hz & current'), this.chart),
+      h('div', { class: 'vv-sec' }, h('h4', {}, 'Parameters'), h('div', { class: 'search-box', html: icon('search', 18) }, this.search), this.paramsEl),
+      h('div', { class: 'vv-sec' }, h('h4', {}, 'Modbus registers (RS-485)'), modbusRef()));
+    this.empty = h('div', { class: 'empty-state vv-empty hidden' },
+      h('div', { class: 'empty-ic big', html: icon('gauge', 36) }), h('h2', {}, 'No VFD in this lab'),
+      h('p', {}, 'Add a Delta MS300 drive and a motor from the 3D lab (＋).'),
+      h('button', { class: 'btn btn-primary', html: `${icon('cube', 18)}<span>Open 3D lab</span>`, onclick: () => this.lab.setTab('panel') }));
+    this.body = h('div', { class: 'vv-body' }, h('div', { class: 'vv-left' }, this.picker, this.pad), this.right);
+    this.el.append(this.empty, this.body);
+  }
+
+  onShow() { this.refresh(); }
+  onHardwareChanged() { this.refresh(); }
+  onSimStart() { this.trend = []; this.refresh(); }
+  onSimStop() { this.refresh(); }
+
+  refresh() {
+    const devs = this.vfdDevs();
+    this.empty.classList.toggle('hidden', devs.length > 0);
+    this.body.classList.toggle('hidden', !devs.length);
+    if (!devs.length) return;
+    this.picker.innerHTML = '';
+    if (devs.length > 1) devs.forEach((d, i) => this.picker.appendChild(h('button', { class: 'chip' + (i === this.idx ? ' active' : ''), onclick: () => { this.idx = i; this.trend = []; this.refresh(); } }, `VFD ${i + 1} · station ${(d.state.params && d.state.params['09-00']) || 1}`)));
+    this.drawDisplay();
+    this.drawCards();
+    this.drawParams();
+    this.drawChart();
+  }
+
+  press(k) {
+    const rt = this.rt();
+    if (!rt) { toast(this.lab.sys ? 'The drive has no power — check R/L1 and S/L2' : 'Press Simulate to power the drive', 'info'); return; }
+    if (!rt.vfd.powered) { toast('The drive has no power — check R/L1 and S/L2', 'warn'); return; }
+    this.lab.sys.act(rt.dev.id, 'vfdKey', k);
+    const m = this.lab.scene && this.lab.scene.modelOf(rt.dev.id);
+    if (m && m.press) m.press(k);
+    Native.vibrate(8);
+    this.drawDisplay();
+    if (k === 'ENTER') this.drawParams();
+  }
+
+  drawDisplay() {
+    const rt = this.rt();
+    const g = this.disp.getContext('2d');
+    g.fillStyle = '#0b0303'; g.fillRect(0, 0, this.disp.width, this.disp.height);
+    const d = rt ? rt.vfd.display(rt.vfd.time) : { off: true, leds: {} };
+    if (!d.off) drawSegDisplay(g, 360, 100, d.text, { n: 5, cursor: d.editing || (rt.vfd.kp.mode === 'F') ? d.cursor ?? -1 : -1, blink: Math.floor(performance.now() / 330) % 2 === 0 });
+    for (const b of this.ind.children) b.classList.toggle('on', !!d.leds[b.dataset.i]);
+    for (const s of this.leds.children) s.classList.toggle('on', !!d.leds[s.dataset.led]);
+    this.pad.classList.toggle('off', !!d.off);
+  }
+
+  drawCards() {
+    const rt = this.rt();
+    const v = rt && rt.vfd;
+    const dev = this.dev();
+    const P = v ? v.params : { ...defaultParams(), ...(dev.state.params || {}) };
+    const src = (id) => { const p = VFD_PARAMS.find((x) => x.id === id); return p.opts[P[id]] || P[id]; };
+    const card = (label, val, unit = '', cls = '') => h('div', { class: 'vv-card ' + cls }, h('small', {}, label), h('b', {}, val, unit ? h('span', {}, unit) : null));
+    this.cards.innerHTML = '';
+    const motor = v && rt.motorId ? this.lab.sys.rts.get(rt.motorId) : null;
+    const state = !v ? 'OFF' : !v.powered ? 'NO POWER' : v.fault ? 'FAULT ' + v.fault : v.runCmd ? (Math.abs(v.f) < Math.abs(v.fcmd) - 0.05 ? 'ACCEL' : 'RUN') : v.f !== 0 ? 'DECEL' : 'STOP';
+    this.cards.append(
+      card('Status', state, '', v && v.fault ? 'err' : v && v.runCmd ? 'ok' : ''),
+      card('Frequency command', v && v.powered ? v.fcmd.toFixed(2) : '—', 'Hz'),
+      card('Output frequency', v && v.powered ? Math.abs(v.f).toFixed(2) : '—', 'Hz', 'hz'),
+      card('Output current', v && v.powered ? v.I.toFixed(2) : '—', 'A'),
+      card('Motor speed', motor ? Math.round(Math.abs(motor.rpm)) + (motor.rpm < -1 ? ' ⟲' : '') : '—', 'rpm'),
+      card('DC bus / output', v && v.powered ? `${v.dc.toFixed(0)} / ${v.V.toFixed(0)}` : '—', 'V'),
+      card('Run command from', src('00-21'), '', 'wide'),
+      card('Frequency from', src('00-20'), '', 'wide'));
+    if (v && v.fault) this.cards.appendChild(h('div', { class: 'vv-fault' }, h('b', {}, v.fault), FAULTS[v.fault].text, ' — press STOP/RESET.'));
+  }
+
+  frame(dt) {
+    this.acc = (this.acc || 0) + dt;
+    this.dispAcc = (this.dispAcc || 0) + dt;
+    if (this.dispAcc > 0.1) { this.dispAcc = 0; this.drawDisplay(); }
+    if (this.acc < 0.25) return;
+    this.acc = 0;
+    const rt = this.rt();
+    if (rt) {
+      const motor = rt.motorId ? this.lab.sys.rts.get(rt.motorId) : null;
+      this.trend.push([this.lab.sys.time, Math.abs(rt.vfd.f), rt.vfd.I, motor ? Math.abs(motor.rpm) : 0]);
+      while (this.trend.length && this.trend[0][0] < this.lab.sys.time - 30) this.trend.shift();
+    }
+    this.drawCards();
+    this.drawChart();
+  }
+
+  drawChart() {
+    const c = this.chart;
+    const r = c.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (c.width !== Math.round(r.width * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
+    const g = c.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const W = r.width, H = r.height;
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(148,163,184,.12)'; g.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) { const y = 8 + (H - 26) * i / 4; g.beginPath(); g.moveTo(30, y); g.lineTo(W - 6, y); g.stroke(); }
+    const dev = this.dev();
+    const fmax = (this.rt() ? this.rt().vfd.params['01-00'] : (dev && dev.state.params && dev.state.params['01-00'])) || 50;
+    g.fillStyle = '#64748b'; g.font = '600 10px Inter, sans-serif'; g.textAlign = 'right';
+    g.fillText(String(fmax), 26, 12); g.fillText('0', 26, H - 16);
+    const d = this.trend;
+    if (d.length > 1) {
+      const t1 = d[d.length - 1][0];
+      const X = (t) => 30 + (W - 36) * (1 - (t1 - t) / 30);
+      const Y = (v, max) => 8 + (H - 26) * (1 - Math.max(0, Math.min(1, v / max)));
+      for (const [k, col, max] of [[1, '#22d3ee', fmax], [2, '#f59e0b', 8]]) {
+        g.strokeStyle = col; g.lineWidth = 2; g.beginPath();
+        d.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[k], max)) : g.moveTo(X(p[0]), Y(p[k], max))));
+        g.stroke();
+      }
+    }
+    g.textAlign = 'left'; g.font = '700 11px Inter, sans-serif';
+    g.fillStyle = '#22d3ee'; g.fillText('■ Hz', 34, H - 3);
+    g.fillStyle = '#f59e0b'; g.fillText('■ A (0–8)', 80, H - 3);
+    if (d.length < 2) { g.fillStyle = '#475569'; g.textAlign = 'center'; g.fillText(this.lab.sys ? 'collecting…' : 'Simulate to see the trend', W / 2, H / 2); }
+  }
+
+  drawParams() {
+    const dev = this.dev();
+    if (!dev) return;
+    const rt = this.rt();
+    const P = rt ? rt.vfd.params : { ...defaultParams(), ...(dev.state.params || {}) };
+    const q = this.q;
+    this.paramsEl.innerHTML = '';
+    for (const grp of PARAM_GROUPS) {
+      const list = VFD_PARAMS.filter((p) => p.id.startsWith(grp + '-') && (!q || (p.id + ' ' + p.name + ' ' + Object.values(p.opts || {}).join(' ')).toLowerCase().includes(q)));
+      if (!list.length) continue;
+      this.paramsEl.appendChild(h('div', { class: 'vp-group' }, `${grp} · ${GROUP_NAMES[grp]}`));
+      for (const p of list) {
+        const v = P[p.id];
+        const changed = v !== p.def;
+        const shown = p.opts && p.opts[v] !== undefined ? `${fmtV(v, p)} · ${p.opts[v]}` : `${fmtV(v, p)}${p.unit ? ' ' + p.unit : ''}`;
+        this.paramsEl.appendChild(h('button', { class: 'vp-row' + (changed ? ' changed' : '') + (p.ro ? ' ro' : ''), onclick: () => this.editParam(p) },
+          h('span', { class: 'vp-id' }, p.id), h('span', { class: 'vp-name' }, p.name), h('span', { class: 'vp-val' }, shown)));
+      }
+    }
+  }
+
+  editParam(p) {
+    if (p.ro) { toast(`${p.id} is read-only`); return; }
+    const dev = this.dev();
+    const rt = this.rt();
+    const P = rt ? rt.vfd.params : { ...defaultParams(), ...(dev.state.params || {}) };
+    const content = h('div', { class: 'props' });
+    content.appendChild(h('p', { class: 'muted small' }, `Modbus address ${paramAddr(p.id).toString(16).toUpperCase().padStart(4, '0')}H · default ${fmtV(p.def, p)}${p.unit ? ' ' + p.unit : ''}${p.min !== undefined ? ` · range ${p.min}–${p.max}` : ''}`));
+    const apply = (val) => {
+      let err;
+      if (rt && rt.vfd.powered) { err = rt.vfd.setParam(p.id, val); if (!err) this.lab.sys.persistVfd(rt); }
+      else {
+        const tmp = new VfdMS300(dev.state.params || {});
+        err = tmp.setParam(p.id, val);
+        if (!err) dev.state.params = tmp.snapshotParams();
+      }
+      if (err) { toast(err, 'warn'); return false; }
+      this.lab.save();
+      this.drawParams(); this.drawCards();
+      toast(`${p.id} = ${fmtV(val, p)}${p.unit ? ' ' + p.unit : ''}`, 'ok');
+      return true;
+    };
+    if (p.opts) {
+      for (const [v, label] of Object.entries(p.opts)) {
+        content.appendChild(h('button', { class: 'vp-opt' + (String(P[p.id]) === v ? ' active' : ''), onclick: () => { if (apply(+v)) sheet.close(); } }, h('b', {}, v), h('span', {}, label)));
+      }
+    } else {
+      const inp = h('input', { class: 'input', type: 'number', value: P[p.id], step: 10 ** -p.dec, min: p.min, max: p.max, inputmode: 'decimal' });
+      content.append(h('div', { class: 'field' }, h('label', {}, `Value${p.unit ? ' (' + p.unit + ')' : ''}`), inp),
+        h('div', { class: 'props-actions' }, h('button', { class: 'btn btn-ghost', onclick: () => { inp.value = p.def; } }, 'Default'), h('button', { class: 'btn btn-primary', html: `${icon('check', 18)}<span>Set</span>`, onclick: () => { const v = parseFloat(inp.value); if (Number.isFinite(v) && apply(v)) sheet.close(); } })));
+      setTimeout(() => inp.focus(), 250);
+    }
+    const sheet = new Sheet({ title: `Pr.${p.id} · ${p.name}`, content, icon: 'gauge' });
+    sheet.open();
+    void deviceProps;
+  }
+}
+
+function fmtV(v, p) { return p.dec ? Number(v).toFixed(p.dec) : String(v); }
+
+function modbusRef() {
+  const rows = [
+    ['2000H', 'W', 'Command: H1 = STOP, H12 = RUN FWD, H22 = RUN REV'],
+    ['2001H', 'W', 'Frequency command, 0.01 Hz (5000 = 50.00 Hz)'],
+    ['2002H', 'W', 'bit0 = EF (external fault), bit1 = fault reset'],
+    ['2100H', 'R', 'Fault code (0 = none, 1 = ocA, 8 = ovd, 49 = EF …)'],
+    ['2101H', 'R', 'Status: bit0–1 run state, bit3–4 direction'],
+    ['2102H', 'R', 'Frequency command (0.01 Hz)'],
+    ['2103H', 'R', 'Output frequency (0.01 Hz)'],
+    ['2104H', 'R', 'Output current (0.01 A)'],
+    ['2105H', 'R', 'DC bus voltage (0.1 V)'],
+    ['2106H', 'R', 'Output voltage (0.1 V)'],
+    ['GGnnH', 'R/W', 'Parameter GG-nn, e.g. 010CH = Pr.01-12'],
+  ];
+  return h('div', { class: 'mb-ref' }, ...rows.map(([a, rw, t]) => h('div', { class: 'mb-row' }, h('code', {}, a), h('span', { class: 'mb-rw' }, rw), h('span', {}, t))),
+    h('p', { class: 'muted small' }, 'Set Pr.00-21 = 2 (run) and Pr.00-20 = 1 (frequency) so the drive obeys RS-485. Match Pr.09-01 / 09-04 with the PLC (D1120, M1143).'));
+}

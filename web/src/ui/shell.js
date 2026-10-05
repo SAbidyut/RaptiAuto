@@ -4,7 +4,7 @@ import { getDef, allDefs, CATEGORIES, pinsOf, defaultProps } from '../components
 import { BOARD_TYPES } from '../components/boards.js';
 import { listProjects, loadProject, deleteProject, createProject, cloneProject, saveProject, importJSON, exportJSON } from '../store.js';
 import { EXAMPLES, EXAMPLE_CATEGORIES } from '../examples/index.js';
-import { h, toast, popupMenu, confirmDialog, promptDialog, timeAgo, pushBack, Sheet } from './widgets.js';
+import { h, toast, popupMenu, confirmDialog, promptDialog, timeAgo, pushBack, Sheet, dialog } from './widgets.js';
 import { icon } from './icons.js';
 import { thumbSVG } from './library.js';
 import { projectPreview } from './preview.js';
@@ -12,10 +12,14 @@ import { logoMark, wordmark } from './brand.js';
 import { aboutPage, RAPTI } from './about.js';
 import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
+import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
+import { LAB_EXAMPLES, buildExample } from '../plc/examples.js';
+import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
 
 export const PAGES = {
   home: { title: 'Home', icon: 'home' },
   projects: { title: 'My Projects', icon: 'folder' },
+  plclab: { title: 'Delta PLC Lab', icon: 'cpu' },
   examples: { title: 'Examples', icon: 'book' },
   boards: { title: 'Boards', icon: 'chip' },
   components: { title: 'Components', icon: 'layers' },
@@ -23,7 +27,7 @@ export const PAGES = {
   settings: { title: 'Settings', icon: 'settings' },
   about: { title: 'About RAPTI', icon: 'graduation' },
 };
-const TABS = [['home', 'Home'], ['projects', 'Projects'], ['examples', 'Examples'], ['components', 'Parts']];
+const TABS = [['home', 'Home'], ['projects', 'Projects'], ['plclab', 'PLC Lab'], ['examples', 'Examples']];
 
 export class Shell {
   constructor(app) {
@@ -84,7 +88,7 @@ export class Shell {
     this.titleEl.innerHTML = '';
     if (this.page === 'home') this.titleEl.appendChild(h('div', { class: 'brand', html: `${logoMark(34, 'tb')}${wordmark()}` }));
     else this.titleEl.appendChild(h('h1', {}, PAGES[this.page].title));
-    const fill = { home: this.pageHome, projects: this.pageProjects, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
+    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
     fill.call(this, pageEl);
     this.host.innerHTML = '';
     this.host.append(pageEl, ...this.extras);
@@ -108,7 +112,7 @@ export class Shell {
     const group = (t) => h('div', { class: 'dr-group' }, t);
     this.drawer = h('aside', { class: 'drawer', 'aria-label': 'Menu' },
       h('div', { class: 'dr-head' },
-        h('div', { class: 'dr-brand', html: `${logoMark(52, 'dr')}<div>${wordmark()}<small>Arduino & electronics simulator</small></div>` }),
+        h('div', { class: 'dr-brand', html: `${logoMark(52, 'dr')}<div>${wordmark()}<small>Arduino · PLC · electronics simulator</small></div>` }),
         h('button', { class: 'dr-new', html: `${icon('plus', 19)}<span>New Project</span>`, onclick: () => { this.closeDrawer(); this.newProject(); } })),
       h('nav', { class: 'dr-list' },
         group('Workspace'),
@@ -116,6 +120,8 @@ export class Shell {
         item('projects', 'My Projects', 'folder', h('span', { class: 'dr-count' })),
         item('examples', 'Examples', 'book', h('span', { class: 'dr-count' }, String(EXAMPLES.length))),
         act('Open / import file', 'upload', () => this.importProject()),
+        group('Industrial automation'),
+        item('plclab', 'Delta PLC Lab', 'cpu', h('span', { class: 'dr-new-badge' }, '3D')),
         group('Library'),
         item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
         item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
@@ -185,13 +191,15 @@ export class Shell {
           h('button', { class: 'btn btn-primary btn-lg', html: `${icon('plus', 20)}<span>New Project</span>`, onclick: () => this.newProject() }),
           h('button', { class: 'btn btn-glass btn-lg', html: `${icon('book', 19)}<span>Examples</span>`, onclick: () => this.go('examples') })))));
 
+    el.appendChild(this.labBanner());
+
     const tile = (page, label, sub, ic, tone, fn) => h('button', { class: 'qa-tile tone-' + tone, onclick: fn || (() => this.go(page)) },
       h('span', { class: 'qa-ic', html: icon(ic, 22) }), h('b', {}, label), h('small', {}, sub));
     el.appendChild(h('section', { class: 'home-sec' }, secHead('Menu', 'Everything in RaptiAuto', 'grid'),
       h('div', { class: 'qa-grid' },
         tile('projects', 'My Projects', `${listProjects().length} saved`, 'folder', 'cyan'),
         tile('examples', 'Examples', `${EXAMPLES.length} projects`, 'book', 'violet'),
-        tile('boards', 'Boards', `${BOARD_TYPES.length} boards`, 'chip', 'blue'),
+        tile('plclab', 'PLC Lab', 'Delta · 3D', 'cpu', 'blue'),
         tile('components', 'Components', `${partCount()}+ parts`, 'layers', 'green'),
         tile('guide', 'Guide', 'How to use', 'help', 'amber'),
         tile('about', 'About RAPTI', 'Courses · contact', 'graduation', 'pink'))));
@@ -384,6 +392,118 @@ export class Shell {
     el.appendChild(aboutPage());
   }
 
+  // ---------------------------------------------------------------- Delta PLC lab
+  labBanner() {
+    return h('section', { class: 'lab-banner', onclick: () => this.go('plclab') },
+      h('div', { class: 'lb-art', html: labArt() }),
+      h('div', { class: 'lb-content' },
+        h('div', { class: 'hero-kicker', html: `${icon('cube', 15)}<span>NEW · Industrial automation</span>` }),
+        h('h2', {}, 'Delta PLC Lab ', h('span', { class: 'grad' }, 'in 3D')),
+        h('p', {}, 'DVP PLC, DOP-107 HMI and MS300 VFD on a real 3D trainer. Plug in cables, draw ladder, simulate live.'),
+        h('div', { class: 'hero-actions' },
+          h('button', { class: 'btn btn-primary', html: `${icon('play', 18)}<span>Open the lab</span>`, onclick: (e) => { e.stopPropagation(); this.openLabExample('vfd-modbus-hmi'); } }),
+          h('button', { class: 'btn btn-glass', html: `${icon('cpu', 18)}<span>All labs</span>`, onclick: (e) => { e.stopPropagation(); this.go('plclab'); } }))));
+  }
+
+  pageLab(el) {
+    this.action('upload', 'Open / import file', () => this.importProject());
+    this.action('help', 'About the lab', () => this.labInfo());
+    el.appendChild(h('section', { class: 'lab-intro' },
+      h('div', { class: 'lb-art', html: labArt() }),
+      h('div', { class: 'li-text' },
+        h('h2', {}, 'Delta automation trainer'),
+        h('p', {}, 'Wire a Delta DVP PLC, DOP-107 touch panel and MS300 drive in 3D, program it like ISPSoft and watch the motor turn.'),
+        h('div', { class: 'li-feats' }, ...['3D wiring', 'Ladder + IL', 'HMI designer', 'VFD keypad', 'Modbus RTU', 'Live monitor'].map((t) => h('span', { class: 'pill' }, t))),
+        h('div', { class: 'hero-actions' },
+          h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New lab</span>`, onclick: () => this.newLab() }),
+          h('button', { class: 'btn btn-glass', html: `${icon('play', 18)}<span>Full demo</span>`, onclick: () => this.openLabExample('vfd-modbus-hmi') })))));
+    const labs = listLabs();
+    if (labs.length) {
+      const list = h('div', { class: 'proj-list' });
+      for (const m of labs) list.appendChild(this.labCard(m));
+      el.appendChild(h('section', { class: 'home-sec' }, secHead('My labs', `${labs.length} saved on this phone`, 'folder'), list));
+    }
+    const grid = h('div', { class: 'ex-grid lab-ex-grid' });
+    for (const ex of LAB_EXAMPLES) {
+      grid.appendChild(h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
+        h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
+        h('div', { class: 'ex-body' },
+          h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
+          h('div', { class: 'ex-name' }, ex.name),
+          h('div', { class: 'ex-desc' }, ex.description))));
+    }
+    el.appendChild(h('section', { class: 'home-sec' }, secHead('Lab exercises', 'Ready-wired, programmed — press Simulate', 'book'), grid));
+  }
+
+  /** Card from the saved-lab index (the full lab is only loaded when it is opened). */
+  labCard(m) {
+    const plcDef = m.plc && DEVICE_DEFS[m.plc];
+    const thumb = labThumb(m.id);
+    const more = h('button', { class: 'icon-btn sm', 'aria-label': 'More', html: icon('dots', 20), onclick: (e) => { e.stopPropagation(); this.labMenu(e.currentTarget, m); } });
+    const img = h('div', { class: 'proj-thumb lab-thumb' });
+    if (thumb && /^data:image\/(jpeg|png);base64,/.test(thumb)) img.appendChild(h('img', { src: thumb, alt: '' })); else img.innerHTML = labArt();
+    return h('div', { class: 'proj-card', onclick: () => { const p = loadLab(m.id); if (p) this.app.openLab(p); else toast('This lab could not be loaded', 'error'); } },
+      img,
+      h('div', { class: 'proj-body' },
+        h('div', { class: 'proj-name' }, m.name),
+        h('div', { class: 'proj-meta' }, `${plcDef ? plcDef.short : 'No PLC'} · ${m.devices || 0} devices · ${m.rungs || 0} networks · ${timeAgo(m.updated || Date.now())}`)),
+      more);
+  }
+
+  labMenu(anchor, m) {
+    const p = loadLab(m.id);
+    if (!p) return;
+    popupMenu(anchor, [
+      { icon: 'edit', label: 'Rename', action: async () => { const n = await promptDialog('Rename lab', p.name); if (n) { p.name = n; saveLab(p); this.render(true); } } },
+      { icon: 'copy', label: 'Duplicate', action: () => { const c = cloneLab(p, p.name + ' (copy)'); saveLab(c); this.render(true); toast('Duplicated', 'ok'); } },
+      { icon: 'download', label: 'Export (.raptiplc)', action: () => Native.saveFile(p.name.replace(/[^\w\- ]/g, '') + '.raptiplc', 'application/json', exportLab(p)).then((ok) => ok && toast('Exported', 'ok')) },
+      '-',
+      { icon: 'trash', label: 'Delete', danger: true, action: async () => { if (await confirmDialog('Delete lab?', `"${escapeHtml(p.name)}" will be removed from this phone.`, 'Delete', true)) { deleteLab(p.id); this.render(true); } } },
+    ]);
+  }
+
+  openLabExample(id) {
+    const p = buildExample(id);
+    if (!p) return;
+    saveLab(p);
+    this.app.openLab(p);
+  }
+
+  newLab() {
+    const content = h('div', { class: 'board-list lab-new' });
+    for (const [type, m] of Object.entries(PLC_MODELS)) {
+      const def = DEVICE_DEFS[type];
+      content.appendChild(h('button', { class: 'board-item', onclick: () => {
+        sheet.close();
+        const p = buildExample('blank');
+        p.name = `${m.short} lab ${listLabs().length + 1}`;
+        p.fromExample = null;
+        const plc = p.devices.find((d) => d.id === 'plc');
+        plc.type = type;
+        saveLab(p);
+        this.app.openLab(p);
+      } },
+        h('div', { class: 'bi-thumb', html: plcArt(m) }),
+        h('div', { class: 'bi-body' }, h('b', {}, `Delta ${m.short}`), h('p', {}, def.description),
+          h('div', { class: 'bi-specs' }, h('span', { class: 'tag' }, `${m.inputs} DI`), h('span', { class: 'tag' }, `${m.outputs} relay DO`), m.ai ? h('span', { class: 'tag' }, `${m.ai} AI / ${m.ao} AO`) : null, h('span', { class: 'tag' }, 'RS-232 · RS-485 · USB')))));
+    }
+    content.appendChild(h('p', { class: 'muted small' }, 'The new lab starts with the PLC, a Delta 24 V supply, the MCB and the programming laptop already wired. Add the HMI, VFD, motor, buttons and lamps from the ＋ menu.'));
+    const sheet = new Sheet({ title: 'Choose a Delta PLC', content, cls: 'sheet-tall', icon: 'cpu' });
+    sheet.open();
+  }
+
+  labInfo() {
+    dialog({
+      title: 'Delta PLC Lab',
+      body: `<div class="lab-help"><p>A virtual industrial-automation trainer with <b>Delta</b> equipment:</p><ul>
+        <li><b>DVP-ES2 / EX2 PLC</b> — X/Y in octal, M, T, C, D, special relays, timers, counters, math, MODRW.</li>
+        <li><b>DOP-107BV HMI</b> — buttons, lamps, numeric input, meters, trends; Delta DVP protocol on COM1/COM2.</li>
+        <li><b>MS300 VFD</b> — keypad, parameters, MI terminals, AVI, RS-485 Modbus, motor with real ramps.</li></ul>
+        <p class="muted">The simulator follows Delta conventions for learning. Always follow the official manuals on real equipment.</p></div>`,
+      actions: [{ label: 'OK', value: true, cls: 'btn-primary' }],
+    });
+  }
+
   // ---------------------------------------------------------------- cards
   projectCard(p) {
     const def = p.parts && p.parts.map((x) => getDef(x.type)).find((d) => d && d.board);
@@ -450,10 +570,17 @@ export class Shell {
   }
 
   async importProject() {
-    const f = await Native.openFile('.rapti,.json,.ino,.txt');
+    const f = await Native.openFile('.rapti,.raptiplc,.json,.ino,.txt');
     if (!f || !f.text) return;
     try {
       let p;
+      if (/raptiauto-plclab/.test(f.text.slice(0, 200)) || /\.raptiplc$/i.test(f.name || '')) {
+        const lab = importLab(f.text);
+        saveLab(lab);
+        toast('PLC lab imported', 'ok');
+        this.app.openLab(lab);
+        return;
+      }
       if (/\.ino$|\.txt$/i.test(f.name || '') || !f.text.trim().startsWith('{')) {
         p = createProject('uno-r3', (f.name || 'Imported sketch').replace(/\.\w+$/, ''));
         p.code = f.text;
@@ -496,4 +623,65 @@ function heroArt() {
   <g fill="#22d3ee"><circle cx="150" cy="90" r="3.5"/><circle cx="260" cy="90" r="3.5"/><circle cx="120" cy="170" r="3.5"/><circle cx="230" cy="70" r="3.5"/><circle cx="300" cy="180" r="3.5"/></g>
   <g class="hero-leds"><circle cx="330" cy="110" r="9" fill="#ef4444"/><circle cx="355" cy="110" r="9" fill="#eab308"/><circle cx="380" cy="110" r="9" fill="#22c55e"/></g>
 </svg>`;
+}
+
+/** Stylised Delta PLC + HMI + VFD illustration (SVG). */
+function labArt() {
+  return `<svg viewBox="0 0 320 190" preserveAspectRatio="xMidYMid meet" class="lab-art">
+  <defs>
+    <linearGradient id="la-pl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9dee3"/><stop offset="1" stop-color="#b9c0c8"/></linearGradient>
+    <linearGradient id="la-vf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3f48"/><stop offset="1" stop-color="#23262c"/></linearGradient>
+    <linearGradient id="la-hm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16223f"/><stop offset="1" stop-color="#0b1226"/></linearGradient>
+    <linearGradient id="la-mo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f78ad"/><stop offset="1" stop-color="#2d4a72"/></linearGradient>
+  </defs>
+  <rect x="18" y="10" width="200" height="150" rx="8" fill="url(#la-pl)" opacity=".95"/>
+  <rect x="26" y="40" width="184" height="6" rx="2" fill="#9aa3ad"/><rect x="26" y="112" width="184" height="6" rx="2" fill="#9aa3ad"/>
+  <g transform="translate(34 18)"><rect width="74" height="50" rx="4" fill="#eef0ec"/><rect y="0" width="74" height="11" rx="2" fill="#2b2f36"/><rect y="39" width="74" height="11" rx="2" fill="#2b2f36"/>
+    <g fill="#c7ccd3">${Array.from({ length: 9 }, (_, i) => `<circle cx="${5 + i * 8}" cy="5.5" r="2"/><circle cx="${5 + i * 8}" cy="44.5" r="2"/>`).join('')}</g>
+    <g>${Array.from({ length: 8 }, (_, i) => `<rect x="${30 + i * 5}" y="17" width="3" height="2" fill="${i % 3 === 0 ? '#22e06a' : '#9fb0a6'}"/><rect x="${30 + i * 5}" y="24" width="3" height="2" fill="${i % 4 === 1 ? '#ffb020' : '#b5a88f'}"/>`).join('')}</g>
+    <text x="70" y="35" font-size="6" font-weight="800" fill="#1d4f9c" text-anchor="end" font-family="Space Grotesk, sans-serif">▲ DELTA</text></g>
+  <g transform="translate(150 66)"><rect width="52" height="88" rx="4" fill="url(#la-vf)"/><rect x="7" y="9" width="38" height="13" rx="2" fill="#120404"/>
+    <text x="26" y="19.5" font-size="10" fill="#ff3b2f" text-anchor="middle" font-family="JetBrains Mono, monospace" font-weight="700">50.00</text>
+    <rect x="9" y="30" width="10" height="6" rx="1.5" fill="#4a505b"/><rect x="21" y="30" width="10" height="6" rx="1.5" fill="#4a505b"/><rect x="33" y="30" width="10" height="6" rx="1.5" fill="#4a505b"/>
+    <rect x="9" y="41" width="15" height="6" rx="1.5" fill="#15803d"/><rect x="28" y="41" width="15" height="6" rx="1.5" fill="#b91c1c"/>
+    <rect x="5" y="58" width="42" height="9" rx="1" fill="#111"/><rect x="5" y="72" width="42" height="9" rx="1" fill="#111"/></g>
+  <g transform="translate(206 92) rotate(-4)"><rect width="104" height="72" rx="6" fill="#1a1d22"/><rect x="6" y="6" width="92" height="55" rx="2" fill="url(#la-hm)"/>
+    <path d="M24 46a16 16 0 0 1 32 0" fill="none" stroke="#1e293b" stroke-width="5"/><path d="M24 46a16 16 0 0 1 26-12" fill="none" stroke="#22d3ee" stroke-width="5"/>
+    <rect x="62" y="16" width="28" height="11" rx="2.5" fill="#22c55e"/><rect x="62" y="31" width="28" height="11" rx="2.5" fill="#ef4444"/>
+    <text x="12" y="17" font-size="6" fill="#e2e8f0" font-weight="700" font-family="Inter, sans-serif">SPEED</text>
+    <text x="10" y="68" font-size="4.5" fill="#e8eef9" font-weight="800" font-family="Space Grotesk, sans-serif">▲ DELTA</text></g>
+  <g transform="translate(36 128)"><rect x="0" y="8" width="88" height="44" rx="20" fill="url(#la-mo)"/><rect x="84" y="24" width="18" height="10" rx="2" fill="#b9c0c7"/>
+    <circle cx="104" cy="29" r="12" fill="#dc2626"/><path d="M104 17v24M92 29h24" stroke="#f8fafc" stroke-width="3"/><rect x="28" y="0" width="30" height="12" rx="2" fill="#3a5a88"/></g>
+  <path d="M71 68C80 100 130 80 176 120" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M100 68C120 120 200 70 228 110" fill="none" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+  <path d="M176 154c-10 20-60 14-70 4" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/>
+</svg>`;
+}
+
+function labExampleArt(ex) {
+  if (ex.id === 'vfd-modbus-hmi' || ex.id === 'blank') return labArt();
+  const lamps = { 'start-stop': ['#22c55e', '#ef4444'], 'traffic-light': ['#ef4444', '#f59e0b', '#22c55e'], 'part-counter': ['#f59e0b'], 'vfd-terminals': ['#22c55e', '#f59e0b'], 'analog-speed': [] }[ex.id] || [];
+  const btns = { 'start-stop': ['#1fa34a', '#d62828'], 'traffic-light': [], 'part-counter': ['#1f5fd6'], 'vfd-terminals': ['#1fa34a', '#f2b705', '#d62828'], 'analog-speed': ['#1fa34a', '#d62828'] }[ex.id] || [];
+  const items = [...btns.map((c) => ({ c, t: 'b' })), ...lamps.map((c) => ({ c, t: 'l' }))];
+  const vfd = /vfd|analog/.test(ex.id);
+  return `<svg viewBox="0 0 320 190" preserveAspectRatio="xMidYMid meet">
+    <rect x="16" y="14" width="${vfd ? 200 : 150}" height="78" rx="8" fill="#cfd4d9"/>
+    <g transform="translate(28 24)"><rect width="74" height="50" rx="4" fill="#eef0ec"/><rect width="74" height="11" rx="2" fill="#2b2f36"/><rect y="39" width="74" height="11" rx="2" fill="#2b2f36"/>
+    <text x="70" y="33" font-size="6" font-weight="800" fill="#1d4f9c" text-anchor="end" font-family="Space Grotesk, sans-serif">▲ DELTA</text></g>
+    ${vfd ? `<g transform="translate(150 20)"><rect width="52" height="66" rx="4" fill="#2a2d33"/><rect x="7" y="8" width="38" height="12" rx="2" fill="#120404"/><text x="26" y="17.6" font-size="9" fill="#ff3b2f" text-anchor="middle" font-family="JetBrains Mono, monospace" font-weight="700">${ex.id === 'analog-speed' ? '30.00' : '45.00'}</text></g>
+    <g transform="translate(220 40)"><rect y="6" width="70" height="38" rx="17" fill="#3a5a88"/><circle cx="80" cy="25" r="11" fill="#dc2626"/></g>` : ''}
+    ${ex.id === 'part-counter' ? `<g transform="translate(184 18)"><rect width="110" height="74" rx="6" fill="#1a1d22"/><rect x="6" y="6" width="98" height="56" rx="2" fill="#0b1630"/><text x="55" y="40" font-size="20" fill="#f8fafc" text-anchor="middle" font-family="JetBrains Mono, monospace">05</text></g>` : ''}
+    <path d="M8 178 L40 112 H280 L312 178Z" fill="#c9cdc9"/>
+    ${items.map((it, i) => { const x = 160 + (i - (items.length - 1) / 2) * 50; return `<g transform="translate(${x} 146)"><rect x="-20" y="-26" width="40" height="50" rx="4" fill="#252b35"/>${it.t === 'b' ? `<circle r="12" fill="#e6e9ee"/><circle r="9.5" fill="${it.c}"/>` : `<circle r="16" fill="${it.c}" opacity=".35"/><circle r="10" fill="${it.c}"/>`}</g>`; }).join('')}
+  </svg>`;
+}
+
+function plcArt(m) {
+  const w = m.inputs > 8 ? 150 : 120;
+  return `<svg viewBox="0 0 ${w + 10} 100"><g transform="translate(5 5)"><rect width="${w}" height="90" rx="5" fill="#e8eae6"/><rect width="${w}" height="20" rx="3" fill="#2b2f36"/><rect y="70" width="${w}" height="20" rx="3" fill="#2b2f36"/>
+    <rect x="6" y="28" width="22" height="34" rx="3" fill="#16181c"/>
+    ${Array.from({ length: m.inputs }, (_, i) => `<rect x="${40 + i * ((w - 50) / m.inputs)}" y="32" width="3" height="2.4" fill="#22e06a"/>`).join('')}
+    ${Array.from({ length: m.outputs }, (_, i) => `<rect x="${40 + i * ((w - 50) / m.inputs)}" y="42" width="3" height="2.4" fill="#ffb020"/>`).join('')}
+    <text x="${w - 6}" y="60" font-size="9" font-weight="800" fill="#1d4f9c" text-anchor="end" font-family="Space Grotesk, sans-serif">▲ DELTA</text>
+    <text x="${w - 6}" y="66" font-size="5.5" font-weight="700" fill="#374151" text-anchor="end" font-family="Inter, sans-serif">${m.short}</text></g></svg>`;
 }

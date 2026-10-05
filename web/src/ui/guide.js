@@ -91,6 +91,18 @@ export const GUIDE = [
     ),
   },
   {
+    icon: 'cpu', title: 'Delta PLC Lab (3D)',
+    html: ol(
+      'Open <b>PLC Lab</b> from the bottom bar. Start with a <b>Lab exercise</b> — every one is wired, programmed and ready.',
+      'Press <b>Simulate</b>. The MCB powers the PLC, the 24 V supply, the HMI and the VFD. Switch to <b>✋ Operate</b> and press the buttons, the HMI touch screen or the VFD keypad right in 3D.',
+      'In <b>⚡ Wire</b> mode tap a terminal, then the terminal it goes to. Green rings show valid ends; communication ports only accept matching cables (RS-232, RS-485, USB).',
+      'In <b>Ladder</b> tap a cell and add contacts, coils, timers (TMR), counters (CNT) and instructions (MOV, ADD, CMP, MODRW…). Press <b>Download</b> to write the program to the PLC through the laptop USB cable, then <b>RUN</b>.',
+      'While online the ladder shows live power flow. Tap an element to force an input or change a value. <b>Monitor</b> shows every device and the real Modbus frames on COM1 / COM2.',
+      '<b>HMI</b> → <b>Design</b> to add buttons, lamps, numeric inputs, meters and trends linked to PLC devices. <b>VFD</b> shows the keypad, live data and all drive parameters.',
+    ) + tip('Delta X / Y numbers are <b>octal</b> (X0–X7, X10–X17). <code>M1000</code> is always ON, <code>M1002</code> pulses at the first scan, <code>M1013</code> is a 1 s clock.')
+      + tip('VFD by RS-485: PLC <code>MOV H87 D1120</code> + <code>SET M1143</code> (9600 8E1 RTU), drive Pr.09-04 = 14, Pr.00-20 = 1, Pr.00-21 = 2. Then <code>MODRW K1 K6 H2000 D0 K1</code> writes the run command (H12 = RUN FWD).'),
+  },
+  {
     icon: 'save', title: 'Saving, export & sharing',
     html: ul(
       'Projects are saved automatically on this phone. Find them in <b>My Projects</b>.',
