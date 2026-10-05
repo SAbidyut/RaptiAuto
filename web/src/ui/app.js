@@ -91,7 +91,7 @@ function loadLabModule() {
   if (labModule) return labModule;
   const veil = document.createElement('div');
   veil.className = 'lab-loading';
-  veil.innerHTML = '<div class="ll-box"><div class="ll-spin"></div><span>Loading the 3D lab…</span></div>';
+  veil.innerHTML = '<div class="ll-box"><div class="ll-spin"></div><span>Loading the lab…</span></div>';
   const t = setTimeout(() => document.body.appendChild(veil), 120);
   labModule = new Promise((resolve, reject) => {
     const s = document.createElement('script');

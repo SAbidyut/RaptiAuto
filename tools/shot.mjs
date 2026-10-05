@@ -32,6 +32,8 @@ async function newPage(w = +process.env.VW || 390, h = +process.env.VH || 844) {
   page.on('pageerror', (e) => errors.push('[pageerror] ' + e.message + '\n' + (e.stack || '')));
   await page.goto(`http://localhost:${port}/index.html`);
   await page.waitForTimeout(900);
+  // the older lab scenarios inspect the 3D scene; the 2D ones choose their view themselves
+  await page.evaluate(() => { const s = window.__rapti.settings; if (!s.labView) s.labView = '3d'; });
   return page;
 }
 
@@ -61,6 +63,7 @@ const scenarios = {
   },
   async fssplit(page) {
     await scenarios.fs(page, 'code');
+    await page.evaluate(() => window.__rapti.editor.setChrome(true));
     await page.click('.fs-btn.split-toggle'); await sleep(700);
     await page.screenshot({ path: join(outDir, 'fs-split.png') });
     await page.click('.fs-btn.split-toggle'); // restore the default for later scenarios
@@ -68,7 +71,7 @@ const scenarios = {
   async fsrun(page, id = 'knight-rider', ms = 1500) {
     // full screen, run (circuit + serial together), then stop (one panel again)
     await scenarios.example(page, id);
-    await page.evaluate(() => window.__rapti.editor.setFullscreen(true)); await sleep(400);
+    await page.evaluate(() => { const e = window.__rapti.editor; e.setFullscreen(true); e.setChrome(true); }); await sleep(400);
     await page.click('.fs-btn.fs-run'); await sleep(+ms);
     await page.screenshot({ path: join(outDir, `fsrun-${id}.png`) });
     await page.click('.fs-btn.fs-run'); await sleep(600);
@@ -78,6 +81,7 @@ const scenarios = {
     // open an example, toggle full screen, go back to the menu: layout must be unchanged
     await scenarios.example(page, 'blink');
     await page.click('.tool-fs'); await sleep(400);
+    await page.click('.editor .fs-handle'); await sleep(200); // full screen starts without menus
     await page.click('.fs-btn'); await sleep(300);
     await page.evaluate(() => window.__rapti.editor.leave()); await sleep(600);
     await page.screenshot({ path: join(outDir, 'back-home.png') });
@@ -252,6 +256,136 @@ const scenarios = {
     await page.evaluate(() => window.__rapti.lab.scene.focus('plc', false)); await sleep(1500);
     await page.screenshot({ path: join(outDir, 'labnew-32es2.png') });
   },
+  // ---- 2D wiring schematic, selection box, double-tap zoom, full screen without menus
+  async lab2d(page, id = 'vfd-modbus-hmi', ms = 3000) {
+    await page.evaluate(() => { window.__rapti.settings.labView = '2d'; });
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(1800);
+    await page.screenshot({ path: join(outDir, `lab2d-${id}.png`) });
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const l = window.__rapti.lab; const s = l.sys; for (let i = 0; i < 100; i++) s.step(20); const b = l.project.devices.find((d) => d.type === 'pb' && (d.props.contact || 'NO') === 'NO'); if (b) { s.act(b.id, 'press', true); for (let i = 0; i < 10; i++) s.step(20); s.act(b.id, 'press', false); } });
+    await sleep(+ms);
+    await page.screenshot({ path: join(outDir, `lab2d-${id}-run.png`) });
+    await page.evaluate(() => { const l = window.__rapti.lab; l.scene.focus(l.plcDevice().id, false); }); await sleep(600);
+    await page.screenshot({ path: join(outDir, `lab2d-${id}-plc.png`) });
+    // operate a push button in 2D: press it on screen
+    const pb = await page.evaluate(() => { const l = window.__rapti.lab; const b = l.project.devices.find((d) => d.type === 'pb'); l.scene.focus(b.id, false); return b.id; });
+    await sleep(500);
+    const pt = await page.evaluate((id) => { const s2 = window.__rapti.lab.scene.s2; const d = s2.devs.get(id); const c = d.controls[0]; const [x, y] = s2.toScreen(d.x + (c.x0 + c.x1) / 2, d.y + (c.y0 + c.y1) / 2); return { x, y }; }, pb);
+    await page.mouse.move(pt.x, pt.y); await page.mouse.down(); await sleep(250);
+    const pressed = await page.evaluate((id) => !!window.__rapti.lab.sys.rts.get(id).pressed, pb);
+    await page.screenshot({ path: join(outDir, `lab2d-${id}-press.png`) });
+    await page.mouse.up();
+    console.log('2D push button pressed while held:', pressed);
+  },
+  async labview(page) {
+    await page.evaluate(() => { window.__rapti.settings.labView = '2d'; });
+    await page.evaluate(() => window.__rapti.home.openLabExample('start-stop')); await sleep(1500);
+    await page.click('.lab-view-seg .seg[data-view="3d"]'); await sleep(2500);
+    await page.screenshot({ path: join(outDir, 'labview-3d.png') });
+    await page.click('.lab-view-seg .seg[data-view="2d"]'); await sleep(800);
+    await page.screenshot({ path: join(outDir, 'labview-2d.png') });
+    console.log('lab view setting', await page.evaluate(() => window.__rapti.settings.labView));
+  },
+  async lab2dwire(page) {
+    // wire PLC Y0 → lamp X1 by tapping terminals in the 2D schematic
+    await page.evaluate(() => { window.__rapti.settings.labView = '2d'; });
+    await page.evaluate(() => window.__rapti.home.openLabExample('blank')); await sleep(1500);
+    await page.click('.lab-tools .tool[title="Add device"]'); await sleep(900);
+    await page.click('.dev-card >> text=Pilot lamp'); await sleep(900);
+    await page.screenshot({ path: join(outDir, 'lab2dwire-added.png') });
+    const at = (dev, port) => page.evaluate(([dev, port]) => { const s2 = window.__rapti.lab.scene.s2; const d = s2.devs.get(dev); const sl = d.sym.slots.get(port); const [x, y] = s2.toScreen(d.x + sl.x, d.y + sl.y); return { x, y }; }, [dev, port]);
+    const ids = await page.evaluate(() => { const l = window.__rapti.lab; return { lamp: l.project.devices.find((d) => d.type === 'lamp').id, plc: l.plcDevice().id }; });
+    await page.evaluate((id) => window.__rapti.lab.scene.focus(id, false), ids.lamp); await sleep(500);
+    let p = await at(ids.lamp, 'X1'); await page.mouse.click(p.x, p.y); await sleep(500);
+    await page.evaluate(() => window.__rapti.lab.scene.focus('overview', false)); await sleep(500);
+    await page.evaluate(() => { const s2 = window.__rapti.lab.scene.s2; s2.view.z *= 2.5; s2.applyView(); });
+    await page.evaluate((id) => window.__rapti.lab.scene.focus(id, false), ids.plc); await sleep(500);
+    p = await at(ids.plc, 'Y0'); await page.mouse.click(p.x, p.y); await sleep(700);
+    await page.evaluate(() => window.__rapti.lab.scene.focus('overview', false)); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'lab2dwire-done.png') });
+    console.log('lamp conns', JSON.stringify(await page.evaluate(() => window.__rapti.lab.project.conns.filter((c) => c.a.port === 'X1' || c.b.port === 'X1').map((c) => c.a.port + '-' + c.b.port))));
+  },
+  async labselect(page, view = '2d') {
+    await page.evaluate((v) => { window.__rapti.settings.labView = v; }, view);
+    await page.evaluate(() => window.__rapti.home.openLabExample('vfd-modbus-hmi')); await sleep(view === '3d' ? 2600 : 1500);
+    await page.click('.lab-tools .tool[title="Select (box)"]'); await sleep(300);
+    await page.evaluate(() => window.__rapti.lab.views.panel.hintEl.classList.add('hidden'));
+    const r = await page.evaluate(() => { const b = window.__rapti.lab.views.panel.host.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; });
+    // crossing: right → left
+    await page.mouse.move(r.x + r.w * 0.8, r.y + r.h * 0.42); await page.mouse.down();
+    await page.mouse.move(r.x + r.w * 0.3, r.y + r.h * 0.6, { steps: 8 });
+    await page.screenshot({ path: join(outDir, `labselect-${view}-crossing-drag.png`) });
+    await page.mouse.up(); await sleep(400);
+    await page.screenshot({ path: join(outDir, `labselect-${view}-crossing.png`) });
+    console.log(view, 'crossing', JSON.stringify(await page.evaluate(() => window.__rapti.lab.views.panel.selectedIds())));
+    await page.evaluate(() => window.__rapti.lab.views.panel.select(null));
+    // window: left → right
+    await page.mouse.move(r.x + r.w * 0.02, r.y + r.h * 0.33); await page.mouse.down();
+    await page.mouse.move(r.x + r.w * 0.83, r.y + r.h * 0.62, { steps: 8 });
+    await page.screenshot({ path: join(outDir, `labselect-${view}-window-drag.png`) });
+    await page.mouse.up(); await sleep(400);
+    await page.screenshot({ path: join(outDir, `labselect-${view}-window.png`) });
+    console.log(view, 'window', JSON.stringify(await page.evaluate(() => window.__rapti.lab.views.panel.selectedIds())));
+  },
+  async labzoom(page, view = '2d') {
+    // double tap, hold and slide down in the lab: zoom in
+    await page.evaluate((v) => { window.__rapti.settings.labView = v; }, view);
+    await page.evaluate(() => window.__rapti.home.openLabExample('start-stop')); await sleep(view === '3d' ? 2600 : 1500);
+    await page.evaluate(() => window.__rapti.lab.views.panel.hintEl.classList.add('hidden'));
+    const r = await page.evaluate(() => { const b = window.__rapti.lab.views.panel.host.getBoundingClientRect(); return { x: b.left + b.width * 0.45, y: b.top + b.height * 0.75 }; });
+    const z = () => page.evaluate(() => { const sc = window.__rapti.lab.scene; return sc.mode === '2d' ? sc.s2.view.z : sc.s3.camera.position.distanceTo(sc.s3.controls.target); });
+    const z0 = await z();
+    await page.mouse.click(r.x, r.y); await sleep(120);
+    await page.mouse.down(); await page.mouse.move(r.x, r.y + 90, { steps: 10 }); await page.mouse.up(); await sleep(300);
+    const z1 = await z();
+    await page.mouse.click(r.x, r.y - 200); await sleep(100); await page.mouse.click(r.x, r.y - 200); await sleep(600);
+    const z2 = await z();
+    await page.screenshot({ path: join(outDir, `labzoom-${view}.png`) });
+    console.log(view, view === '2d' ? 'zoom' : 'camera distance', z0.toFixed(3), '→ slide', z1.toFixed(3), '→ double tap', z2.toFixed(3));
+  },
+  async selbox(page) {
+    await scenarios.example(page, 'traffic-light');
+    await page.click('.tool-select'); await sleep(300);
+    const r = await page.evaluate(() => { const b = window.__rapti.editor.canvasHost.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; });
+    await page.mouse.move(r.x + r.w * 0.62, r.y + r.h * 0.62); await page.mouse.down();
+    await page.mouse.move(r.x + r.w * 0.33, r.y + r.h * 0.45, { steps: 8 });
+    await page.screenshot({ path: join(outDir, 'selbox-crossing-drag.png') });
+    await page.mouse.up(); await sleep(300);
+    await page.screenshot({ path: join(outDir, 'selbox-crossing.png') });
+    console.log('arduino crossing', JSON.stringify(await page.evaluate(() => window.__rapti.editor.canvas.selectedIds())));
+    await page.evaluate(() => window.__rapti.editor.canvas.select(null));
+    await page.mouse.move(r.x + r.w * 0.03, r.y + r.h * 0.38); await page.mouse.down();
+    await page.mouse.move(r.x + r.w * 0.42, r.y + r.h * 0.64, { steps: 8 });
+    await page.screenshot({ path: join(outDir, 'selbox-window-drag.png') });
+    await page.mouse.up(); await sleep(300);
+    await page.screenshot({ path: join(outDir, 'selbox-window.png') });
+    console.log('arduino window', JSON.stringify(await page.evaluate(() => window.__rapti.editor.canvas.selectedIds())));
+  },
+  async dtzoom(page) {
+    // double tap, hold and slide down: zoom in (Google Maps)
+    await scenarios.example(page, 'traffic-light');
+    const r = await page.evaluate(() => { const b = window.__rapti.editor.canvasHost.getBoundingClientRect(); return { x: b.left + b.width * 0.3, y: b.top + 40 }; });
+    const z0 = await page.evaluate(() => window.__rapti.editor.canvas.view.z);
+    await page.mouse.click(r.x, r.y); await sleep(120);
+    await page.mouse.down(); await page.mouse.move(r.x, r.y + 120, { steps: 10 }); await page.mouse.up(); await sleep(200);
+    const z1 = await page.evaluate(() => window.__rapti.editor.canvas.view.z);
+    await page.screenshot({ path: join(outDir, 'dtzoom.png') });
+    console.log('double-tap slide zoom', z0.toFixed(3), '→', z1.toFixed(3));
+  },
+  async fsclean(page) {
+    await scenarios.example(page, 'traffic-light');
+    await page.evaluate(() => window.__rapti.editor.setFullscreen(true)); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'fsclean-editor.png') });
+    await page.click('.editor .fs-handle'); await sleep(300);
+    await page.screenshot({ path: join(outDir, 'fsclean-editor-menus.png') });
+    await page.evaluate(() => window.__rapti.editor.leave()); await sleep(500);
+    await page.evaluate(() => { window.__rapti.settings.labView = '2d'; });
+    await page.evaluate(() => window.__rapti.home.openLabExample('start-stop')); await sleep(1500);
+    await page.evaluate(() => window.__rapti.lab.setFullscreen(true)); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'fsclean-lab.png') });
+    await page.click('.lab .fs-handle'); await sleep(300);
+    await page.screenshot({ path: join(outDir, 'fsclean-lab-menus.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);
@@ -267,6 +401,7 @@ for (const spec of list) {
   try {
     if (name === 'zoom') await scenarios.zoom(page, arg, arg2, arg3);
     else if (name === 'labhero') await scenarios.labhero(page, arg, arg2);
+    else if (name === 'labselect' || name === 'labzoom') await scenarios[name](page, arg);
     else await scenarios[name](page, arg, arg2 ? +arg2 : undefined);
   } catch (e) {
     errors.push(`[scenario ${spec}] ${e.message}`);

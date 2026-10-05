@@ -450,3 +450,87 @@
 .lab-loading { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(2, 5, 14, .55); }
 .ll-box { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-radius: 18px; background: #121c36; border: 1px solid var(--line2); font-weight: 600; }
 .ll-spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(34, 211, 238, .25); border-top-color: #22d3ee; animation: spin .8s linear infinite; }
+
+/* ---------------------------------------------------------------- 2D / 3D toggle */
+.lab-view-seg { position: absolute; left: calc(10px + var(--safe-l)); bottom: 10px; z-index: 4; padding: 2px; background: rgba(10, 16, 32, .84); border-color: var(--line2); backdrop-filter: blur(12px); }
+.lab-view-seg .seg { height: 28px; padding: 0 9px; gap: 5px; font-size: 12.5px; font-weight: 800; }
+.lab-view-seg .seg.active { background: rgba(34, 211, 238, .2); color: #a5f3fc; box-shadow: none; }
+.panel-view .lab-chips { left: calc(134px + var(--safe-l)); padding-left: 0; }
+.lab-3d-host.view-2d .lab-3d, .lab-3d-host.view-3d .schem { display: none; }
+.panel-view.select-tool .lab-3d-host { cursor: crosshair; }
+
+/* ---------------------------------------------------------------- 2D wiring schematic */
+.schem { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; background: radial-gradient(130% 90% at 50% 0%, #0f1a36 0%, #0a1124 55%, #070c1a 100%); }
+.schem text { font-family: var(--font); text-anchor: middle; fill: #cbd5e1; pointer-events: none; }
+.schem-duct { fill: rgba(148, 163, 184, .06); stroke: rgba(148, 163, 184, .14); stroke-dasharray: 2 6; }
+.sd-body { fill: #18223a; stroke: #3a4a6b; stroke-width: 1.5; }
+.sd-term { fill: #cbd5e1; stroke: #64748b; stroke-width: 1; }
+.sd-term.sock { fill: #111827; stroke: #94a3b8; }
+.sd-comm { fill: #0b1222; stroke-width: 2; }
+.sd-tlabel { font-size: 9px; font-weight: 700; fill: #94a3b8; font-family: var(--mono); }
+.sd-tlabel.comm { fill: #e2e8f0; }
+.sd-title { font-family: var(--display); font-size: 15px; font-weight: 700; fill: #e2e8f0; }
+.sd-title.big { font-size: 22px; }
+.sd-sub { font-size: 9px; fill: #64748b; }
+.sd-mini { font-size: 8px; font-weight: 700; fill: #94a3b8; }
+.sd-mini.l { text-anchor: start; }
+.sd-mini.err, .sd-state.err { fill: #f87171; }
+.sd-label { font-size: 11px; font-weight: 800; fill: #e2e8f0; letter-spacing: .3px; }
+.sd-state { font-size: 12px; font-weight: 800; fill: #94a3b8; }
+.sd-state.ok { fill: #4ade80; }
+.sd-led { fill: #1f2937; stroke: #0b1222; stroke-width: 1; }
+.sd-led.on { fill: var(--on); stroke: var(--on); stroke-opacity: .35; stroke-width: 4; }
+.sd-well, .sd-bezel { fill: #0b1222; stroke: #334155; }
+.sd-knob { fill: #cbd5e1; transition: y .12s; }
+.sd-lever { fill: #64748b; transition: y .12s; }
+.sd-lever.on { fill: #22c55e; }
+.sd-bezelr { fill: #9ca3af; stroke: #475569; stroke-width: 1.5; }
+.sd-cap { stroke: rgba(0, 0, 0, .35); stroke-width: 2; transition: r .08s; }
+.sd-cap.down { filter: brightness(.75); }
+.sd-ring { stroke: #b45309; }
+.sd-lens { opacity: .42; stroke: rgba(0, 0, 0, .3); stroke-width: 1.5; }
+.sd-lens.on { opacity: 1; }
+.sd-glow { opacity: 0; }
+.sd-glow.on { opacity: .32; }
+.sd-wave { fill: none; stroke: #ffd34d; stroke-width: 2; opacity: 0; }
+.sd-wave.on { animation: sdWave .7s linear infinite; }
+@keyframes sdWave { 0% { opacity: .9; r: 22px; } 100% { opacity: 0; r: 34px; } }
+.sd-target { fill: #8892a0; opacity: .35; transition: x .15s; }
+.sd-target.on { opacity: 1; fill: #cbd5e1; }
+.sd-knobc { fill: #111827; stroke: #64748b; stroke-width: 1.5; }
+.sd-ptr { stroke: #fff; stroke-width: 2.5; stroke-linecap: round; }
+.sd-lcd { fill: #1a0505; stroke: #3f1d1d; }
+.sd-seg { font-family: var(--mono); font-size: 22px; font-weight: 600; fill: #ff3b2f; text-anchor: end; letter-spacing: 2px; }
+.sd-seg.blink { fill: #ff7b72; }
+.sd-key { fill: #4a505b; stroke: rgba(0, 0, 0, .4); }
+.sd-key.down { filter: brightness(1.6); }
+.sd-key-t { font-size: 9px; font-weight: 800; fill: #fff; }
+.sd-screen-edge { fill: none; stroke: #1e293b; }
+.sd-screen { image-rendering: auto; }
+.sd-motor { fill: #475569; stroke: #94a3b8; stroke-width: 2; }
+.sd-motor-in { fill: #334155; }
+.sd-fan line { stroke: #94a3b8; stroke-width: 4; stroke-linecap: round; }
+.sd-fan.on line { stroke: #cbd5e1; }
+.schem.far .sd-tlabel, .schem.far .sd-mini, .schem.far .sd-sub { display: none; }
+
+/* wires */
+.sw path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.sw-hl { stroke: transparent; stroke-width: 12; }
+.sw-out { stroke: rgba(3, 7, 18, .75); stroke-width: 4.2; }
+.sw-core { stroke-width: 2.4; }
+.sw.comm .sw-out { stroke-width: 7; }
+.sw.comm .sw-core { stroke-width: 4.2; stroke-dasharray: 10 3; }
+.sw-pe { stroke: #f5d90a; stroke-width: 2.4; stroke-dasharray: 5 5; }
+.sw-flow { stroke: rgba(255, 255, 255, .85); stroke-width: 1.4; stroke-dasharray: 2 12; opacity: 0; }
+.sw.flow .sw-flow { opacity: .8; animation: swFlow .9s linear infinite; }
+.sw.data .sw-flow { opacity: 1; stroke: #e0f2fe; stroke-width: 2.4; stroke-dasharray: 3 9; animation: swFlow .35s linear infinite; }
+@keyframes swFlow { to { stroke-dashoffset: -14; } }
+.sw.selected .sw-hl { stroke: rgba(34, 211, 238, .45); }
+.sw-end { fill: #e2e8f0; }
+
+/* markers + selection */
+.sm { fill: rgba(52, 211, 153, .18); stroke-width: 2.5; }
+.sm.pulse { animation: smPulse .8s ease-in-out infinite alternate; }
+@keyframes smPulse { from { stroke-width: 2; opacity: .7; } to { stroke-width: 4; opacity: 1; } }
+.ssel { fill: rgba(34, 211, 238, .05); stroke: #22d3ee; stroke-width: 2; stroke-dasharray: 7 5; }
+@media (max-width: 480px) { .lab.fs .pane-panel .task-pill, .lab.fs .pane-panel .lab-hint { left: calc(70px + var(--safe-l)); } }

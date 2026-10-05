@@ -2,7 +2,7 @@
 import { getDef, newId, partProps, worldBox, defaultProps } from '../components/registry.js';
 import { saveProject, exportJSON } from '../store.js';
 import { SimEngine } from '../sim/engine.js';
-import { CircuitCanvas } from './canvas.js';
+import { CircuitCanvas, makeSelection } from './canvas.js';
 import { CodeEditor } from './code.js';
 import { SerialMonitor } from './serial.js';
 import { openLibrary } from './library.js';
@@ -101,7 +101,10 @@ export class Editor {
       h('button', { class: 'fs-btn', 'data-tab': 'serial', html: icon('terminal', 20), onclick: () => this.setTab('serial') }),
       h('button', { class: 'fs-btn split-toggle', title: 'Side by side', 'aria-label': 'Side by side', html: icon('columns', 20), onclick: () => this.toggleSplit() }));
 
-    this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar);
+    // full screen hides every menu; this small handle brings them back
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
+
+    this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar, this.fsHandle);
     this.stale = h('div', { class: 'stale-banner hidden', html: `${icon('restart', 16)}<span>Code changed — restart to apply</span>`, onclick: () => this.restart() });
     this.circuitPane.appendChild(this.stale);
     this.updateLayout();
@@ -116,6 +119,7 @@ export class Editor {
       h('button', { class: 'tool', title: 'Undo', html: icon('undo', 20), onclick: () => this.undo() }),
       h('button', { class: 'tool', title: 'Redo', html: icon('redo', 20), onclick: () => this.redo() }),
       h('div', { class: 'tool-sep' }),
+      this.selTool = h('button', { class: 'tool tool-edit tool-select', title: 'Select (box)', 'aria-label': 'Select', html: icon('select', 20), onclick: () => this.toggleSelectTool() }),
       h('button', { class: 'tool', title: 'Zoom in', html: icon('zoomIn', 20), onclick: () => this.canvas.zoomBy(1.3) }),
       h('button', { class: 'tool', title: 'Zoom out', html: icon('zoomOut', 20), onclick: () => this.canvas.zoomBy(1 / 1.3) }),
       h('button', { class: 'tool', title: 'Fit to screen', html: icon('fit', 20), onclick: () => this.canvas.fit() }),
@@ -221,11 +225,30 @@ export class Editor {
   setFullscreen(on) {
     this.fullscreen = on;
     this.root.classList.toggle('fs', on);
+    this.setChrome(!on, false);
+    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (top right) for the menus'); }
     this.updateLayout();
     Native.setImmersive(on);
     Native.vibrate(8);
     setTimeout(() => this.canvas.applyView(), 60);
     setTimeout(() => this.canvas.applyView(), 400);
+  }
+
+  /** Full screen: show (on) or hide the menus and tool bars. */
+  setChrome(on, buzz = true) {
+    this.root.classList.toggle('fs-clean', !on);
+    this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
+    this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (buzz) Native.vibrate(6);
+    setTimeout(() => this.canvas.applyView(), 30);
+  }
+
+  toggleSelectTool(on = !this.canvas.selectTool) {
+    this.canvas.setSelectTool(on);
+    this.selTool.classList.toggle('on', on);
+    Native.vibrate(8);
+    if (on) this.showHint('Select: drag to the RIGHT → window (parts fully inside). Drag to the LEFT → crossing (everything it touches). Tap parts to add or remove them.', 6500);
+    else this.hint.classList.add('hidden');
   }
 
   showHint(text, ms = 5200) {
@@ -337,11 +360,24 @@ export class Editor {
     this.fabAdd.classList.add('hidden');
     bar.classList.remove('hidden');
     const btn = (ic, label, fn, cls = '') => h('button', { class: 'sel-btn ' + cls, html: `${icon(ic, 20)}<span>${label}</span>`, onclick: fn });
+    if (sel.kind === 'multi') {
+      const parts = sel.parts.filter((id) => this.project.parts.some((p) => p.id === id));
+      const wires = sel.wires.filter((id) => this.project.wires.some((w) => w.id === id));
+      if (parts.length + wires.length < 2) { this.canvas.select(makeSelection(parts, wires)); return; }
+      const what = [parts.length ? `${parts.length} part${parts.length > 1 ? 's' : ''}` : '', wires.length ? `${wires.length} wire${wires.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+      appendAll(bar,
+        h('div', { class: 'sel-name' }, `${parts.length + wires.length} selected`, h('small', {}, what)),
+        parts.length ? btn('copy', 'Copy', () => this.duplicateSelected()) : null,
+        wires.length && !parts.length ? btn('eraser', 'Straight', () => { for (const w of this.project.wires) if (wires.includes(w.id)) w.points = []; this.commit('Straighten'); }) : null,
+        btn('trash', 'Delete', () => this.deleteSelected(), 'danger'),
+        h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.canvas.select(null) }));
+      return;
+    }
     if (sel.kind === 'part') {
       const part = this.project.parts.find((p) => p.id === sel.id);
       if (!part) return;
       const def = getDef(part.type);
-      bar.append(
+      appendAll(bar,
         h('div', { class: 'sel-name' }, def.name, def.label ? h('small', {}, def.label(partProps(part))) : null),
         btn('rotate', 'Rotate', () => this.rotateSelected()),
         def.props.length ? btn('sliders', 'Edit', () => openPartProps(this, part)) : btn('info', 'Info', () => openPartProps(this, part)),
@@ -352,7 +388,7 @@ export class Editor {
       const w = this.project.wires.find((x) => x.id === sel.id);
       if (!w) return;
       const sw = h('span', { class: 'wire-swatch', style: { background: w.color } });
-      bar.append(
+      appendAll(bar,
         h('div', { class: 'sel-name' }, 'Wire', h('small', {}, `${w.from.pin} → ${w.to.pin}`)),
         h('button', { class: 'sel-btn', onclick: () => openWireSheet(this, w) }, sw, h('span', {}, 'Colour')),
         btn('eraser', 'Straight', () => { w.points = []; this.commit('Straighten'); }),
@@ -419,6 +455,7 @@ export class Editor {
 
   duplicateSelected() {
     const sel = this.canvas.selection;
+    if (sel && sel.kind === 'multi' && !this.engine) { this.duplicateMany(sel); return; }
     if (!sel || sel.kind !== 'part' || this.engine) return;
     const part = this.project.parts.find((p) => p.id === sel.id);
     if (getDef(part.type).board) { toast('Only one board can be simulated'); return; }
@@ -428,10 +465,40 @@ export class Editor {
     this.canvas.select({ kind: 'part', id: copy.id });
   }
 
+  /** Copy several parts together with the wires between them. */
+  duplicateMany(sel) {
+    const ids = new Set(sel.parts);
+    const map = new Map();
+    let skippedBoard = false;
+    for (const part of this.project.parts) {
+      if (!ids.has(part.id)) continue;
+      if (getDef(part.type).board) { skippedBoard = true; continue; }
+      const copy = { ...JSON.parse(JSON.stringify(part)), id: newId('p'), x: part.x + 40, y: part.y + 40 };
+      map.set(part.id, copy.id);
+      this.project.parts.push(copy);
+    }
+    const wires = [];
+    for (const w of this.project.wires.slice()) {
+      if (!map.has(w.from.part) || !map.has(w.to.part)) continue;
+      const c = { ...JSON.parse(JSON.stringify(w)), id: newId('w'), from: { ...w.from, part: map.get(w.from.part) }, to: { ...w.to, part: map.get(w.to.part) } };
+      c.points = c.points.map(([x, y]) => [x + 40, y + 40]);
+      this.project.wires.push(c);
+      wires.push(c.id);
+    }
+    if (skippedBoard) toast('Only one board can be simulated — the board was not copied');
+    if (!map.size) return;
+    this.commit('Duplicate');
+    this.canvas.select(makeSelection([...map.values()], wires));
+  }
+
   deleteSelected() {
     const sel = this.canvas.selection;
     if (!sel || this.engine) return;
-    if (sel.kind === 'part') {
+    if (sel.kind === 'multi') {
+      const parts = new Set(sel.parts), wires = new Set(sel.wires);
+      this.project.parts = this.project.parts.filter((p) => !parts.has(p.id));
+      this.project.wires = this.project.wires.filter((w) => !wires.has(w.id) && !parts.has(w.from.part) && !parts.has(w.to.part));
+    } else if (sel.kind === 'part') {
       this.project.parts = this.project.parts.filter((p) => p.id !== sel.id);
       this.project.wires = this.project.wires.filter((w) => w.from.part !== sel.id && w.to.part !== sel.id);
     } else {
@@ -662,3 +729,6 @@ function fmtTime(s) {
 function fmtBytes(b) { if (!b) return '—'; if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB'; if (b >= 1024) return Math.round(b / 1024) + ' KB'; return b + ' B'; }
 function safeName(s) { return (s || 'sketch').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'sketch'; }
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/** Element.append without the null / false placeholders of optional buttons. */
+function appendAll(parent, ...items) { parent.append(...items.filter(Boolean)); }

@@ -99,6 +99,9 @@ const P = {
   activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   move: '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
   magnet: '<path d="M6 15A6 6 0 0 0 18 15V4h-4v11a2 2 0 0 1-4 0V4H6z"/><path d="M6 8h4M14 8h4"/>',
+  select: '<path d="M3 7V4a1 1 0 0 1 1-1h3M11 3h2M17 3h3a1 1 0 0 1 1 1v3M3 11v2M3 17v3a1 1 0 0 0 1 1h3M11 21h1"/><path d="M14 13l7 2.6-3 1.4-1.4 3z" fill="currentColor"/>',
+  schematic: '<rect x="2" y="4" width="7" height="6" rx="1"/><rect x="15" y="14" width="7" height="6" rx="1"/><path d="M9 7h4v10h2M5.5 10v7h9.5"/><circle cx="13" cy="7" r="1" fill="currentColor"/>',
+  chevronDown: '<path d="M6 9l6 6 6-6"/>',
 };
 
 export function icon(name, size = 22, extra = '') {

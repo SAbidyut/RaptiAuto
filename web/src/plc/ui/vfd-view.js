@@ -51,8 +51,8 @@ export class VfdView {
       h('div', { class: 'vv-sec' }, h('h4', {}, 'Modbus registers (RS-485)'), modbusRef()));
     this.empty = h('div', { class: 'empty-state vv-empty hidden' },
       h('div', { class: 'empty-ic big', html: icon('gauge', 36) }), h('h2', {}, 'No VFD in this lab'),
-      h('p', {}, 'Add a Delta MS300 drive and a motor from the 3D lab (＋).'),
-      h('button', { class: 'btn btn-primary', html: `${icon('cube', 18)}<span>Open 3D lab</span>`, onclick: () => this.lab.setTab('panel') }));
+      h('p', {}, 'Add a Delta MS300 drive and a motor from the Lab tab (＋).'),
+      h('button', { class: 'btn btn-primary', html: `${icon('cube', 18)}<span>Open the lab</span>`, onclick: () => this.lab.setTab('panel') }));
     this.body = h('div', { class: 'vv-body' }, h('div', { class: 'vv-left' }, this.picker, this.pad), this.right);
     this.el.append(this.empty, this.body);
   }

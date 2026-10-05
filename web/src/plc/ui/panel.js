@@ -1,9 +1,11 @@
-// 3D Lab tab: the three.js scene with Operate / Wire modes, device library, device settings,
-// wiring list, issue list and camera focus chips.
+// Lab tab: the 3D scene or the 2D wiring schematic (toggle) with Operate / Wire modes, device
+// library, device settings, wiring list, issue list, camera focus chips, an AutoCAD-style selection
+// box and Google-Maps-style double-tap zoom.
 import { h, toast, Sheet, confirmDialog } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
-import { LabScene, NullScene } from '../three/scene.js';
+import { SceneSwitch } from './scene-switch.js';
+import { TapTracker, SelectBox, slideZoomFactor } from '../../ui/gestures.js';
 import { DEVICE_DEFS, CATEGORIES, devicePorts, deviceProps, compatible, findPort, wireColorFor, busName } from '../devices/defs.js';
 import { makeConn, labId, portUse, MAX_WIRES } from '../store.js';
 import { LabSystem } from '../sim/system.js';
@@ -28,17 +30,14 @@ export class PanelView {
     this.el = h('section', { class: 'panel-view' });
     this.host = h('div', { class: 'lab-3d-host' });
     this.el.appendChild(this.host);
-    try {
-      this.scene = new LabScene(this.host, { quality: lab.settings.labQuality || 'high', hmiCanvas: lab.hmiCanvas, laptopCanvas: lab.laptopCanvas });
-    } catch (e) {
-      console.warn('3D unavailable', e);
-      this.scene = new NullScene(this.host);
-      this.host.appendChild(h('div', { class: 'empty-state lab-no3d' },
-        h('div', { class: 'empty-ic big', html: icon('cube', 36) }),
-        h('h2', {}, '3D is not available on this phone'),
-        h('p', {}, 'The 3D lab needs WebGL 2. Everything else works: use the wiring list (☰) to connect devices, and the Ladder, HMI, VFD and Monitor tabs.')));
-    }
+    this.scene = new SceneSwitch(this.host, { quality: lab.settings.labQuality || 'high', hmiCanvas: lab.hmiCanvas, laptopCanvas: lab.laptopCanvas });
+    this.taps = new TapTracker();
+    this.selectTool = false;
     this.buildOverlay();
+    this.box = new SelectBox(this.el);
+    const want = this.initialView();
+    if (this.scene.setMode(want) !== want) this.no3d = true;
+    this.updateViewSeg();
     const opts = { capture: true };
     this.host.addEventListener('pointerdown', (e) => this.onDown(e), opts);
     this.host.addEventListener('pointerup', (e) => this.onUp(e), opts);
@@ -52,21 +51,78 @@ export class PanelView {
     const p = this.lab.project;
     this.scene.setProject(p);
     this.scene.setSystem(this.lab.idleSystem());
-    if (p.view) this.scene.setView(p.view);
-    else requestAnimationFrame(() => {
-      // intro: sweep in from high above
-      if (this.scene.camera) { this.scene.camera.position.set(-900, 2600, 3600); this.scene.controls.target.set(0, 250, 200); }
-      this.scene.focus('overview', true, 1600);
-    });
+    this.restoreView(this.scene.mode, true);
     this.refresh();
     this.updateTaskPill();
-    if (!localStorage.getItem('raptiauto.plc.hinted')) {
+    if (this.no3d) setTimeout(() => this.hint('3D needs WebGL 2, which this phone does not have — showing the 2D wiring schematic.', 6000), 500);
+    else if (!localStorage.getItem('raptiauto.plc.hinted')) {
       try { localStorage.setItem('raptiauto.plc.hinted', '1'); } catch (e) { /* ignore */ }
-      setTimeout(() => this.hint('Drag to orbit · pinch to zoom · tap a chip below to jump to a device. Press Simulate to power the lab.', 6500), 600);
+      setTimeout(() => this.hint(this.scene.mode === '2d'
+        ? '2D wiring schematic: drag to move, pinch or double-tap-and-slide to zoom. Tap 3D (bottom left) for the 3D lab. Press Simulate to power the lab.'
+        : 'Drag to orbit · pinch to zoom · tap a chip below to jump to a device. Press Simulate to power the lab.', 6500), 600);
     }
+    if (this.scene.mode === '3d' && !this.lab.settings.labView) this.watchSpeed();
   }
 
-  destroy() { this.scene.dispose(); }
+  destroy() { clearTimeout(this.speedT); this.scene.dispose(); }
+
+  // ------------------------------------------------------------------ 2D / 3D
+  /** 2D on slow phones (few cores / little memory / "Fast" quality), unless the user chose a view. */
+  initialView() {
+    const s = this.lab.settings;
+    if (s.labView === '2d' || s.labView === '3d') return s.labView;
+    const mem = navigator.deviceMemory, cores = navigator.hardwareConcurrency;
+    if (s.labQuality === 'low' || (mem && mem <= 3) || (cores && cores <= 4)) return '2d';
+    return '3d';
+  }
+
+  /** Switch the view; remembered for the next labs. */
+  setView(mode, remember = true) {
+    if (mode === this.scene.mode) return;
+    const first = mode === '3d' ? !this.scene.s3 : !this.scene.s2;
+    const got = this.scene.setMode(mode);
+    if (got !== mode) { toast('3D needs WebGL 2, which this phone does not have', 'warn'); this.updateViewSeg(); return; }
+    if (remember) { this.lab.settings.labView = mode; this.lab.app.saveSettings(); }
+    if (first) this.restoreView(mode, false);
+    this.box.cancel();
+    this.updateViewSeg();
+    Native.vibrate(8);
+  }
+
+  restoreView(mode, intro) {
+    const p = this.lab.project;
+    if (mode === '2d') {
+      if (p.view2d) this.scene.s2.setView(p.view2d);
+      else requestAnimationFrame(() => this.scene.s2.fit(false));
+      return;
+    }
+    if (p.view) { this.scene.s3.setView(p.view); return; }
+    requestAnimationFrame(() => {
+      // intro: sweep in from high above
+      if (intro && this.scene.camera) { this.scene.camera.position.set(-900, 2600, 3600); this.scene.controls.target.set(0, 250, 200); }
+      this.scene.focus('overview', intro, intro ? 1600 : 650);
+    });
+  }
+
+  updateViewSeg() {
+    for (const b of this.viewSeg.children) b.classList.toggle('active', b.dataset.view === this.scene.mode);
+    this.el.classList.toggle('is-2d', this.scene.mode === '2d');
+  }
+
+  /** First 3D lab on a phone without a saved choice: fall back to 2D when 3D is clearly too slow. */
+  watchSpeed() {
+    this.speedT = setTimeout(() => {
+      const s3 = this.scene.s3;
+      const pf = s3 && s3.perf;
+      if (this.lab.settings.labView || this.scene.mode !== '3d' || !pf || pf.n < 8) return;
+      if (pf.sum / pf.n > 1 / 18) {
+        this.setView('2d', false);
+        this.lab.settings.labView = '2d';
+        this.lab.app.saveSettings();
+        this.hint('3D is slow on this phone, so the lab switched to the 2D wiring schematic. Tap 3D (bottom left) any time to go back.', 7000);
+      }
+    }, 3200);
+  }
 
   onShow() { this.scene.visible = true; this.scene.dirty = true; requestAnimationFrame(() => this.scene.resize()); }
 
@@ -74,6 +130,7 @@ export class PanelView {
     if (this.potCard) { this.closePot(); return true; }
     if (this.wiring) { this.cancelWiring(); return true; }
     if (this.sel) { this.select(null); return true; }
+    if (this.selectTool) { this.toggleSelectTool(false); return true; }
     return false;
   }
 
@@ -91,17 +148,22 @@ export class PanelView {
       tool('list', 'Wiring list', () => this.openWiringList()),
       tool('warning', 'Check the lab', () => this.showIssues()),
       h('div', { class: 'tool-sep' }),
+      this.selToolBtn = tool('select', 'Select (box)', () => this.toggleSelectTool()),
       tool('undo', 'Undo', () => this.lab.undo()),
       tool('redo', 'Redo', () => this.lab.redo()),
       tool('fit', 'Overview', () => this.scene.focus('overview')),
+      tool('zoomIn', 'Zoom in', () => { const r = this.host.getBoundingClientRect(); this.scene.zoomAt(1.5, r.left + r.width / 2, r.top + r.height / 2); }),
       tool('fullscreen', 'Full screen', () => this.lab.setFullscreen(!this.lab.fullscreen)));
+    this.viewSeg = h('div', { class: 'segmented lab-view-seg' },
+      h('button', { class: 'seg', 'data-view': '2d', title: '2D wiring schematic', html: `${icon('schematic', 15)}<span>2D</span>`, onclick: () => this.setView('2d') }),
+      h('button', { class: 'seg', 'data-view': '3d', title: '3D lab', html: `${icon('cube', 15)}<span>3D</span>`, onclick: () => this.setView('3d') }));
     this.chips = h('div', { class: 'lab-chips' });
     this.selBar = h('div', { class: 'sel-bar hidden' });
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
     this.chooser = h('div', { class: 'port-chooser hidden' });
     this.taskPill = h('button', { class: 'task-pill hidden', onclick: () => this.lab.showTasks() });
-    this.el.append(this.modeSeg, this.tools, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill);
+    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill);
     this.setMode('wire');
   }
 
@@ -120,6 +182,15 @@ export class PanelView {
     this.el.classList.toggle('mode-wire', m === 'wire');
     this.el.classList.toggle('mode-operate', m === 'operate');
     if (m === 'operate') this.cancelWiring();
+  }
+
+  toggleSelectTool(on = !this.selectTool) {
+    this.selectTool = on;
+    this.selToolBtn.classList.toggle('on', on);
+    this.el.classList.toggle('select-tool', on);
+    if (on) { this.cancelWiring(); this.hint('Select: drag to the RIGHT → window (only what is fully inside). Drag to the LEFT → crossing (everything it touches). Tap devices or wires to add / remove them.', 7000); }
+    else this.hintEl.classList.add('hidden');
+    Native.vibrate(8);
   }
 
   hint(text, ms = 4200) {
@@ -145,17 +216,48 @@ export class PanelView {
     add((d) => d.type === 'laptop', 'Laptop', 'display');
     if (this.sel && this.sel.kind === 'dev' && !devs.some((d) => d.id === this.sel.id)) this.select(null);
     if (this.sel && this.sel.kind === 'conn' && !this.lab.project.conns.some((c) => c.id === this.sel.id)) this.select(null);
+    if (this.sel && this.sel.kind === 'multi') this.select(this.sel);
   }
 
   // ------------------------------------------------------------------ pointer
+  // Capture-phase handlers on the host: they run before the view's own orbit / pan handling,
+  // which is switched off (controls.enabled = false) while a control, a zoom slide or a selection
+  // box owns the finger.
   onDown(e) {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (this.pointers.size > 1) { this.down = null; this.releaseControl(); return; }
+    if (this.pointers.size > 1) { this.down = null; this.releaseControl(); this.endGesture(); return; }
     this.chooser.classList.add('hidden');
-    this.down = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
-    if (this.mode !== 'operate') return;
-    const ctl = this.scene.pickControl(e.clientX, e.clientY);
-    if (!ctl) return;
+    const d = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    this.down = d;
+    if (this.mode === 'operate') {
+      const ctl = this.scene.pickControl(e.clientX, e.clientY);
+      if (ctl) { this.pressControl(ctl, e); return; }
+    }
+    // second press of a double tap: sliding zooms (Google Maps), releasing zooms in a step
+    const first = this.taps.second(e.clientX, e.clientY);
+    if (first) { d.zoomCand = first; this.holdControls(d); return; }
+    if (this.selectTool) { d.boxCand = true; this.holdControls(d); return; }
+    // press and hold on an empty spot, then drag: selection box
+    this.boxTimer = setTimeout(() => {
+      if (this.down !== d || d.moved) return;
+      if (this.scene.pickDevice(d.x, d.y) || (this.mode === 'wire' && this.scene.portsNear(d.x, d.y, 24).length)) return;
+      d.boxCand = true;
+      this.holdControls(d);
+      this.box.start(d.x, d.y);
+      Native.vibrate(14);
+    }, 380);
+  }
+
+  /** Stop orbit / pan for the rest of this press. */
+  holdControls(d) { d.held = true; this.scene.controls.enabled = false; }
+
+  endGesture() {
+    clearTimeout(this.boxTimer);
+    this.box.cancel();
+    if (!this.active) this.scene.controls.enabled = true;
+  }
+
+  pressControl(ctl, e) {
     this.scene.controls.enabled = false;
     this.active = { ctl, id: e.pointerId };
     try { this.host.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -163,7 +265,7 @@ export class PanelView {
     const sys = this.scene.system;
     switch (ctl.action) {
       case 'press': sys.act(ctl.devId, 'press', true); Native.vibrate(10); break;
-      case 'toggle': sys.act(ctl.devId, 'toggle'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; break;
+      case 'toggle': sys.act(ctl.devId, 'toggle'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; this.scene.dirty = true; break;
       case 'vfdKey': {
         if (!this.lab.sys) { toast('Press Simulate to power the drive'); break; }
         sys.act(ctl.devId, 'vfdKey', ctl.key);
@@ -185,6 +287,21 @@ export class PanelView {
 
   onMove(e) {
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const d = this.down;
+    if (!d || d.id !== e.pointerId) return;
+    const dist = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+    if (dist > 8 && !d.moved) { d.moved = true; if (!d.boxCand) clearTimeout(this.boxTimer); }
+    if (d.zoomCand && !d.zooming && dist > 7) {
+      d.zooming = true;
+      // the first tap of the double tap must not leave a half-started wire behind
+      if (d.zoomCand.extra && d.zoomCand.extra.wiringStarted && this.wiring) this.cancelWiring();
+      this.scene.zoomStart(d.x, d.y);
+    }
+    if (d.zooming) { this.scene.zoomTo(slideZoomFactor(e.clientY - d.y)); return; }
+    if (d.boxCand && dist > 7) {
+      if (!this.box.active) this.box.start(d.x, d.y);
+      this.box.update(e.clientX, e.clientY);
+    }
   }
 
   releaseControl() {
@@ -203,13 +320,41 @@ export class PanelView {
     if (this.active && this.active.id === e.pointerId) { this.releaseControl(); return; }
     const d = this.down;
     this.down = null;
-    if (!d || cancel || d.id !== e.pointerId) return;
+    clearTimeout(this.boxTimer);
+    if (d && d.held && !this.active) this.scene.controls.enabled = true;
+    if (!d || d.id !== e.pointerId) return;
+    if (cancel) { this.box.cancel(); return; }
+    if (d.zooming) return;
+    if (this.box.active) { this.boxSelect(this.box.end()); return; }
     const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
     if (moved > 9 || performance.now() - d.t > 600) return;
+    if (d.zoomCand) {
+      this.taps.clear();
+      if (!this.hitsSomething(e.clientX, e.clientY)) { this.scene.zoomAt(2, e.clientX, e.clientY); return; }
+      this.tap(e.clientX, e.clientY);
+      return;
+    }
+    const before = this.wiring;
     this.tap(e.clientX, e.clientY);
+    this.taps.tap(e.clientX, e.clientY, { wiringStarted: !before && !!this.wiring });
+  }
+
+  /** Is there a device, a cable or (in Wire mode) a terminal under the point? */
+  hitsSomething(x, y) {
+    if (this.mode === 'wire' && (this.scene.portsNear(x, y, 30).length || this.scene.pickCable(x, y))) return true;
+    return !!this.scene.pickDevice(x, y);
   }
 
   tap(x, y) {
+    if (this.selectTool) {
+      // Select tool: tapping adds a device / cable to the selection or removes it
+      const cable = this.scene.pickCable(x, y);
+      const dev = cable ? null : this.scene.pickDevice(x, y);
+      if (cable) this.toggleInSelection([], [cable]);
+      else if (dev) this.toggleInSelection([dev], []);
+      else this.select(null);
+      return;
+    }
     if (this.mode === 'wire') {
       const filter = this.wiring ? (dev, port) => this.canEnd(dev, port) : null;
       const near = this.scene.portsNear(x, y, this.wiring ? 38 : 30, filter);
@@ -315,7 +460,7 @@ export class PanelView {
       pal.appendChild(h('button', { class: 'color-dot sm' + (this.wireColor === c ? ' active' : '') + (c === 'auto' ? ' auto' : '') + (c === 'pe' ? ' pe' : ''), title: label, style: { background: c === 'auto' || c === 'pe' ? '' : c }, html: sw, onclick: (e) => { this.wireColor = c; for (const x of pal.children) x.classList.remove('active'); e.currentTarget.classList.add('active'); } }));
     }
     const kind = port.kind === 'comm' ? `${busName(port.bus)} cable` : 'wire';
-    bar.append(
+    appendAll(bar,
       h('div', { class: 'wire-info', html: `${icon(port.kind === 'comm' ? 'plug' : 'wire', 18)}<span><b>${esc(this.lab.deviceName(dev))} · ${esc(port.label)}</b> — tap the other end of the ${kind}</span>` }),
       port.kind === 'comm' ? null : pal,
       h('div', { class: 'wire-actions' }, h('button', { class: 'btn btn-ghost sm', html: `${icon('close', 17)}<span>Cancel</span>`, onclick: () => this.cancelWiring() })));
@@ -330,20 +475,67 @@ export class PanelView {
   }
 
   // ------------------------------------------------------------------ selection
+  /** Select what a selection box caught (window: inside, crossing: touching). */
+  boxSelect(res) {
+    if (!res) return;
+    const got = this.scene.itemsInRect(res.rect, res.mode);
+    // with the Select tool every new box adds to the selection, as in AutoCAD
+    if (this.selectTool) {
+      const cur = this.selectedIds();
+      got.devs.unshift(...cur.devs.filter((id) => !got.devs.includes(id)));
+      got.conns.unshift(...cur.conns.filter((id) => !got.conns.includes(id)));
+    }
+    this.select(labSelection(got.devs, got.conns));
+    Native.vibrate(8);
+  }
+
+  selectedIds() {
+    const s = this.sel;
+    if (!s) return { devs: [], conns: [] };
+    if (s.kind === 'multi') return { devs: [...s.devs], conns: [...s.conns] };
+    return s.kind === 'dev' ? { devs: [s.id], conns: [] } : { devs: [], conns: [s.id] };
+  }
+
+  toggleInSelection(devs, conns) {
+    const cur = this.selectedIds();
+    const flip = (arr, ids) => { for (const id of ids) { const i = arr.indexOf(id); if (i >= 0) arr.splice(i, 1); else arr.push(id); } };
+    flip(cur.devs, devs); flip(cur.conns, conns);
+    this.select(labSelection(cur.devs, cur.conns));
+    Native.vibrate(6);
+  }
+
   select(sel) {
     this.sel = sel;
-    this.scene.selectDevice(sel && sel.kind === 'dev' ? sel.id : null);
-    this.scene.selectCable(sel && sel.kind === 'conn' ? sel.id : null);
+    if (sel && sel.kind === 'multi') this.scene.selectMany(sel.devs, sel.conns);
+    else {
+      this.scene.selectMany([], []);
+      this.scene.selectDevice(sel && sel.kind === 'dev' ? sel.id : null);
+      this.scene.selectCable(sel && sel.kind === 'conn' ? sel.id : null);
+    }
     const bar = this.selBar;
     bar.innerHTML = '';
     if (!sel) { bar.classList.add('hidden'); return; }
     const P = this.lab.project;
     const btn = (ic, label, fn, cls = '') => h('button', { class: 'sel-btn ' + cls, html: `${icon(ic, 20)}<span>${label}</span>`, onclick: fn });
+    if (sel.kind === 'multi') {
+      const devs = sel.devs.filter((id) => P.devices.some((d) => d.id === id));
+      const conns = sel.conns.filter((id) => P.conns.some((c) => c.id === id));
+      if (devs.length + conns.length < 2) { this.select(labSelection(devs, conns)); return; }
+      const what = [devs.length ? `${devs.length} device${devs.length > 1 ? 's' : ''}` : '', conns.length ? `${conns.length} wire${conns.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+      const wires = P.conns.filter((c) => conns.includes(c.id) && !c.comm);
+      appendAll(bar,
+        h('div', { class: 'sel-name' }, `${devs.length + conns.length} selected`, h('small', {}, what)),
+        wires.length && !devs.length ? btn('palette', 'Colour', () => this.recolorMany(wires)) : null,
+        btn('trash', 'Delete', () => this.deleteMany(devs, conns), 'danger'),
+        h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.select(null) }));
+      bar.classList.remove('hidden');
+      return;
+    }
     if (sel.kind === 'dev') {
       const dev = P.devices.find((d) => d.id === sel.id);
       if (!dev) { bar.classList.add('hidden'); return; }
       const def = DEVICE_DEFS[dev.type];
-      bar.append(
+      appendAll(bar,
         h('div', { class: 'sel-name' }, this.lab.deviceName(dev), h('small', {}, def.part || def.name)),
         btn('target', 'Focus', () => this.scene.focus(dev.id)),
         btn('sliders', 'Settings', () => this.openDevice(dev)),
@@ -355,7 +547,7 @@ export class PanelView {
       if (!c) { bar.classList.add('hidden'); return; }
       const da = P.devices.find((d) => d.id === c.a.dev), db = P.devices.find((d) => d.id === c.b.dev);
       const pa = findPort(da, c.a.port), pb = findPort(db, c.b.port);
-      bar.append(
+      appendAll(bar,
         h('div', { class: 'sel-name' }, c.comm ? `${busName(pa.bus)} cable` : 'Wire', h('small', {}, `${this.lab.deviceName(da)} ${pa.label} ↔ ${this.lab.deviceName(db)} ${pb.label}`)),
         c.comm ? null : btn('palette', 'Colour', () => this.recolor(c)),
         btn('trash', 'Delete', () => { P.conns = P.conns.filter((x) => x.id !== c.id); this.select(null); this.lab.commitHardware('Delete wire', { devices: false }); Native.vibrate(12); }, 'danger'),
@@ -371,6 +563,28 @@ export class PanelView {
       content.appendChild(h('button', { class: 'color-dot' + (c.color === col ? ' active' : '') + (col === 'pe' ? ' pe' : ''), title: label, style: { background: col === 'pe' ? '' : col }, onclick: () => { c.color = col; sheet.close(); this.lab.commitHardware('Colour', { devices: false }); this.select({ kind: 'conn', id: c.id }); } }));
     }
     sheet.open();
+  }
+
+  recolorMany(wires) {
+    const content = h('div', { class: 'color-grid' });
+    const sheet = new Sheet({ title: `Colour of ${wires.length} wires`, content, icon: 'palette' });
+    for (const [col, label] of WIRE_COLORS.slice(1)) {
+      content.appendChild(h('button', { class: 'color-dot' + (col === 'pe' ? ' pe' : ''), title: label, style: { background: col === 'pe' ? '' : col }, onclick: () => { for (const c of wires) c.color = col; sheet.close(); const keep = this.sel; this.lab.commitHardware('Colour', { devices: false }); this.select(keep); } }));
+    }
+    sheet.open();
+  }
+
+  async deleteMany(devs, conns) {
+    const P = this.lab.project;
+    if (devs.length) {
+      const n = P.conns.filter((c) => conns.includes(c.id) || devs.includes(c.a.dev) || devs.includes(c.b.dev)).length;
+      if (!(await confirmDialog('Delete selection?', `${devs.length} device(s) and ${n} connection(s) will be removed.`, 'Delete', true))) return;
+    }
+    P.devices = P.devices.filter((d) => !devs.includes(d.id));
+    P.conns = P.conns.filter((c) => !conns.includes(c.id) && !devs.includes(c.a.dev) && !devs.includes(c.b.dev));
+    this.select(null);
+    this.lab.commitHardware('Delete', { devices: devs.length > 0 });
+    Native.vibrate(12);
   }
 
   async deleteDevice(dev) {
@@ -604,6 +818,13 @@ export class PanelView {
   closePot() { if (this.potCard) { this.potCard.remove(); this.potCard = null; } }
 }
 
+/** Selection for lists of device / cable ids: null, one device or cable, or 'multi'. */
+function labSelection(devs, conns) {
+  if (devs.length + conns.length === 0) return null;
+  if (devs.length + conns.length === 1) return devs.length ? { kind: 'dev', id: devs[0] } : { kind: 'conn', id: conns[0] };
+  return { kind: 'multi', devs, conns };
+}
+
 /** Default HMI screen created when an HMI is added to a lab without screens. */
 function starterScreen() {
   const id = () => 'e' + Math.random().toString(36).slice(2, 9);
@@ -621,3 +842,6 @@ function starterScreen() {
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/** Element.append without the null / false placeholders of optional buttons. */
+function appendAll(parent, ...items) { parent.append(...items.filter(Boolean)); }
