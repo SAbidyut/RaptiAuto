@@ -70,7 +70,7 @@ export class PanelView {
     if (this.scene.mode === '3d' && !this.lab.settings.labView) this.watchSpeed();
   }
 
-  destroy() { clearTimeout(this.speedT); this.scene.onLost = null; this.scene.dispose(); }
+  destroy() { clearTimeout(this.speedT); this.chipsRo.disconnect(); this.scene.onLost = null; this.scene.dispose(); }
 
   // ------------------------------------------------------------------ 2D / 3D
   /** 2D on slow phones (few cores / little memory / "Fast" quality), unless the user chose a view. */
@@ -207,7 +207,9 @@ export class PanelView {
     this.viewSeg = h('div', { class: 'segmented lab-view-seg' },
       h('button', { class: 'seg', 'data-view': '2d', title: '2D wiring schematic', html: `${icon('schematic', 15)}<span>2D</span>`, onclick: () => this.setView('2d') }),
       h('button', { class: 'seg', 'data-view': '3d', title: '3D lab', html: `${icon('cube', 15)}<span>3D</span>`, onclick: () => this.setView('3d') }));
-    this.chips = h('div', { class: 'lab-chips' });
+    this.chips = h('div', { class: 'lab-chips', onscroll: () => this.updateChipFade() });
+    this.chipsRo = new ResizeObserver(() => this.updateChipFade());
+    this.chipsRo.observe(this.chips);
     this.selBar = h('div', { class: 'sel-bar hidden' });
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
@@ -250,6 +252,13 @@ export class PanelView {
     this.hintT = setTimeout(() => this.hintEl.classList.add('hidden'), ms);
   }
 
+  /** Fade the edge of the focus-chip row where more chips are scrolled out of view. */
+  updateChipFade() {
+    const c = this.chips;
+    this.chips.classList.toggle('more-l', c.scrollLeft > 2);
+    this.chips.classList.toggle('more-r', c.scrollLeft + c.clientWidth < c.scrollWidth - 2);
+  }
+
   refresh() {
     // focus chips
     this.chips.innerHTML = '';
@@ -264,6 +273,7 @@ export class PanelView {
     add((d) => d.type === 'motor', 'Motor', 'motor');
     add((d) => d.type === 'drp024', 'Power', 'bolt');
     add((d) => d.type === 'laptop', 'Laptop', 'display');
+    this.updateChipFade();
     if (this.sel && this.sel.kind === 'dev' && !devs.some((d) => d.id === this.sel.id)) this.select(null);
     if (this.sel && this.sel.kind === 'conn' && !this.lab.project.conns.some((c) => c.id === this.sel.id)) this.select(null);
     if (this.sel && this.sel.kind === 'multi') this.select(this.sel);
