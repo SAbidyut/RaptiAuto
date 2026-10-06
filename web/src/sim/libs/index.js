@@ -5,5 +5,3 @@ import './neopixel.js';
 import './displays.js';
 import './sensors.js';
 import './steppers.js';
-import './ext-a.js';
-import './ext-b.js';

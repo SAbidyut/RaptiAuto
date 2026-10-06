@@ -63,14 +63,8 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Window w = getWindow();
-        // Edge-to-edge for the whole lifetime of the activity: the WebView always covers the full
-        // screen and the page pads itself with the insets it is sent (sendInsets). Switching full
-        // screen on/off then only hides/shows the system bars — the WebView is never resized and the
-        // window attributes never change, so there is no relayout, flash or jump while switching.
-        w.setStatusBarColor(Color.TRANSPARENT);
+        w.setStatusBarColor(Color.parseColor("#070B16"));
         w.setNavigationBarColor(Color.parseColor("#070B16"));
-        setCutoutShortEdges(w);
-        w.getDecorView().setSystemUiVisibility(BASE_UI);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#070B16"));
@@ -100,18 +94,6 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new AppClient());
         web.setWebChromeClient(new AppChrome());
 
-        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
-            @Override
-            public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
-                // the bars appeared / disappeared (or rotated): tell the page right away
-                root.post(new Runnable() {
-                    public void run() {
-                        sendInsets();
-                    }
-                });
-                return insets;
-            }
-        });
         root.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
             @Override
             public void onGlobalLayout() {
@@ -425,52 +407,40 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Layout flags kept at all times: draw behind the status and navigation bars. */
-    private static final int BASE_UI = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
-
-    /** Let the page use the display-cutout area (set once — changing it later relayouts the window). */
-    private static void setCutoutShortEdges(Window w) {
+    private void applyImmersive(boolean on) {
+        immersive = on;
+        Window w = getWindow();
+        View decor = w.getDecorView();
+        WindowManager.LayoutParams lp = w.getAttributes();
         try {
-            WindowManager.LayoutParams lp = w.getAttributes();
             // layoutInDisplayCutoutMode exists from API 28; set reflectively (SHORT_EDGES = 1)
-            lp.getClass().getField("layoutInDisplayCutoutMode").setInt(lp, 1);
+            lp.getClass().getField("layoutInDisplayCutoutMode").setInt(lp, on ? 1 : 0);
             w.setAttributes(lp);
         } catch (Exception ignored) {
         }
-    }
-
-    private void applyImmersive(boolean on) {
-        immersive = on;
-        View decor = getWindow().getDecorView();
-        int flags = BASE_UI;
         if (on) {
-            flags |= View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } else {
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
         }
-        if (decor.getSystemUiVisibility() != flags) decor.setSystemUiVisibility(flags);
-        // the insets listener reports the new bars; these are fallbacks for older WebViews
-        sendInsets();
         root.postDelayed(new Runnable() {
             public void run() {
                 sendInsets();
             }
-        }, 120);
-        root.postDelayed(new Runnable() {
-            public void run() {
-                sendInsets();
-            }
-        }, 400);
+        }, 250);
     }
 
     private String lastInsets = "";
 
     /**
      * Tells the page how far system bars / the display cutout overlap the WebView, in CSS px.
-     * Measured against the WebView's real position on screen. The activity is always edge-to-edge,
-     * so outside full screen this is the status / navigation bar size, in full screen the cutout.
+     * Measured against the WebView's real position on screen, so it is 0 whenever the window
+     * already lays the WebView out below the status bar (e.g. right after leaving immersive mode).
      */
     private void sendInsets() {
         if (web == null) return;
@@ -545,8 +515,7 @@ public class MainActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        // dialogs and the keyboard can reset the system UI flags; put them back
-        if (hasFocus) applyImmersive(immersive);
+        if (hasFocus && immersive) applyImmersive(true);
     }
 
     @Override

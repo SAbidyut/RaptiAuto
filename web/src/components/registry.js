@@ -4,18 +4,15 @@ export const PITCH = 10; // 0.1 inch in world units
 
 const defs = new Map();
 export const CATEGORIES = [
-  { id: 'boards', name: 'Microcontrollers & Boards', icon: 'chip' },
-  { id: 'basic', name: 'Basic Electronics', icon: 'resistor' },
+  { id: 'boards', name: 'Microcontrollers', icon: 'chip' },
+  { id: 'basic', name: 'Basic & Passive', icon: 'resistor' },
   { id: 'output', name: 'LEDs & Output', icon: 'bulb' },
   { id: 'display', name: 'Displays', icon: 'display' },
   { id: 'input', name: 'Input & Controls', icon: 'button' },
   { id: 'sensors', name: 'Sensors', icon: 'sensor' },
   { id: 'motors', name: 'Motors & Actuators', icon: 'motor' },
-  { id: 'drivers', name: 'Motor Drivers', icon: 'gauge' },
-  { id: 'comm', name: 'Communication', icon: 'wifi' },
   { id: 'power', name: 'Power & Breadboards', icon: 'battery' },
-  { id: 'ics', name: 'ICs & Modules', icon: 'ic' },
-  { id: 'robotics', name: 'Robotics', icon: 'cube' },
+  { id: 'ics', name: 'ICs & Drivers', icon: 'ic' },
   { id: 'meters', name: 'Measurement', icon: 'meter' },
 ];
 
