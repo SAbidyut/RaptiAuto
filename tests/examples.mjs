@@ -64,6 +64,18 @@ const CHECKS = {
   'scope-pwm': { ms: 1200, check: (e) => { const m = part(e, 'scope').measure(0); const m2 = part(e, 'scope').measure(2); return expect(Math.abs(m.freq - 988) < 80 && Math.abs(m2.freq - 440) < 40, `ch1 ${m.freq} ch3 ${m2.freq}`); } },
   'logic-bitbang': { ms: 500, check: (e) => { const l = part(e, 'la'); l.input('tdiv', 9); const m = l.measure(1); return expect(m.edges >= 1 && m.vpp > 4, `clock edges=${m.edges} vpp=${m.vpp}`); } },
   'fg-adc': { ms: 1500, serial: ['V:'] },
+  'regulator-5v': { ms: 600, check: (e) => expect(Math.abs(part(e, 'vm').visual.v - 5) < 0.1 && lit(e, 'led'), `vout=${part(e, 'vm').visual.v}`) },
+  'bmp280-weather': { ms: 1500, act: { 800: ['bmp', 'press', 1000] }, serial: ['T = 24.0 C', 'P = 1013.0 hPa', 'P = 1000.0 hPa'] },
+  'acs712-current': { ms: 1500, serial: ['Current = 0.4', 'Sensor = 2.5'] },
+  'dip-switch-binary': { ms: 1200, act: { 300: ['dip', 's1', true], 400: ['dip', 's3', true] }, serial: ['Value: 0  binary 0000', 'Value: 1  binary 0001', 'Value: 5  binary 0101'] },
+  'optocoupler-isolation': { ms: 2200, serial: ['LED on  -> D3 = LOW', 'LED off -> D3 = HIGH'] },
+  'tb6612-motors': { ms: 2500, serial: ['full speed forward'], check: (e) => expect(Math.abs(part(e, 'm1').visual.rpm) > 200 && Math.abs(part(e, 'm2').visual.rpm) > 200, `rpm=${part(e, 'm1').visual.rpm}/${part(e, 'm2').visual.rpm}`) },
+  'robot-car-drive': { ms: 4500, serial: ['side 1', 'side 2'], check: (e) => { const c = part(e, 'car').car; return expect(Math.abs(c.x - 75) + Math.abs(c.y - 50) > 3 || c.a !== 0, `car=${c.x},${c.y},${c.a}`); } },
+  'bluetooth-led': { ms: 1500, act: { 200: ['bt', 'connect', true], 500: ['bt', 'send', 'ON\n'], 900: ['bt', 'send', 'off\n'] }, serial: ['Command: ON', 'Command: OFF'], check: (e) => expect(part(e, 'bt').log.some((m) => /LED is ON/.test(m.text)) && !lit(e, 'led'), 'log=' + JSON.stringify(part(e, 'bt').log)) },
+  'gps-tracker': { ms: 9000, serial: ['No fix yet', 'Lat 23.81030  Lon 90.41250  Speed 0.0 km/h'] },
+  'solenoid-pulse': { ms: 2200, serial: ['PUSH', 'release'] },
+  'py-bluetooth': { ms: 1500, act: { 200: ['bt', 'connect', true], 500: ['bt', 'send', 'on\n'] }, serial: ['Command: ON'], check: (e) => expect(lit(e, 'led') && part(e, 'bt').log.some((m) => /LED is ON/.test(m.text)), 'bt log=' + JSON.stringify(part(e, 'bt').log)) },
+  'py-gps': { ms: 9500, serial: ['No fix yet', 'Lat 23.81030  Lon 90.41250  0.0 km/h'] },
   'rtc-clock': { ms: 2500, check: (e) => expect(/^\w{3} \d\d\/\d\d\/20\d\d$/.test(lcdRow(e, 'lcd', 0)) && /^ {4}\d\d:\d\d:\d\d$/.test(lcdRow(e, 'lcd', 1)), `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0) + '|' + lcdRow(e, 'lcd', 1))}`) },
 };
 

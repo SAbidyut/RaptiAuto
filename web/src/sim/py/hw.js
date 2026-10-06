@@ -260,11 +260,50 @@ export function makeHwModules(ctx) {
   const SoftI2C = new NativeClass('SoftI2C', (a, kw) => makeI2C(a, kw, 'SoftI2C'));
 
   // ------------------------------------------------------------------ UART / SPI (data goes nowhere, but the API exists)
-  const UART = new NativeClass('UART', () => {
+  const UART_DEFAULTS = rp2 ? [{ tx: 0, rx: 1 }, { tx: 4, rx: 5 }] : [{ tx: 1, rx: 3 }, { tx: 10, rx: 9 }, { tx: 17, rx: 16 }];
+  const UART = new NativeClass('UART', (a, kw) => {
+    const id = a.length ? toInt(a[0]) : 0;
+    const d = UART_DEFAULTS[id] || {};
+    const st = { tx: d.tx ?? -1, rx: d.rx ?? -1, buf: '', baud: 9600 };
     const o = new NativeObj();
+    o.cls = UART;
+    const configure = (aa, k) => {
+      const baud = kwGet(k, 'baudrate', aa[0]);
+      if (baud !== undefined && baud !== null) st.baud = toNum(baud);
+      if (k.tx !== undefined && k.tx !== null) st.tx = pinNum(k.tx);
+      if (k.rx !== undefined && k.rx !== null) st.rx = pinNum(k.rx);
+    };
+    configure(a.slice(1), kw);
+    if (hw && hw.registerUart) hw.registerUart({ get rxPin() { return st.rx; }, feed(text) { st.buf += text; } });
+    const text = (b) => (b instanceof PyBytes ? String.fromCharCode(...b.a) : pyStr(b));
+    const bytes = (s) => new PyBytes([...s].map((c) => c.charCodeAt(0) & 255));
     withMethods(o, {
-      init() { return null; }, deinit() { return null; }, any() { return 0; }, read() { return null; }, readline() { return null; }, readinto() { return null; },
-      write(aa) { return aa[0] instanceof PyBytes ? aa[0].a.length : pyStr(aa[0]).length; }, flush() { return null; }, sendbreak() { return null; },
+      init(aa, k) { configure(aa, k); return null; },
+      deinit() { return null; },
+      any() { return st.buf.length; },
+      read(aa) {
+        if (!st.buf.length) return null;
+        const n = aa.length && aa[0] !== null ? toInt(aa[0]) : st.buf.length;
+        const out = st.buf.slice(0, n);
+        st.buf = st.buf.slice(out.length);
+        return bytes(out);
+      },
+      readline() {
+        const i = st.buf.indexOf('\n');
+        if (i < 0) return null;
+        const out = st.buf.slice(0, i + 1);
+        st.buf = st.buf.slice(i + 1);
+        return bytes(out);
+      },
+      write(aa) {
+        const s = text(aa[0]);
+        rt.t += s.length * (1e7 / st.baud);
+        needHw().uartSend(st.tx, s);
+        return s.length;
+      },
+      flush() { return null; },
+      sendbreak() { return null; },
+      txdone() { return true; },
     }, 'UART');
     return o;
   }, { RTS: 1, CTS: 2 });

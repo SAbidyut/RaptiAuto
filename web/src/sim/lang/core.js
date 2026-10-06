@@ -48,7 +48,12 @@ export class HardwareSerial {
     this.rxMax = board.arch === 'avr' ? 64 : 256;
   }
 
-  begin(baud) { this.baud = baud || 9600; this.begun = true; this.rt.t += 20; }
+  /** begin(baud) — ESP32 also takes begin(baud, config, rxPin, txPin) to pick other pins. */
+  begin(baud, config, rx, tx) {
+    this.baud = baud || 9600; this.begun = true; this.rt.t += 20;
+    if (typeof rx === 'number' && rx >= 0) this.rxPin = rx;
+    if (typeof tx === 'number' && tx >= 0) this.txPin = tx;
+  }
   end() { this.begun = false; }
   setTimeout(ms) { this.timeout = ms; }
   getTimeout() { return this.timeout; }
@@ -236,7 +241,7 @@ Object.assign(HardwareSerial.prototype, PrintMixin);
 
 export function serialClassMeta(arch) {
   const methods = {
-    begin: { ret: 'void' },
+    begin: { ret: 'void', args: ['num', 'num', 'num', 'num'] },
     end: { ret: 'void' },
     ...PRINT_META,
     write: { ret: 'uint', args: ['raw', 'num'] },
@@ -560,6 +565,10 @@ export function makeCore(rt, hw, board) {
   const serials = [];
   for (const port of board.serialPorts || ['Serial']) {
     const s = new HardwareSerial(rt, hw, port, board);
+    const uartPins = board.uart && board.uart[port];
+    s.rxPin = uartPins ? uartPins.rx : null;
+    s.txPin = uartPins ? uartPins.tx : null;
+    if (port !== 'Serial' && hw.registerUart) hw.registerUart(s);
     serials.push(s);
     globals[port] = { cls: 'HardwareSerial', value: s };
   }

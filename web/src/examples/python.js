@@ -320,4 +320,92 @@ while True:
   };
 }
 
-export const BUILDERS = [pyBlink, pyPicoBlink, pyButtonLed, pyPwmFade, pyAdcPot, pyDht22, pyOled, pyNeopixel, pyServo, pyTimerIrq];
+export function pyBluetooth() {
+  const e = esp();
+  const bt = at('hc05', 'STATE', 100, 300, {}, 0, 'bt');
+  const r = at('resistor', '1', 230, 200, { value: 330 }, 0, 'r1');
+  const led = at('led', 'A', 290, 200, { color: 'blue' }, 0, 'led');
+  return {
+    id: 'py-bluetooth', lang: 'python', name: 'Bluetooth LED (machine.UART)', category: 'python', level: 'intermediate',
+    description: 'machine.UART(2) talks to an HC-05 on GPIO 16 / 17. Tap the HC-05 while running, press Connect phone and send ON or OFF to switch the LED on GPIO 4.',
+    parts: [e, bt, r, led],
+    wires: [
+      W(bt, 'TXD', e, 'RX2', C.green, [[120, 270], [120, 120]]), W(bt, 'RXD', e, 'TX2', C.yellow, [[110, 280], [110, 90]]),
+      W(bt, 'VCC', e, '3V3', C.red, [[140, 250], [170, 250]]), W(bt, 'GND', e, 'GND.2', C.black, [[130, 260], [160, 260]]),
+      R(e, 'D4', r, '1', C.orange, [150]), W(r, '2', led, 'A', C.orange), R(led, 'C', e, 'GND.2', C.black, [240]),
+    ],
+    code: `# Bluetooth serial (HC-05) on UART2: TX = GPIO 17, RX = GPIO 16
+from machine import UART, Pin
+import time
+
+uart = UART(2, baudrate=9600, tx=17, rx=16)
+led = Pin(4, Pin.OUT)
+uart.write("Send ON or OFF\\r\\n")
+
+buffer = b""
+while True:
+    if uart.any():
+        buffer += uart.read()
+        while b"\\n" in buffer:
+            line, buffer = buffer.split(b"\\n", 1)
+            cmd = line.decode().strip().upper()
+            print("Command:", cmd)
+            if cmd == "ON":
+                led.value(1)
+                uart.write("LED is ON\\r\\n")
+            elif cmd == "OFF":
+                led.value(0)
+                uart.write("LED is OFF\\r\\n")
+            else:
+                uart.write("Unknown command\\r\\n")
+    time.sleep_ms(20)
+`,
+  };
+}
+
+export function pyGps() {
+  const e = esp();
+  const gps = at('gps-neo6m', 'VCC', 100, 300, {}, 0, 'gps');
+  return {
+    id: 'py-gps', lang: 'python', name: 'GPS position (MicroPython)', category: 'python', level: 'advanced',
+    description: 'Read the NEO-6M on UART2 (RX = GPIO 16) and decode the $GPRMC sentence with plain Python string methods. Tap the module while running to drive it around.',
+    parts: [e, gps],
+    wires: [
+      W(gps, 'TXD', e, 'RX2', C.green, [[120, 270], [120, 120]]),
+      W(gps, 'VCC', e, '3V3', C.red, [[100, 250], [170, 250]]), W(gps, 'GND', e, 'GND.2', C.black, [[130, 260], [160, 260]]),
+    ],
+    code: `# NEO-6M GPS on UART2 (GPIO 16): decode $GPRMC
+from machine import UART
+import time
+
+uart = UART(2, baudrate=9600, tx=17, rx=16)
+
+def to_degrees(raw, hemi):
+    value = float(raw)
+    deg = int(value // 100)
+    d = deg + (value - deg * 100) / 60
+    return -d if hemi in ("S", "W") else d
+
+buffer = b""
+print("Waiting for a GPS fix...")
+while True:
+    if uart.any():
+        buffer += uart.read()
+        while b"\\n" in buffer:
+            line, buffer = buffer.split(b"\\n", 1)
+            text = line.decode().strip()
+            if text.startswith("$GPRMC"):
+                f = text.split(",")
+                if f[2] == "A":
+                    lat = to_degrees(f[3], f[4])
+                    lon = to_degrees(f[5], f[6])
+                    kmh = float(f[7]) * 1.852
+                    print("Lat {:.5f}  Lon {:.5f}  {:.1f} km/h".format(lat, lon, kmh))
+                else:
+                    print("No fix yet")
+    time.sleep_ms(50)
+`,
+  };
+}
+
+export const BUILDERS = [pyBlink, pyPicoBlink, pyButtonLed, pyPwmFade, pyAdcPot, pyDht22, pyOled, pyNeopixel, pyServo, pyTimerIrq, pyBluetooth, pyGps];

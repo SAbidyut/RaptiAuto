@@ -173,5 +173,13 @@ else:
 print(not None, None is None, 1 < 2 < 3, 1 if 0 else 2, [] or "x", 0 and 1)
 `, { expect: "[1, 3, 5, 9] [9, 5, 3, 1] ['A', 'b', 'c']\n{'the': 3, 'quick': 5, 'brown': 5, 'fox': 3} ['quick', 'brown'] [(0, 'a'), (1, 'b')] [(1, 3), (2, 4)]\n[1, 2, 3, 4] True True\nTrue False [3, 2, 1] (1, 2) True\n6\nfor-else\nTrue True True 2 x 0\n" });
 run('print(list(range(10, 0, -3)), len(range(180, -1, -5)), list(range(5, 5)), list(range(3, 0)), list(range(0, 10, 4)), range(4)[2], 7 in range(10))', { expect: '[10, 7, 4, 1] 37 [] [] [0, 4, 8] 2 True\n' });
+run(`
+b = b"abc\\ndef\\n"
+print(b, len(b), b"\\n" in b, b.split(b"\\n"), b[0], b[1:3], b + b"!", b"x" == b"x", b.decode().strip(), b.startswith(b"ab"), bytes([65, 66]))
+buf = b""
+buf += b"one\\ntwo"
+line, buf = buf.split(b"\\n", 1)
+print(line, buf, bytearray(b"hi").hex())
+`, { expect: "b'abc\\ndef\\n' 8 True [b'abc', b'def', b''] 97 b'bc' b'abc\\ndef\\n!' True abc\ndef True b'AB'\nb'one' b'two' 6869\n" });
 console.log(failed ? `\n${failed} FAILED` : '\nall python language tests passed');
 process.exit(failed ? 1 : 0);

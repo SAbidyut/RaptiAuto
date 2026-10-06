@@ -37,6 +37,8 @@ export class SimEngine {
     this.serialLog = [];
     this.stats = { solves: 0, realtime: 1, simTime: 0 };
     this.watchers = new Map(); // node -> [fn]
+    this.uartEndpoints = []; // serial ports the MCU can receive on: { rxPin, feed(text) }
+    this.uartQueues = []; // bytes on their way from a module to the MCU, paced at the baud rate
   }
 
   // ------------------------------------------------------------------ build
@@ -265,6 +267,7 @@ export class SimEngine {
     const target = rt.t + dWall * 1000 * this.speed;
     const frameStart = rt.t;
     this.changesThisFrame = 0;
+    if (this.uartQueues.length) this.pumpUart(target - rt.t);
     this.processEvents();
     const t0 = now();
     let status = 'ok';
@@ -697,7 +700,57 @@ export class SimEngine {
     if (this.opts.onError) this.opts.onError({ message: msg, line: 0, electrical: true });
   }
 
+  /** A serial object (Serial1, SoftwareSerial, machine.UART) that can receive bytes on its `rxPin`. */
+  registerUart(endpoint) { this.uartEndpoints.push(endpoint); }
+
+  /** Bytes the MCU sends on a TX pin reach every module (HC-05, GPS …) whose RXD pin is on the same net. */
+  uartSend(txPin, text) {
+    const node = this.pinNode(txPin);
+    if (node < 0) return 0;
+    const targets = this.partsOnNode(node, (r) => typeof r.onUartRx === 'function', 'RXD');
+    for (const t of targets) t.rt.onUartRx(text);
+    if (targets.length && this.boardRt) this.boardRt.txUntil = this.time() + 40000;
+    return targets.length;
+  }
+
+  /**
+   * A module drives its TXD pin: the bytes reach every MCU serial port listening on that net, one byte per
+   * 10 bit times (so a 64 byte Arduino buffer overflows only if the sketch does not read fast enough).
+   */
+  uartReceive(partRt, text, pinId = 'TXD', baud = 9600) {
+    const node = this.nodeOf(partRt.part.id, pinId);
+    if (node < 0) return 0;
+    const targets = this.uartEndpoints.filter((o) => typeof o.rxPin === 'number' && o.rxPin >= 0 && this.pinNode(o.rxPin) === node);
+    if (!targets.length) return 0;
+    let q = this.uartQueues.find((x) => x.rt === partRt && x.pinId === pinId);
+    if (!q) { q = { rt: partRt, pinId, data: '', carry: 0 }; this.uartQueues.push(q); }
+    q.targets = targets;
+    q.baud = baud;
+    q.data += text;
+    return targets.length;
+  }
+
+  /** Releases the queued module → MCU bytes for the next `dtUs` of virtual time. */
+  pumpUart(dtUs) {
+    for (const q of this.uartQueues) {
+      if (!q.data) { q.carry = 0; continue; }
+      q.carry += dtUs;
+      const byteTime = 1e7 / q.baud;
+      const n = Math.min(q.data.length, Math.floor(q.carry / byteTime));
+      if (n <= 0) continue;
+      const chunk = q.data.slice(0, n);
+      q.data = q.data.slice(n);
+      q.carry -= n * byteTime;
+      for (const o of q.targets) o.feed(chunk);
+      if (this.boardRt) this.boardRt.rxUntil = this.time() + 40000;
+    }
+  }
+
   serialOut(port, text) {
+    if (port !== 'Serial' && this.natives && this.natives.serials) {
+      const s = this.natives.serials.find((x) => x.port === port);
+      if (s && typeof s.txPin === 'number' && s.txPin >= 0 && this.uartSend(s.txPin, text)) return;
+    }
     if (this.boardRt) this.boardRt.txUntil = this.time() + 40000;
     if (this.opts.onSerial) this.opts.onSerial(port, text);
   }

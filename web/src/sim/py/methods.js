@@ -196,9 +196,24 @@ const SET = {
   copy: (s) => setOf(s.items()),
 };
 
-const BYTES = {
-  decode: (b) => new TextDecoder().decode(new Uint8Array(b.a)),
+const latin = (b) => String.fromCharCode(...b.a);
+const fromLatin = (s) => new PyBytes([...s].map((c) => c.charCodeAt(0) & 255));
+const toStrArg = (v) => (v instanceof PyBytes ? latin(v) : v);
+const fromStrResult = (r) => {
+  if (typeof r === 'string') return fromLatin(r);
+  if (Array.isArray(r)) { const o = r.map(fromStrResult); if (r.isTuple) o.isTuple = true; return o; }
+  return r;
 };
+/** bytes methods that behave like their str counterparts (the data is treated as latin-1 text). */
+const BYTES = { decode: (b) => new TextDecoder().decode(new Uint8Array(b.a)) };
+for (const name of ['split', 'rsplit', 'strip', 'lstrip', 'rstrip', 'startswith', 'endswith', 'find', 'rfind', 'index', 'count', 'replace', 'upper', 'lower', 'splitlines', 'partition', 'rpartition', 'isdigit', 'isalpha', 'isspace', 'zfill', 'center', 'ljust', 'rjust']) {
+  BYTES[name] = (b, args, kw) => fromStrResult(STR[name](latin(b), args.map((a) => (Array.isArray(a) ? a.map(toStrArg) : toStrArg(a))), kw));
+}
+BYTES.join = (b, [it]) => fromLatin(toList(it).map(latin).join(latin(b)));
+BYTES.append = (b, [v]) => { b.a.push(toInt(v) & 255); return null; };
+BYTES.extend = (b, [v]) => { for (const x of v instanceof PyBytes ? v.a : toList(v)) b.a.push(toInt(x) & 255); return null; };
+BYTES.hex = (b) => b.a.map((c) => c.toString(16).padStart(2, '0')).join('');
+BYTES.copy = (b) => new PyBytes(b.a.slice());
 
 export function builtinMethod(obj, name) {
   let table = null;

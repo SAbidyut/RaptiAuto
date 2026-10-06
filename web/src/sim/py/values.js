@@ -187,6 +187,7 @@ export function pyEq(a, b) {
     const m = a.cls.lookup('__eq__');
     if (m) return truthy(hooks.callSync(m, [a, b]));
   }
+  if (a instanceof PyBytes && b instanceof PyBytes) return a.a.length === b.a.length && a.a.every((x, i) => x === b.a[i]);
   if (a instanceof PyRange && b instanceof PyRange) return a.start === b.start && a.stop === b.stop && a.step === b.step;
   return false;
 }
@@ -260,7 +261,7 @@ export function pyRepr(v, seen = []) {
   if (v instanceof PyDict) return '{' + v.items().map(([k, x]) => pyRepr(k, seen) + ': ' + pyRepr(x, seen)).join(', ') + '}';
   if (v instanceof PySet) return v.size ? '{' + v.items().map((x) => pyRepr(x, seen)).join(', ') + '}' : 'set()';
   if (v instanceof PyRange) return v.step === 1 ? `range(${v.start}, ${v.stop})` : `range(${v.start}, ${v.stop}, ${v.step})`;
-  if (v instanceof PyBytes) return "b'" + v.a.map((c) => (c >= 32 && c < 127 && c !== 39 && c !== 92 ? String.fromCharCode(c) : '\\x' + c.toString(16).padStart(2, '0'))).join('') + "'";
+  if (v instanceof PyBytes) return "b'" + v.a.map((c) => (c === 10 ? '\\n' : c === 13 ? '\\r' : c === 9 ? '\\t' : c === 39 ? "\\'" : c === 92 ? '\\\\' : c >= 32 && c < 127 ? String.fromCharCode(c) : '\\x' + c.toString(16).padStart(2, '0'))).join('') + "'";
   if (v instanceof PyInstance) {
     const m = v.cls.lookup('__repr__');
     if (m) return String(hooks.callSync(m, [v]));
@@ -531,7 +532,14 @@ export function contains(container, item) {
   }
   if (container instanceof PyDict || container instanceof PySet) return container.has(item);
   if (container instanceof PyRange) { if (!isNum(item)) return false; const x = toNum(item); const n = (x - container.start) / container.step; return Number.isInteger(n) && n >= 0 && n < container.length; }
-  if (container instanceof PyBytes) return container.a.includes(item);
+  if (container instanceof PyBytes) {
+    if (item instanceof PyBytes) {
+      const n = item.a.length;
+      for (let i = 0; i + n <= container.a.length; i++) { let ok = true; for (let j = 0; j < n; j++) if (container.a[i + j] !== item.a[j]) { ok = false; break; } if (ok) return true; }
+      return false;
+    }
+    return container.a.includes(item);
+  }
   if (container instanceof PyInstance) {
     const m = container.cls.lookup('__contains__');
     if (m) return truthy(hooks.callSync(m, [container, item]));
