@@ -1,9 +1,5 @@
 /* RaptiAuto — design system & layout */
 @import "./plc.css";
-@import "./shell.css";
-@import "./tools.css";
-@import "./parts.css";
-@import "./plc-extra.css";
 @font-face { font-family: 'Inter'; font-weight: 400; font-display: swap; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); }
 @font-face { font-family: 'Inter'; font-weight: 500; font-display: swap; src: url(fonts/inter-latin-500-normal.woff2) format('woff2'); }
 @font-face { font-family: 'Inter'; font-weight: 600; font-display: swap; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); }
@@ -182,7 +178,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .rc-go { color: var(--muted); }
 
 /* ---------------------------------------------------------------- editor */
-.ed-top { display: flex; align-items: center; gap: 6px; padding: calc(6px + var(--safe-t)) calc(8px + var(--safe-r)) 6px calc(4px + var(--safe-l)); background: rgba(8, 12, 24, .92); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); z-index: 5; min-height: 58px; }
+.ed-top { display: flex; align-items: center; gap: 6px; padding: calc(6px + var(--safe-t)) 8px 6px 4px; background: rgba(8, 12, 24, .92); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); z-index: 5; min-height: 58px; }
 .ed-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .ed-title { max-width: 100%; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .ed-title span { display: block; overflow: hidden; text-overflow: ellipsis; }
@@ -201,7 +197,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .ed-main { flex: 1; position: relative; overflow: hidden; }
 .pane { position: absolute; inset: 0; display: none; flex-direction: column; }
 .tab-circuit .pane-circuit, .tab-code .pane-code, .tab-serial .pane-serial { display: flex; }
-.ed-nav { display: flex; padding: 4px calc(8px + var(--safe-r)) calc(4px + var(--safe-b)) calc(8px + var(--safe-l)); background: rgba(8, 12, 24, .95); border-top: 1px solid var(--line); z-index: 5; }
+.ed-nav { display: flex; padding: 4px 8px calc(4px + var(--safe-b)); background: rgba(8, 12, 24, .95); border-top: 1px solid var(--line); z-index: 5; }
 .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 5px; border-radius: 14px; color: var(--dim); font-size: 11.5px; font-weight: 600; position: relative; transition: color .2s; }
 .nav-tab.active { color: var(--text); }
 .nav-tab.active .ic { color: var(--accent); filter: drop-shadow(0 0 8px rgba(34, 211, 238, .55)); }
@@ -222,8 +218,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .fs-bar .split-toggle { margin-top: 4px; position: relative; }
 .fs-bar .split-toggle::before { content: ''; position: absolute; top: -6px; left: 8px; right: 8px; height: 1px; background: var(--line2); }
 
-/* outside full screen the panes stay clear of a landscape cutout / side navigation bar (the app is edge-to-edge) */
-.editor:not(.fs) .ed-main, .lab:not(.fs) .lab-main { margin-left: var(--safe-l); margin-right: var(--safe-r); }
 /* fullscreen */
 .fs-bar { display: none; }
 .editor.fs .ed-top, .editor.fs .ed-nav { display: none; }
@@ -385,7 +379,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .sheet-head { display: flex; align-items: center; gap: 10px; padding: 4px 8px 8px 18px; touch-action: none; }
 .sheet-icon { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; background: var(--grad-soft); color: var(--accent); }
 .sheet-title { flex: 1; font-family: var(--display); font-size: 18px; font-weight: 700; }
-.sheet-body { flex: 1; overflow-y: auto; padding: 0 calc(16px + var(--safe-r)) calc(18px + var(--safe-b)) calc(16px + var(--safe-l)); min-height: 0; }
+.sheet-body { flex: 1; overflow-y: auto; padding: 0 16px 18px; min-height: 0; }
 .sheet-overlay.nonmodal { background: transparent; pointer-events: none; }
 .sheet-overlay.nonmodal .sheet { pointer-events: auto; max-height: 48%; background: rgba(15, 23, 43, .94); backdrop-filter: blur(16px); }
 .editor .sheet-overlay.nonmodal { position: absolute; }

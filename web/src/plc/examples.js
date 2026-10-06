@@ -36,19 +36,9 @@ function finish(meta, b, prog, extra = {}) {
   return p;
 }
 
-/** Groups of the PLC example gallery (LAB_EXAMPLES[i].category). */
-export const LAB_EXAMPLE_CATEGORIES = [
-  { id: 'basics', name: 'Ladder basics' },
-  { id: 'motor', name: 'Motor control' },
-  { id: 'vfd', name: 'VFD & drives' },
-  { id: 'process', name: 'Process automation' },
-  { id: 'complete', name: 'Complete projects' },
-  { id: 'practice', name: 'Practice' },
-];
-
 export const LAB_EXAMPLES = [
   {
-    id: 'start-stop', category: 'basics', name: 'Start / Stop latching circuit', level: 'beginner', tags: ['PLC', 'Ladder'],
+    id: 'start-stop', name: 'Start / Stop latching circuit', level: 'beginner', tags: ['PLC', 'Ladder'],
     description: 'The classic self-holding circuit: START (X0) latches Y0, the NC STOP button (X1) breaks it. Two pilot lamps show the state.',
     build() {
       const b = builder();
@@ -70,7 +60,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'traffic-light', category: 'basics', name: 'Traffic light with timers', level: 'beginner', tags: ['TMR', 'Timers'],
+    id: 'traffic-light', name: 'Traffic light with timers', level: 'beginner', tags: ['TMR', 'Timers'],
     description: 'Red 5 s → green 4 s → amber 2 s using a chain of 100 ms timers (TMR). With the selector OFF the amber lamp flashes using the 1 s clock M1013.',
     build() {
       const b = builder();
@@ -95,7 +85,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'part-counter', category: 'basics', name: 'Part counter with sensor + HMI', level: 'intermediate', tags: ['CNT', 'HMI', 'Sensor'],
+    id: 'part-counter', name: 'Part counter with sensor + HMI', level: 'intermediate', tags: ['CNT', 'HMI', 'Sensor'],
     description: 'A PNP proximity sensor (X0) counts parts with CNT C0. The target is set on the DOP-107 HMI (D0). When the box is full the lamp lights and the buzzer beeps.',
     build() {
       const b = builder();
@@ -141,7 +131,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'vfd-terminals', category: 'vfd', name: 'VFD forward / reverse, 2 speeds', level: 'intermediate', tags: ['VFD', 'MS300', 'Interlock'],
+    id: 'vfd-terminals', name: 'VFD forward / reverse, 2 speeds', level: 'intermediate', tags: ['VFD', 'MS300', 'Interlock'],
     description: 'Interlocked FWD / REV control of a Delta MS300 through its terminals: PLC relays drive MI1 (FWD), MI2 (REV) and MI3 / MI4 (multi-step speeds 15 Hz / 45 Hz).',
     build() {
       const b = builder();
@@ -174,7 +164,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'vfd-modbus-hmi', category: 'complete', name: 'VFD speed control · Modbus RTU + HMI', level: 'advanced', tags: ['MODRW', 'RS-485', 'HMI', 'VFD'], featured: true,
+    id: 'vfd-modbus-hmi', name: 'VFD speed control · Modbus RTU + HMI', level: 'advanced', tags: ['MODRW', 'RS-485', 'HMI', 'VFD'], featured: true,
     description: 'The complete system: DOP-107 HMI ↔ DVP PLC (COM1) ↔ MS300 VFD over RS-485 Modbus RTU (MODRW). Set the speed on the HMI, read back frequency, current and fault code.',
     build() {
       const b = builder();
@@ -239,7 +229,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'analog-speed', category: 'vfd', name: 'Analog speed: pot → EX2 → VFD', level: 'advanced', tags: ['Analog', 'EX2', 'AVI'],
+    id: 'analog-speed', name: 'Analog speed: pot → EX2 → VFD', level: 'advanced', tags: ['Analog', 'EX2', 'AVI'],
     description: 'A DVP-20EX2 reads a speed pot on AI channel 0 (D1110) and drives the MS300 AVI input from AO channel 0 (D1116). START/STOP run the drive through MI1.',
     build() {
       const b = builder();
@@ -266,7 +256,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'blank', category: 'practice', name: 'Blank lab (PLC + power)', level: 'beginner', tags: ['Empty'],
+    id: 'blank', name: 'Blank lab (PLC + power)', level: 'beginner', tags: ['Empty'],
     description: 'A powered DVP-16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
     build() {
       const b = builder();

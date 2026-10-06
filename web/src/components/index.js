@@ -7,6 +7,4 @@ import './inputs.js';
 import './sensors.js';
 import './motors.js';
 import './ics.js';
-import './ext-a.js';
-import './ext-b.js';
 export * from './registry.js';

@@ -1,6 +1,5 @@
 // Project persistence (localStorage) and project factory.
 import { getDef, newId } from './components/registry.js';
-import { defaultPythonCode } from './sim/py/index.js';
 
 const INDEX = 'raptiauto.index.v1';
 const PKEY = (id) => 'raptiauto.p.' + id;
@@ -40,7 +39,6 @@ export function normalize(p) {
   p.name = p.name || 'Untitled project';
   p.id = p.id || newId('prj');
   p.settings = p.settings || {};
-  p.lang = p.lang === 'python' ? 'python' : 'cpp';
   for (const w of p.wires) { w.points = w.points || []; w.id = w.id || newId('w'); }
   return p;
 }
@@ -79,8 +77,7 @@ void loop() {
 `,
 };
 
-/** New Arduino-side project. `lang` is 'cpp' (Arduino C/C++) or 'python' (MicroPython / Pi Python). */
-export function createProject(boardType = 'uno-r3', name = 'My Project', lang = 'cpp') {
+export function createProject(boardType = 'uno-r3', name = 'My Project') {
   const def = getDef(boardType);
   const arch = def && def.board ? def.board.arch : 'avr';
   const p = normalize({
@@ -89,8 +86,7 @@ export function createProject(boardType = 'uno-r3', name = 'My Project', lang = 
     created: Date.now(),
     parts: [{ id: newId('p'), type: boardType, x: 0, y: 0, rot: 0, props: {} }],
     wires: [],
-    lang: lang === 'python' ? 'python' : 'cpp',
-    code: lang === 'python' ? defaultPythonCode(def && def.board) : arch === 'xtensa' ? DEFAULT_CODE.esp32 : (boardType === 'attiny85' ? DEFAULT_CODE.avr.replace(/\s*Serial\.[^\n]*\n/g, '\n') : DEFAULT_CODE.avr),
+    code: arch === 'xtensa' ? DEFAULT_CODE.esp32 : (boardType === 'attiny85' ? DEFAULT_CODE.avr.replace(/\s*Serial\.[^\n]*\n/g, '\n') : DEFAULT_CODE.avr),
   });
   return p;
 }
