@@ -1,6 +1,7 @@
 // Project editor screen: circuit canvas + code editor + serial monitor + simulation control.
 import { getDef, newId, partProps, worldBox, defaultProps } from '../components/registry.js';
-import { saveProject, exportJSON } from '../store.js';
+import { saveProject, exportJSON, starterCode } from '../store.js';
+import { boardLangs } from '../sim/py/index.js';
 import { SimEngine } from '../sim/engine.js';
 import { CircuitCanvas, makeSelection } from './canvas.js';
 import { CodeEditor } from './code.js';
@@ -13,7 +14,11 @@ import { Native } from '../native.js';
 import { AudioEngine } from './audio.js';
 
 /** True when the sketch prints to or reads from a serial port (comments and string literals are ignored). */
-export function sketchUsesSerial(code) {
+export function sketchUsesSerial(code, lang = 'cpp') {
+  if (lang === 'python') {
+    const py = String(code || '').replace(/'''[\s\S]*?'''|\"\"\"[\s\S]*?\"\"\"|#[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, ' ');
+    return /\b(print|input)\s*\(|\bsys\s*\.\s*std(out|err)\b/.test(py);
+  }
   // one pass, so whichever comes first wins ("http://…" in a string is not a comment)
   const src = String(code || '').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, ' ');
   // Only setting the port up (begin/end, waiting for it) is not "using" the Serial Monitor.
@@ -46,7 +51,7 @@ export class Editor {
     this.root = h('div', { class: 'screen editor tab-circuit' });
     // top bar
     this.titleEl = h('button', { class: 'ed-title', onclick: () => this.rename() }, h('span', {}, this.project.name));
-    this.boardChip = h('button', { class: 'board-chip', onclick: () => this.showBoardInfo() }, board ? getDef(board.type).name : 'No board');
+    this.boardChip = h('button', { class: 'board-chip', onclick: () => this.showBoardInfo() }, board ? getDef(board.type).name + (this.project.lang === 'python' ? ' · MicroPython' : '') : 'No board');
     this.runBtn = h('button', { class: 'run-btn', onclick: () => this.toggleRun(), html: `${icon('play', 20)}<span>Run</span>` });
     const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu', html: icon('dots'), onclick: (e) => this.menu(e.currentTarget) });
     const back = h('button', { class: 'icon-btn', 'aria-label': 'Back', html: icon('back'), onclick: () => this.leave() });
@@ -66,7 +71,7 @@ export class Editor {
 
     // code
     const codeBar = h('div', { class: 'code-bar' },
-      h('span', { class: 'code-file', html: `${icon('code', 16)}<span>sketch.ino</span>` }),
+      this.codeFile = h('span', { class: 'code-file', html: `${icon('code', 16)}<span>${this.project.lang === 'python' ? 'main.py' : 'sketch.ino'}</span>` }),
       h('div', { class: 'grow' }),
       h('button', { class: 'icon-btn sm', title: 'Search', html: icon('search', 19), onclick: () => this.code.search() }),
       h('button', { class: 'icon-btn sm', title: 'Smaller text', html: `<b class="tsz">A−</b>`, onclick: () => this.fontSize(-1) }),
@@ -78,6 +83,7 @@ export class Editor {
     this.code = new CodeEditor(this.codeHost, {
       code: this.project.code,
       fontSize: this.settings.fontSize || 14,
+      lang: this.project.lang,
       onChange: (v) => { this.project.code = v; this.code.clearError(); this.errorBar.classList.add('hidden'); this.save(); if (this.engine) this.showStaleBanner(); },
     });
 
@@ -523,6 +529,35 @@ export class Editor {
     this.code.setFontSize(s);
   }
 
+  /** "Switch to MicroPython / Arduino C++" for boards that can run both. */
+  languageMenuItem() {
+    const board = this.boardPart();
+    const def = board && getDef(board.type);
+    if (!def || !def.board || boardLangs(def.board).length < 2) return [];
+    const toPy = this.project.lang !== 'python';
+    return [{ icon: 'code', label: toPy ? 'Switch to MicroPython' : 'Switch to Arduino C++', action: () => this.switchLanguage(toPy ? 'python' : 'cpp') }];
+  }
+
+  async switchLanguage(lang) {
+    const board = this.boardPart();
+    if (!(await confirmDialog(lang === 'python' ? 'Switch to MicroPython?' : 'Switch to Arduino C++?', 'The code in the editor is replaced by a starter program for the new language. The circuit stays as it is.', 'Switch'))) return;
+    this.stop();
+    this.project.lang = lang;
+    this.project.code = starterCode(board.type, lang);
+    this.code.setLang(lang);
+    this.code.value = this.project.code;
+    const label = this.codeFile && this.codeFile.querySelector('span');
+    if (label) label.textContent = lang === 'python' ? 'main.py' : 'sketch.ino';
+    this.updateBoardChip();
+    this.saveNow();
+    toast(lang === 'python' ? 'MicroPython project' : 'Arduino C++ project', 'ok');
+  }
+
+  updateBoardChip() {
+    const board = this.boardPart();
+    this.boardChip.textContent = board ? getDef(board.type).name + (this.project.lang === 'python' ? ' · MicroPython' : '') : 'No board';
+  }
+
   showBoardInfo() {
     const b = this.boardPart();
     if (!b) { this.addComponent(); return; }
@@ -552,7 +587,8 @@ export class Editor {
       { icon: 'save', label: 'Save', action: () => { this.saveNow(); toast('Project saved', 'ok'); } },
       { icon: 'edit', label: 'Rename', action: () => this.rename() },
       { icon: 'download', label: 'Export project (.rapti)', action: () => this.exportProject() },
-      { icon: 'code', label: 'Export sketch (.ino)', action: () => Native.saveFile(safeName(this.project.name) + '.ino', 'text/plain', this.project.code).then((ok) => ok && toast('Sketch exported', 'ok')) },
+      { icon: 'code', label: this.project.lang === 'python' ? 'Export program (.py)' : 'Export sketch (.ino)', action: () => Native.saveFile(safeName(this.project.name) + (this.project.lang === 'python' ? '.py' : '.ino'), 'text/plain', this.project.code).then((ok) => ok && toast('Code exported', 'ok')) },
+      ...this.languageMenuItem(),
       { icon: 'share', label: 'Share code', action: () => Native.shareText(this.project.name, this.project.code) },
       '-',
       { icon: 'chip', label: 'Board info', action: () => this.showBoardInfo() },
@@ -587,7 +623,7 @@ export class Editor {
     this.errorBar.classList.add('hidden');
     this.warnings = [];
     this.serial.clear();
-    this.usesSerial = sketchUsesSerial(this.project.code);
+    this.usesSerial = sketchUsesSerial(this.project.code, this.project.lang);
     this.serialSeen = false;
     this.audio.resume();
     const engine = new SimEngine(this.project, {

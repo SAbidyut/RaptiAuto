@@ -12,6 +12,7 @@ import { logoMark, wordmark } from './brand.js';
 import { aboutPage, RAPTI } from './about.js';
 import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
+import { boardLangs } from '../sim/py/index.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
 import { LAB_EXAMPLES, buildExample } from '../plc/examples.js';
 import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
@@ -557,7 +558,16 @@ export class Shell {
     }
     const def = getDef(boardType);
     const n = listProjects().length + 1;
-    const p = createProject(boardType, `${def.name.replace('Arduino ', '')} project ${n}`);
+    let lang = 'cpp';
+    if (boardLangs(def.board).length > 1) {
+      lang = await dialog({
+        title: 'Programming language',
+        body: `<p>${escapeHtml(def.name)} can be programmed in Arduino C++ or in MicroPython.</p>`,
+        actions: [{ label: 'Arduino C++', value: 'cpp', cls: 'btn-ghost' }, { label: 'MicroPython', value: 'python', cls: 'btn-primary' }],
+      });
+      if (!lang) return;
+    }
+    const p = createProject(boardType, `${def.name.replace('Arduino ', '')} project ${n}`, lang);
     saveProject(p);
     this.app.openProject(p);
   }

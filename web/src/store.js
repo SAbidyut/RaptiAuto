@@ -79,10 +79,17 @@ void loop() {
 `,
 };
 
-/** New Arduino-side project. `lang` is 'cpp' (Arduino C/C++) or 'python' (MicroPython / Pi Python). */
-export function createProject(boardType = 'uno-r3', name = 'My Project', lang = 'cpp') {
+/** Starter program for a board in the given language ('cpp' or 'python'). */
+export function starterCode(boardType, lang = 'cpp') {
   const def = getDef(boardType);
   const arch = def && def.board ? def.board.arch : 'avr';
+  if (lang === 'python') return defaultPythonCode(def && def.board);
+  if (arch === 'xtensa') return DEFAULT_CODE.esp32;
+  return boardType === 'attiny85' ? DEFAULT_CODE.avr.replace(/\s*Serial\.[^\n]*\n/g, '\n') : DEFAULT_CODE.avr;
+}
+
+/** New Arduino-side project. `lang` is 'cpp' (Arduino C/C++) or 'python' (MicroPython / Pi Python). */
+export function createProject(boardType = 'uno-r3', name = 'My Project', lang = 'cpp') {
   const p = normalize({
     id: newId('prj'),
     name,
@@ -90,7 +97,7 @@ export function createProject(boardType = 'uno-r3', name = 'My Project', lang = 
     parts: [{ id: newId('p'), type: boardType, x: 0, y: 0, rot: 0, props: {} }],
     wires: [],
     lang: lang === 'python' ? 'python' : 'cpp',
-    code: lang === 'python' ? defaultPythonCode(def && def.board) : arch === 'xtensa' ? DEFAULT_CODE.esp32 : (boardType === 'attiny85' ? DEFAULT_CODE.avr.replace(/\s*Serial\.[^\n]*\n/g, '\n') : DEFAULT_CODE.avr),
+    code: starterCode(boardType, lang),
   });
   return p;
 }

@@ -4,6 +4,8 @@ import { getDef, partProps, pinsOf } from '../components/registry.js';
 import { buildNetlist, pinKey } from './netlist.js';
 import { Solver, VSource, Diode } from './circuit/solver.js';
 import { SketchRunner } from './lang/runtime.js';
+import { PyRunner } from './py/runner.js';
+import { boardLangs } from './py/index.js';
 import { makeCore } from './lang/core.js';
 import { makeLibraries } from './libs/index.js';
 
@@ -205,18 +207,30 @@ export class SimEngine {
     }
     const engine = this;
     const board = this.board;
-    this.runner = new SketchRunner({
-      code: this.project.code,
-      board,
-      macros: { ...board.macros, ...timeMacros() },
-      natives: (rt) => {
-        const n = makeCore(rt, engine, board);
-        makeLibraries(n, rt, engine, board);
-        engine.natives = n;
-        return n;
-      },
-      onWarning: (m) => this.warn(m, null),
-    });
+    if (this.project.lang === 'python') {
+      if (!boardLangs(board).includes('python')) {
+        return { ok: false, error: { message: `${board.name} cannot run Python — use MicroPython on an ESP32, ESP8266 or Raspberry Pi Pico, or switch this project to Arduino C++.`, line: 0, col: 0 } };
+      }
+      this.runner = new PyRunner({
+        code: this.project.code, board, hw: engine,
+        onWarning: (m) => this.warn(m, null),
+        print: (text) => engine.serialOut('Serial', text),
+      });
+      this.natives = this.runner.natives;
+    } else {
+      this.runner = new SketchRunner({
+        code: this.project.code,
+        board,
+        macros: { ...board.macros, ...timeMacros() },
+        natives: (rt) => {
+          const n = makeCore(rt, engine, board);
+          makeLibraries(n, rt, engine, board);
+          engine.natives = n;
+          return n;
+        },
+        onWarning: (m) => this.warn(m, null),
+      });
+    }
     const res = this.runner.compile();
     if (!res.ok) return res;
     this.rt = this.runner.rt;

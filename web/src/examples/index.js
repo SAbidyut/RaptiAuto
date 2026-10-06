@@ -5,6 +5,7 @@ import * as sensors from './sensors.js';
 import * as displays from './displays.js';
 import * as motors from './motors.js';
 import * as projects from './projects.js';
+import * as python from './python.js';
 import * as extA from './ext-a.js';
 import * as extB from './ext-b.js';
 
@@ -44,5 +45,6 @@ export function addExamples(list) {
   }
 }
 addExamples(builders);
+addExamples(python.BUILDERS);
 addExamples(extA.BUILDERS);
 addExamples(extB.BUILDERS);

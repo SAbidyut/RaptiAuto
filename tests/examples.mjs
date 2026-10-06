@@ -51,6 +51,16 @@ const CHECKS = {
   'buzzer-melody': { ms: 3000 },
   'ir-remote': { ms: 2000, act: { 600: ['ir', 'ir', 0x0c] }, serial: ['Button'] },
   'rotary-encoder': { ms: 1500, act: { 300: ['enc', 'rotate', 1], 500: ['enc', 'rotate', 1], 700: ['enc', 'rotate', -1] }, serial: ['Position: 2', 'Position: 1'] },
+  'py-blink': { ms: 1800, serial: ['LED on', 'LED off', 'LED on'] },
+  'py-pico-blink': { ms: 1500, serial: ['blink 1', 'blink 2', 'blink 3'] },
+  'py-button-led': { ms: 1500, act: { 400: ['btn', 'press', true], 600: ['btn', 'press', false], 900: ['btn', 'press', true], 1100: ['btn', 'press', false] }, serial: ['LED ON', 'LED OFF'], check: (e) => expect(!lit(e, 'led'), 'led should be off after the second press') },
+  'py-pwm-fade': { ms: 1500, check: (e) => expect(part(e, 'led').visual.b > 0.01, 'led b=' + part(e, 'led').visual.b) },
+  'py-adc-pot': { ms: 2000, act: { 600: ['pot', 'knob', 1] }, serial: ['raw=', ' V ', 'raw=4095'] },
+  'py-dht22': { ms: 2600, serial: ['Temp: 24.0 C  Humidity: 55.0 %'] },
+  'py-oled': { ms: 1500, serial: ['I2C devices: [\'0x3c\']'], check: (e) => { const n = part(e, 'oled').visual.dev.fb.reduce((a, b) => a + b, 0); return expect(n > 150, 'oled px=' + n); } },
+  'py-neopixel': { ms: 1000, check: (e) => { const px = part(e, 'ring').visual.px; return expect(new Set(px).size > 8, 'px=' + px.slice(0, 4)); } },
+  'py-servo': { ms: 2500, check: (e) => expect(part(e, 'servo').visual.angle > 30, 'angle=' + part(e, 'servo').visual.angle) },
+  'py-timer-irq': { ms: 1600, act: { 300: ['btn', 'press', true], 450: ['btn', 'press', false], 900: ['btn', 'press', true], 1050: ['btn', 'press', false] }, serial: ['Button pressed 1 times', 'Button pressed 2 times'] },
   'rtc-clock': { ms: 2500, check: (e) => expect(/^\w{3} \d\d\/\d\d\/20\d\d$/.test(lcdRow(e, 'lcd', 0)) && /^ {4}\d\d:\d\d:\d\d$/.test(lcdRow(e, 'lcd', 1)), `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0) + '|' + lcdRow(e, 'lcd', 1))}`) },
 };
 
@@ -75,7 +85,7 @@ for (const ex of EXAMPLES) {
   const chk = CHECKS[ex.id] || { ms: 1500 };
   let serial = '';
   const warns = [], errors = [];
-  const eng = new SimEngine({ code: ex.code, parts: ex.parts, wires: ex.wires, board: ex.board }, {
+  const eng = new SimEngine({ code: ex.code, parts: ex.parts, wires: ex.wires, board: ex.board, lang: ex.lang }, {
     onSerial: (port, t) => { serial += t; },
     onWarning: (m) => warns.push(typeof m === 'string' ? m : m.text || m.message || JSON.stringify(m)),
     onError: (e) => errors.push(typeof e === 'string' ? e : e.message || JSON.stringify(e)),

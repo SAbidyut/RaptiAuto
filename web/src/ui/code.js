@@ -3,6 +3,7 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
 import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo, cursorCharLeft, cursorCharRight, cursorLineUp, cursorLineDown, selectAll, toggleComment } from '@codemirror/commands';
 import { cpp } from '@codemirror/lang-cpp';
+import { python } from '@codemirror/lang-python';
 import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching, foldGutter, indentUnit } from '@codemirror/language';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippetCompletion } from '@codemirror/autocomplete';
 import { lintGutter, setDiagnostics } from '@codemirror/lint';
@@ -70,6 +71,54 @@ function arduinoCompletions(context) {
   for (const [label, tpl, info] of SNIPPETS) options.push(snippetCompletion(tpl, { label, detail: info, type: 'keyword', boost: 1 }));
   for (const [label, tpl, info] of LIB_SNIPPETS) options.push(snippetCompletion(tpl, { label, detail: info, type: 'class' }));
   for (const k of KEYWORDS) options.push({ label: k, type: /^[A-Z]/.test(k) ? 'constant' : 'keyword' });
+  return { from: word.from, options, validFor: /^[\w.]*$/ };
+}
+
+const PY_FUNCS = [
+  ['print', 'print(${"Hello"})', 'Print to the Serial Monitor'],
+  ['input', 'input(${"prompt: "})', 'Read a line typed in the Serial Monitor'],
+  ['Pin', 'Pin(${2}, Pin.OUT)', 'machine.Pin — a GPIO pin'],
+  ['Pin.IN', 'Pin(${14}, Pin.IN, Pin.PULL_UP)', 'Input with pull-up'],
+  ['pin.value', '${pin}.value(${1})', 'Read (no argument) or write a pin'],
+  ['pin.on', '${led}.on()', 'Pin high'],
+  ['pin.off', '${led}.off()', 'Pin low'],
+  ['pin.toggle', '${led}.toggle()', 'Invert the pin'],
+  ['pin.irq', '${pin}.irq(trigger=Pin.IRQ_FALLING, handler=${callback})', 'Run a function on a pin change'],
+  ['ADC', 'ADC(Pin(${34}))', 'machine.ADC — analog input'],
+  ['adc.read_u16', '${adc}.read_u16()', 'Analog value 0–65535'],
+  ['adc.read', '${adc}.read()', 'Analog value (ESP32 0–4095)'],
+  ['PWM', 'PWM(Pin(${15}), freq=${1000}, duty_u16=${32768})', 'machine.PWM — PWM output'],
+  ['Timer', 'Timer(${0}).init(period=${1000}, mode=Timer.PERIODIC, callback=${tick})', 'Periodic timer callback'],
+  ['I2C', 'I2C(${0}, scl=Pin(${22}), sda=Pin(${21}))', 'machine.I2C bus'],
+  ['i2c.scan', '${i2c}.scan()', 'List the I²C device addresses'],
+  ['time.sleep', 'time.sleep(${1})', 'Pause for seconds'],
+  ['time.sleep_ms', 'time.sleep_ms(${500})', 'Pause for milliseconds'],
+  ['time.sleep_us', 'time.sleep_us(${10})', 'Pause for microseconds'],
+  ['time.ticks_ms', 'time.ticks_ms()', 'Millisecond counter'],
+  ['time.ticks_diff', 'time.ticks_diff(time.ticks_ms(), ${start})', 'Difference of two tick values'],
+  ['NeoPixel', 'NeoPixel(Pin(${5}), ${8})', 'neopixel.NeoPixel strip'],
+  ['DHT22', 'dht.DHT22(Pin(${4}))', 'DHT22 sensor'],
+  ['SSD1306_I2C', 'SSD1306_I2C(128, 64, ${i2c})', 'OLED display on I²C'],
+  ['random.randint', 'random.randint(${1}, ${6})', 'Random integer'],
+];
+const PY_SNIPPETS = [
+  ['import-machine', 'from machine import Pin\nimport time\n', 'machine + time'],
+  ['while-true', 'while True:\n    ${}\n', 'forever loop'],
+  ['for-range', 'for ${i} in range(${10}):\n    ${}\n', 'for loop'],
+  ['if', 'if ${condition}:\n    ${}\n', 'if statement'],
+  ['ifelse', 'if ${condition}:\n    ${}\nelse:\n    pass\n', 'if / else'],
+  ['def', 'def ${name}(${args}):\n    ${}\n', 'function'],
+  ['try', 'try:\n    ${}\nexcept ${Exception} as e:\n    print(e)\n', 'try / except'],
+  ['class', 'class ${Name}:\n    def __init__(self):\n        ${}\n', 'class'],
+];
+const PY_WORDS = ['True', 'False', 'None', 'and', 'or', 'not', 'in', 'is', 'lambda', 'return', 'break', 'continue', 'pass', 'global', 'import', 'from', 'machine', 'time', 'Pin.OUT', 'Pin.IN', 'Pin.PULL_UP', 'Pin.PULL_DOWN', 'Pin.IRQ_RISING', 'Pin.IRQ_FALLING', 'Timer.PERIODIC', 'Timer.ONE_SHOT', 'ADC.ATTN_11DB'];
+function pythonCompletions(context) {
+  const word = context.matchBefore(/[\w.]+/);
+  if (!word || (word.from === word.to && !context.explicit)) return null;
+  const options = [];
+  for (const [label, tpl, info] of PY_FUNCS) options.push(snippetCompletion(tpl, { label, detail: info, type: 'function', boost: 3 }));
+  for (const [label, tpl, info] of PY_SNIPPETS) options.push(snippetCompletion(tpl, { label, detail: info, type: 'keyword', boost: 1 }));
+  for (const k of PY_WORDS) options.push({ label: k, type: /^[A-Z]/.test(k) ? 'constant' : 'keyword' });
   return { from: word.from, options, validFor: /^[\w.]*$/ };
 }
 
@@ -152,9 +201,14 @@ const execLineField = StateField.define({
 const SYMBOLS = ['{', '}', '(', ')', ';', '[', ']', '<', '>', '=', '"', "'", '+', '-', '*', '/', '&', '|', '!', '#', ',', '.', ':', '_', '%', '\\'];
 
 export class CodeEditor {
-  constructor(host, { code, onChange, fontSize = 14, readOnly = false }) {
+  constructor(host, { code, onChange, fontSize = 14, readOnly = false, lang = 'cpp' }) {
     this.host = host;
     this.onChange = onChange;
+    this.lang = lang === 'python' ? 'python' : 'cpp';
+    this.langC = new Compartment();
+    this.hlC = new Compartment();
+    this.compC = new Compartment();
+    this.indentC = new Compartment();
     this.readOnly = new Compartment();
     this.wrap = h('div', { class: 'code-wrap' });
     this.cmHost = h('div', { class: 'code-cm' });
@@ -168,11 +222,11 @@ export class CodeEditor {
         doc: code,
         extensions: [
           lineNumbers(), highlightActiveLineGutter(), foldGutter(), history(), drawSelection(), indentOnInput(), bracketMatching(),
-          closeBrackets(), autocompletion({ override: [arduinoCompletions], activateOnTyping: true, icons: false }), highlightActiveLine(),
-          highlightSelectionMatches(), lintGutter(), indentUnit.of('  '), EditorState.tabSize.of(2),
+          closeBrackets(), this.compC.of(autocompletion({ override: [this.lang === 'python' ? pythonCompletions : arduinoCompletions], activateOnTyping: true, icons: false })), highlightActiveLine(),
+          highlightSelectionMatches(), lintGutter(), this.indentC.of(indentUnit.of(this.lang === 'python' ? '    ' : '  ')), EditorState.tabSize.of(this.lang === 'python' ? 4 : 2),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
             { key: 'Mod-/', run: toggleComment }]),
-          cpp(), syntaxHighlighting(highlight), arduinoHighlighter, theme, execLineField,
+          this.langC.of(this.lang === 'python' ? python() : cpp()), syntaxHighlighting(highlight), this.hlC.of(this.lang === 'python' ? [] : arduinoHighlighter), theme, execLineField,
           EditorView.lineWrapping,
           this.readOnly.of(EditorState.readOnly.of(readOnly)),
           EditorView.updateListener.of((u) => { if (u.docChanged && this.onChange) this.onChange(u.state.doc.toString()); }),
@@ -186,7 +240,7 @@ export class CodeEditor {
     const bar = h('div', { class: 'symbol-bar' });
     const ins = (txt) => () => {
       const v = this.view;
-      if (txt === '\t') { v.dispatch(v.state.replaceSelection('  ')); v.focus(); return; }
+      if (txt === '\t') { v.dispatch(v.state.replaceSelection(this.lang === 'python' ? '    ' : '  ')); v.focus(); return; }
       v.dispatch(v.state.replaceSelection(txt));
       v.focus();
     };
@@ -203,7 +257,8 @@ export class CodeEditor {
     bar.appendChild(btn(icon('arrowUp', 18), () => { cursorLineUp(this.view); this.view.focus(); }, 'sym-icon'));
     bar.appendChild(btn(icon('arrowDown', 18), () => { cursorLineDown(this.view); this.view.focus(); }, 'sym-icon'));
     for (const s of SYMBOLS) bar.appendChild(btn(s, ins(s)));
-    bar.appendChild(btn('//', () => { toggleComment(this.view); this.view.focus(); }));
+    this.commentBtn = btn(this.lang === 'python' ? '#' : '//', () => { toggleComment(this.view); this.view.focus(); });
+    bar.appendChild(this.commentBtn);
     bar.appendChild(btn(icon('undo', 18), () => { undo(this.view); this.view.focus(); }, 'sym-icon'));
     bar.appendChild(btn(icon('redo', 18), () => { redo(this.view); this.view.focus(); }, 'sym-icon'));
     return bar;
@@ -213,6 +268,22 @@ export class CodeEditor {
   set value(v) {
     if (v === this.value) return;
     this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: v } });
+  }
+
+  /** Switches the editor between Arduino C++ and Python (highlighting, completion, indentation). */
+  setLang(lang) {
+    lang = lang === 'python' ? 'python' : 'cpp';
+    if (lang === this.lang) return;
+    this.lang = lang;
+    this.view.dispatch({
+      effects: [
+        this.langC.reconfigure(lang === 'python' ? python() : cpp()),
+        this.hlC.reconfigure(lang === 'python' ? [] : arduinoHighlighter),
+        this.compC.reconfigure(autocompletion({ override: [lang === 'python' ? pythonCompletions : arduinoCompletions], activateOnTyping: true, icons: false })),
+        this.indentC.reconfigure(indentUnit.of(lang === 'python' ? '    ' : '  ')),
+      ],
+    });
+    if (this.commentBtn) this.commentBtn.textContent = lang === 'python' ? '#' : '//';
   }
 
   setFontSize(px) { this.wrap.style.setProperty('--code-size', px + 'px'); this.fontSize = px; }
