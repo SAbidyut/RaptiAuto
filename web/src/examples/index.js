@@ -5,6 +5,8 @@ import * as sensors from './sensors.js';
 import * as displays from './displays.js';
 import * as motors from './motors.js';
 import * as projects from './projects.js';
+import * as extA from './ext-a.js';
+import * as extB from './ext-b.js';
 
 export const EXAMPLE_CATEGORIES = [
   { id: 'basics', name: 'Basics' },
@@ -13,6 +15,10 @@ export const EXAMPLE_CATEGORIES = [
   { id: 'motors', name: 'Motors' },
   { id: 'iot', name: 'ESP32 & Pico' },
   { id: 'electrical', name: 'Electrical' },
+  { id: 'comm', name: 'Communication' },
+  { id: 'robotics', name: 'Robotics' },
+  { id: 'smart', name: 'Smart home & IoT' },
+  { id: 'python', name: 'MicroPython & Pi' },
 ];
 
 const builders = [
@@ -38,3 +44,5 @@ export function addExamples(list) {
   }
 }
 addExamples(builders);
+addExamples(extA.BUILDERS);
+addExamples(extB.BUILDERS);
