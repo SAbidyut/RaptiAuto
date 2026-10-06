@@ -4,6 +4,15 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## What's new in 3.0
+
+- **MicroPython** on the ESP32, ESP8266 NodeMCU and Raspberry Pi Pico: a Python interpreter written for the simulator (functions, classes, closures, comprehensions, f-strings, `try / except`, `lambda` …) with `machine` (Pin + interrupts, ADC, PWM, Timer, I2C, UART, SPI), `time`, `neopixel`, `dht`, `ssd1306`, `onewire` / `ds18x20`, `hcsr04`, `math`, `random`, `json`, `sys`, `gc`. Pick the language when you create a project or use **⋮ → Switch to MicroPython**. 12 MicroPython examples (blink, button, PWM, ADC, DHT22, OLED, NeoPixel, servo, timer + IRQ, Bluetooth, GPS).
+- **Instruments:** 4-channel **oscilloscope** (exact levels, PWM, tone and servo pulses, frequency / duty / Vpp readout, CH1 trigger, time/div), 8-channel **logic analyzer**, **logic probe** with frequency counter and a **function generator** (sine / square / triangle / sawtooth, 0.1 Hz – 20 kHz).
+- **New parts:** 7805 / 7812 / AMS1117 regulators, BMP280 pressure sensor (`Adafruit_BMP280`), ACS712 current sensor, 0–25 V voltage sensor, 8-way DIP switch, optocoupler, TB6612FNG motor driver, solenoid, **HC-05 Bluetooth with a virtual phone**, **NEO-6M GPS** (NMEA, map panel) and a two-wheel **robot car** that drives around an arena. `SoftwareSerial`, `Serial1/2` and `machine.UART` talk to the Bluetooth and GPS modules.
+- **Delta PLC Lab:** six new lab exercises — star-delta starter, bottle filling, tank level with HMI, alarm annunciator, step-ladder (STL) sequence and an automatic VFD speed cycle — and the exercise gallery is grouped by topic.
+- **App:** project **folders**, a **Quiz** (electronics, Arduino, MicroPython, PLC / VFD) and edge-to-edge full screen on Android (the WebView is never resized when the system bars hide).
+- The simulator solves **DC** circuits: capacitors, RC filters and 555 timers are not simulated over time. The oscilloscope shows what your code and the function generator produce.
+
 ## Delta PLC Lab (new in 2.0)
 
 A virtual industrial-automation trainer with Delta equipment, built for touch screens:
@@ -30,7 +39,7 @@ A virtual industrial-automation trainer with Delta equipment, built for touch sc
 ## Features
 
 - **Boards:** Arduino Uno R3, Uno R4 Minima, Uno R4 WiFi (12×8 LED matrix), Nano, Mega 2560, Leonardo, ESP32 DevKit, NodeMCU ESP8266, Raspberry Pi Pico, STM32 Blue Pill, ATtiny85.
-- **80+ components:** LEDs, RGB LEDs, resistors, buttons, switches, potentiometers, transistors, MOSFETs, diodes, batteries, multimeter, LCD 16×2 (parallel and I²C), OLED SSD1306, TM1637, MAX7219, 7-segment, NeoPixel, keypad, joystick, rotary encoder, IR remote, HC-SR04, DHT11/22, PIR, LM35, DS18B20, MPU6050, RTC, gas, soil, flame, sound and rain sensors, servo, DC motor, 28BYJ-48 and A4988 steppers, relay, L298N, 74HC595, and more.
+- **90+ components:** LEDs, RGB LEDs, resistors, buttons, switches, potentiometers, transistors, MOSFETs, diodes, batteries, multimeter, LCD 16×2 (parallel and I²C), OLED SSD1306, TM1637, MAX7219, 7-segment, NeoPixel, keypad, joystick, rotary encoder, IR remote, HC-SR04, DHT11/22, PIR, LM35, DS18B20, MPU6050, RTC, gas, soil, flame, sound and rain sensors, servo, DC motor, 28BYJ-48 and A4988 steppers, relay, L298N, 74HC595, and more.
 - **Real simulation:** an Arduino C/C++ interpreter (`setup`/`loop`, `millis`, interrupts, `String`, `Serial`, `EEPROM`) and a DC circuit solver. LEDs burn out without a resistor, short circuits are detected, and floating inputs read noise.
 - **Libraries:** Servo, LiquidCrystal(_I2C), Adafruit SSD1306/GFX, Adafruit NeoPixel, TM1637Display, LedControl, DHT, OneWire + DallasTemperature, Adafruit MPU6050, RTClib, Keypad, IRremote, Stepper, AccelStepper, NewPing, Arduino_LED_Matrix.
 - **Touch gestures (Arduino and PLC alike):** pinch to zoom, or double-tap, hold and slide down / up to zoom in / out like Google Maps (a plain double tap on empty space zooms in). **AutoCAD-style selection:** with the Select tool (dashed box), or by pressing and holding on an empty spot and then dragging, drag to the right for a solid blue *window* (selects what is completely inside) or to the left for a dashed green *crossing* box (selects everything it touches). Tapping with the Select tool adds or removes single items. Selected parts can be moved together, copied (with the wires between them) or deleted; selected PLC wires can be recoloured or deleted together.
@@ -54,6 +63,9 @@ Other scripts:
 | --- | --- |
 | `node tests/examples.mjs` | Run every example headless, with functional checks |
 | `node tests/devices.mjs` | Device and library tests |
+| `node tests/pylang.mjs` | MicroPython interpreter: language semantics, built-ins, errors |
+| `node tests/instruments.mjs` | Oscilloscope, logic analyzer, logic probe, function generator |
+| `node tests/parts3.mjs` | 3.0 parts: regulator, BMP280, ACS712, TB6612, HC-05, GPS, robot car … |
 | `node tests/plc.mjs` | PLC lab: ladder/IL, CPU, Modbus, VFD, wiring and full lab simulations |
 | `node tests/schematic.mjs` | 2D wiring schematic: layout, wire routing through the ducts, window / crossing selection |
 | `node tests/routing.mjs` | 3D cable routing: no cable through a device, the console or the bench, no two cables overlapping, duct runs inside the ducts |
@@ -64,6 +76,8 @@ Other scripts:
 
 - `android/`: the native shell (a WebView with an asset server, a JS bridge for fullscreen, files, sharing and haptics).
 - `web/src/sim/lang/`: the C++ preprocessor, parser, compiler and runtime.
+- `web/src/sim/py/`: the MicroPython interpreter (lexer, parser, closure compiler, built-ins) and the `machine` / driver modules.
+- `web/src/sim/probe.js`: signal recorder shared by the oscilloscope, logic analyzer and logic probe.
 - `web/src/sim/`: the circuit solver, netlist, simulation engine and libraries.
 - `web/src/components/`: component definitions (artwork plus simulation models).
 - `web/src/ui/`: the app screens.

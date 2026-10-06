@@ -41,6 +41,7 @@ const samples = (pts, step = 2) => {
 };
 
 for (const ex of LAB_EXAMPLES) {
+  if (process.argv[2] && !ex.id.includes(process.argv[2])) continue;
   const p = buildExample(ex.id);
   const layout = layoutDevices(p.devices);
   const { routes, mains } = routeLab(p, layout);

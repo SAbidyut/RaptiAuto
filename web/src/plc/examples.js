@@ -379,31 +379,29 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'alarm-annunciator', category: 'basics', name: 'Alarm annunciator with acknowledge', level: 'intermediate', tags: ['SET / RST', 'M1013', 'Edge'],
-    description: 'Three alarm inputs (selectors). A new alarm makes its lamp flash and sounds the horn; ACK makes the lamp steady and silences the horn; when the input returns to normal the lamp goes out.',
+    description: 'Two alarm inputs (selectors). A new alarm makes its lamp flash and sounds the horn; ACK makes the lamp steady and silences the horn; when the input returns to normal the lamp goes out.',
     build() {
       const b = builder();
       base(b);
       b.dev('a1', 'selector', { label: 'TEMP HIGH', pos0: 'OK', pos1: 'ALARM' }, { on: false });
-      b.dev('a2', 'selector', { label: 'PRESSURE', pos0: 'OK', pos1: 'ALARM' }, { on: false });
-      b.dev('a3', 'selector', { label: 'DOOR OPEN', pos0: 'OK', pos1: 'ALARM' }, { on: false });
+      b.dev('a2', 'selector', { label: 'DOOR OPEN', pos0: 'OK', pos1: 'ALARM' }, { on: false });
       b.dev('ack', 'pb', { label: 'ACK', color: 'blue', contact: 'NO' });
       b.dev('l1', 'lamp', { label: 'TEMP', color: 'red' });
-      b.dev('l2', 'lamp', { label: 'PRESS', color: 'red' });
-      b.dev('l3', 'lamp', { label: 'DOOR', color: 'yellow' });
+      b.dev('l2', 'lamp', { label: 'DOOR', color: 'yellow' });
       b.dev('horn', 'buzzer', { label: 'HORN' });
-      b.w('psu', '+V1', 'a1', '13'); b.w('a1', '13', 'a2', '13', '#dc2626'); b.w('a2', '13', 'a3', '13', '#dc2626'); b.w('a3', '13', 'ack', '13', '#dc2626');
-      b.w('a1', '14', 'plc', 'X0'); b.w('a2', '14', 'plc', 'X1'); b.w('a3', '14', 'plc', 'X2'); b.w('ack', '14', 'plc', 'X3');
+      b.w('psu', '+V1', 'a1', '13'); b.w('a1', '13', 'a2', '13', '#dc2626'); b.w('a2', '13', 'ack', '13', '#dc2626');
+      b.w('a1', '14', 'plc', 'X0'); b.w('a2', '14', 'plc', 'X1'); b.w('ack', '14', 'plc', 'X2');
       b.w('plc', 'C0', 'psu', '+V2');
-      b.w('plc', 'Y0', 'l1', 'X1'); b.w('plc', 'Y1', 'l2', 'X1'); b.w('plc', 'Y2', 'l3', 'X1'); b.w('plc', 'Y3', 'horn', '+');
-      b.w('l1', 'X2', 'psu', '-V2'); b.w('l1', 'X2', 'l2', 'X2', '#1e3a8a'); b.w('l2', 'X2', 'l3', 'X2', '#1e3a8a'); b.w('l3', 'X2', 'horn', '-', '#1e3a8a');
+      b.w('plc', 'Y0', 'l1', 'X1'); b.w('plc', 'Y1', 'l2', 'X1'); b.w('plc', 'Y2', 'horn', '+');
+      b.w('l1', 'X2', 'psu', '-V2'); b.w('l1', 'X2', 'l2', 'X2', '#1e3a8a'); b.w('l2', 'X2', 'horn', '-', '#1e3a8a');
       const rows = [];
-      [[0, 10, 'Y0', 'Temperature'], [1, 11, 'Y1', 'Pressure'], [2, 12, 'Y2', 'Door']].forEach(([x, m, y, name]) => {
-        rows.push(rung(`${name}: ACK (X3) while the alarm is active acknowledges it (${'M' + m}); a normal input clears it`, [`X3 X${x} => SET M${m}`]));
-        rows.push(rung(`${name}: acknowledged flag is cleared when the input is back to normal`, [`/X${x} => RST M${m}`]));
+      [[0, 10, 'Y0', 'Temperature'], [1, 11, 'Y1', 'Door']].forEach(([x, m, y, name]) => {
+        rows.push(rung(`${name}: ACK (X2) while the alarm is active acknowledges it (M${m})`, [`X2 X${x} => SET M${m}`]));
+        rows.push(rung(`${name}: the acknowledged flag is cleared when the input is back to normal`, [`/X${x} => RST M${m}`]));
         rows.push(rung(`${name} lamp: flashing while unacknowledged, steady after ACK`, [`X${x} /M${m} M1013| => OUT ${y}`, `X${x} M${m} -`]));
       });
-      rows.push(rung('Horn: any alarm that is not acknowledged', ['X0 /M10| => OUT Y3', 'X1 /M11|', 'X2 /M12']));
-      const prog = program(rows, { X0: 'Temperature alarm', X1: 'Pressure alarm', X2: 'Door alarm', X3: 'ACK button', Y0: 'TEMP lamp', Y1: 'PRESS lamp', Y2: 'DOOR lamp', Y3: 'Horn', M10: 'Temp acknowledged', M11: 'Pressure acknowledged', M12: 'Door acknowledged' });
+      rows.push(rung('Horn: any alarm that is not acknowledged', ['X0 /M10| => OUT Y2', 'X1 /M11']));
+      const prog = program(rows, { X0: 'Temperature alarm', X1: 'Door alarm', X2: 'ACK button', Y0: 'TEMP lamp', Y1: 'DOOR lamp', Y2: 'Horn', M10: 'Temp acknowledged', M11: 'Door acknowledged' });
       return finish(this, b, prog);
     },
   },

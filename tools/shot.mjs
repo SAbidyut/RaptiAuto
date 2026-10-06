@@ -118,6 +118,34 @@ const scenarios = {
     await sleep(400);
     await page.screenshot({ path: join(outDir, `zoom-${id}${run ? '-run' : ''}.png`) });
   },
+  async pycode(page, id = 'py-button-led') {
+    await scenarios.example(page, id);
+    await page.click('.nav-tab[data-tab="code"]'); await sleep(500);
+    await page.screenshot({ path: join(outDir, `pycode-${id}.png`) });
+  },
+  async quiz(page) {
+    await scenarios.page(page, 'quiz');
+    await page.click('.quiz-topic >> nth=2'); await sleep(400);
+    await page.click('.quiz-opt >> nth=1'); await sleep(300);
+    await page.screenshot({ path: join(outDir, 'quiz-question.png') });
+  },
+  async folders(page) {
+    await scenarios.example(page, 'blink');
+    await page.evaluate(() => window.__rapti.editor.leave()); await sleep(500);
+    await scenarios.page(page, 'projects');
+    await page.click('.chip-add'); await sleep(500);
+    await page.fill('.dialog input', 'Classwork'); await page.click('.dialog .btn-primary'); await sleep(600);
+    await page.screenshot({ path: join(outDir, 'folders.png') });
+  },
+  async simctl(page, id = 'bluetooth-led', ms = 1500) {
+    const partId = { 'bluetooth-led': 'bt', 'gps-tracker': 'gps', 'scope-pwm': 'scope', 'robot-car-drive': 'car', 'fg-adc': 'fg' }[id] || 'bt';
+    // run an example, then open the simulation controls sheet of one part (virtual phone, GPS map, scope …)
+    await scenarios.example(page, id);
+    await page.click('.run-btn'); await sleep(+ms);
+    await page.evaluate((pid) => { const e = window.__rapti.editor; const part = e.project.parts.find((p) => p.id === pid); e.openSimControls(part); }, partId);
+    await sleep(800);
+    await page.screenshot({ path: join(outDir, `simctl-${id}.png`) });
+  },
   async about(page) { await scenarios.page(page, 'about'); await scenarios.page(page, 'about', 900); },
   // ---- Delta PLC lab
   async labopen(page, id = 'vfd-modbus-hmi') {

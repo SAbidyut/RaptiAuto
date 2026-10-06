@@ -73,8 +73,9 @@ export function aboutPage() {
     h('ul', { class: 'app-feats' },
       li('Arduino Uno R3 / R4, Nano, Mega, Leonardo, ESP32, ESP8266, Raspberry Pi Pico, STM32 Blue Pill, ATtiny85'),
       li('Real circuit physics: LEDs need resistors, shorts and overloads are detected'),
-      li('Arduino C++ runs on-device — Serial Monitor & Plotter included'),
-      li('Sensors, displays, motors, breadboards and 60+ parts with live animations'),
+      li('Arduino C++ and MicroPython run on-device — Serial Monitor & Plotter included'),
+      li('Oscilloscope, logic analyzer and function generator for your signals'),
+      li('Sensors, displays, motors, Bluetooth, GPS, robots and 90+ parts with live animations'),
       li('Delta PLC Lab in 3D: DVP PLC, DOP-107 HMI and MS300 VFD — wiring, ladder, HMI screens, Modbus'),
       li('Full-screen circuit and code editors made for touch')),
     h('p', { class: 'muted small' }, 'Information about RAPTI is taken from rapti.net.'));

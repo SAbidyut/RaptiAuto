@@ -68,7 +68,7 @@ export const LAB_TASKS = {
     { text: 'Switch TEMP HIGH to ALARM — its lamp flashes and the horn sounds', check: (c) => { const ok = !!(c.cpu && c.cpu.X[0] && c.rt('horn') && c.rt('horn').on && !c.cpu.M[10]); if (ok) c.memo.alarm = true; return !!c.memo.alarm; } },
     { text: 'Press ACK — the lamp turns steady and the horn is silent', check: (c) => { const ok = !!(c.memo.alarm && c.cpu && c.cpu.M[10] && c.rt('l1').on && !c.rt('horn').on); if (ok) c.memo.acked = true; return !!c.memo.acked; } },
     { text: 'Set the alarm back to OK — the lamp goes out', check: (c) => !!(c.memo.acked && c.cpu && !c.cpu.X[0] && !c.rt('l1').on) },
-    { text: 'Raise two alarms at once and acknowledge them together', check: (c) => !!(c.cpu && c.cpu.M[10] && c.cpu.M[11] && c.cpu.X[0] && c.cpu.X[1]) },
+    { text: 'Raise both alarms at once and acknowledge them together', check: (c) => !!(c.cpu && c.cpu.M[10] && c.cpu.M[11] && c.cpu.X[0] && c.cpu.X[1]) },
   ],
   'step-lights': [
     { text: 'Simulate and press START — the lamps chase 1 → 2 → 3', check: (c) => { const on = (id) => !!(c.rt(id) && c.rt(id).on); if (on('l1')) c.memo.a = true; if (on('l2')) c.memo.b = true; if (on('l3')) c.memo.c = true; return !!(c.memo.a && c.memo.b && c.memo.c); } },

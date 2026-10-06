@@ -23,7 +23,7 @@ export function saveProject(p) {
   const ok = safe(() => { localStorage.setItem(PKEY(p.id), JSON.stringify(p)); return true; }, false);
   const list = listProjects().filter((x) => x.id !== p.id);
   const board = p.parts.find((x) => getDef(x.type) && getDef(x.type).board);
-  list.unshift({ id: p.id, name: p.name, board: board ? board.type : null, updated: p.updated, parts: p.parts.length, example: p.fromExample || null });
+  list.unshift({ id: p.id, name: p.name, board: board ? board.type : null, updated: p.updated, parts: p.parts.length, example: p.fromExample || null, folder: p.folder || '', lang: p.lang === 'python' ? 'python' : 'cpp' });
   safe(() => localStorage.setItem(INDEX, JSON.stringify(list)));
   return ok;
 }
@@ -31,6 +31,52 @@ export function saveProject(p) {
 export function deleteProject(id) {
   safe(() => localStorage.removeItem(PKEY(id)));
   safe(() => localStorage.setItem(INDEX, JSON.stringify(listProjects().filter((x) => x.id !== id))));
+}
+
+// ---------------------------------------------------------------- folders (a project has an optional `folder` name)
+const FOLDERS = 'raptiauto.folders.v1';
+
+/** All folder names: those that hold projects plus the empty ones the user created. */
+export function listFolders() {
+  const saved = safe(() => JSON.parse(localStorage.getItem(FOLDERS) || '[]'), []);
+  const names = new Set(Array.isArray(saved) ? saved : []);
+  for (const m of listProjects()) if (m.folder) names.add(m.folder);
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
+function saveFolderNames(names) { safe(() => localStorage.setItem(FOLDERS, JSON.stringify(names))); }
+
+export function addFolder(name) {
+  const n = String(name || '').trim().slice(0, 40);
+  if (!n) return null;
+  const saved = safe(() => JSON.parse(localStorage.getItem(FOLDERS) || '[]'), []);
+  if (!saved.includes(n)) saveFolderNames([...saved, n]);
+  return n;
+}
+
+/** Moves every project from folder `from` to `to` ('' = no folder). Used for rename and delete. */
+export function renameFolder(from, to) {
+  const target = String(to || '').trim().slice(0, 40);
+  for (const m of listProjects()) {
+    if (m.folder !== from) continue;
+    const p = loadProject(m.id);
+    if (!p) continue;
+    p.folder = target;
+    const keep = p.updated;
+    saveProject(p);
+    void keep;
+  }
+  const saved = safe(() => JSON.parse(localStorage.getItem(FOLDERS) || '[]'), []).filter((x) => x !== from);
+  if (target && !saved.includes(target)) saved.push(target);
+  saveFolderNames(saved);
+}
+
+export function setProjectFolder(id, folder) {
+  const p = loadProject(id);
+  if (!p) return;
+  p.folder = String(folder || '').trim().slice(0, 40);
+  saveProject(p);
+  if (p.folder) addFolder(p.folder);
 }
 
 export function normalize(p) {
@@ -41,6 +87,7 @@ export function normalize(p) {
   p.id = p.id || newId('prj');
   p.settings = p.settings || {};
   p.lang = p.lang === 'python' ? 'python' : 'cpp';
+  p.folder = typeof p.folder === 'string' ? p.folder.trim().slice(0, 40) : '';
   for (const w of p.wires) { w.points = w.points || []; w.id = w.id || newId('w'); }
   return p;
 }

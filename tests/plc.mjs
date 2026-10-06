@@ -421,7 +421,7 @@ function taskRunner(id, mutate) {
   const { s, run } = sim('alarm-annunciator');
   const st = (a) => a.map((i) => (s.rts.get(i).on ? 1 : 0)).join('');
   run(400);
-  check('alarms: all quiet at first', st(['l1', 'l2', 'l3', 'horn']) === '0000');
+  check('alarms: all quiet at first', st(['l1', 'l2', 'horn']) === '000');
   s.act('a1', 'toggle'); let flashes = new Set(); for (let i = 0; i < 20; i++) { run(100); flashes.add(st(['l1'])); }
   check('alarms: new alarm flashes and sounds the horn', flashes.size === 2 && s.rts.get('horn').on);
   s.act('ack', 'press', true); run(100); s.act('ack', 'press', false); run(300);

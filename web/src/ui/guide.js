@@ -111,11 +111,52 @@ export const GUIDE = [
     ),
   },
   {
+    icon: 'code', title: 'MicroPython (new in 3.0)',
+    html: ol(
+      'Create a project for an <b>ESP32</b>, <b>NodeMCU ESP8266</b> or <b>Raspberry Pi Pico</b> and choose <b>MicroPython</b>. In an existing project use <b>⋮ → Switch to MicroPython</b>.',
+      'Write Python in the <b>Code</b> tab (<code>main.py</code>) — <code>from machine import Pin</code>, <code>time.sleep()</code>, <code>print()</code> and the rest of the basics work.',
+      'Press <b>Run</b>. <code>print()</code> and <code>input()</code> use the Serial Monitor; errors show the line and the Python exception.',
+    ) + ul(
+      '<b>machine</b>: Pin (value / irq), ADC (read, read_u16), PWM (freq, duty, duty_u16, duty_ns), Timer, I2C / SoftI2C, UART, SPI, WDT, RTC, time_pulse_us.',
+      '<b>time / utime</b>: sleep, sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff.',
+      'Drivers: <b>neopixel</b>, <b>dht</b> (DHT11 / DHT22), <b>ssd1306</b> (SSD1306_I2C with text, pixels, lines and rectangles), <b>onewire + ds18x20</b>, <b>hcsr04</b>, <b>math</b>, <b>random</b>, <b>json</b>, <b>sys</b>, <b>gc</b>, <b>os</b>.',
+      'The language includes functions, classes, closures, comprehensions, f-strings, <code>try / except</code>, lambda, default and keyword arguments. Generators (<code>yield</code>) and <code>async</code> are not supported.',
+    ) + tip('Open <b>Examples → MicroPython &amp; Pi</b>: blink, button, PWM fade, ADC, DHT22, OLED, NeoPixel, servo, timers + interrupts, Bluetooth and GPS.'),
+  },
+  {
+    icon: 'activity', title: 'Oscilloscope, logic analyzer & function generator',
+    html: ul(
+      'Find them in <b>Parts → Measurement</b>. Connect the channel pins to the signals and the <b>GND</b> pin to ground.',
+      '<b>Oscilloscope (4 ch)</b>: shows levels, <code>analogWrite()</code> PWM, <code>tone()</code>, servo pulses, MicroPython PWM and anything else once per frame. It measures frequency, duty and peak-to-peak. Tap it while running to change the time per division, freeze the trace (<i>Running</i>) or switch the CH1 rising-edge trigger.',
+      '<b>Logic analyzer (8 ch)</b>: D0–D7 as a timing diagram — great for bit-banged data, clocks and latches.',
+      '<b>Logic probe</b>: HI / LO / PULSE lamps plus frequency and duty.',
+      '<b>Function generator</b>: sine, square, triangle, sawtooth or DC from 0.1 Hz to 20 kHz. Below 20 Hz the circuit follows it live (an <code>analogRead()</code> sees the moving voltage); above that the circuit sees the average, while the scope shows the true wave.',
+    ) + tip('The simulator solves DC circuits: capacitors do not charge over time, so RC filters and 555 timers are not simulated. Instruments read the signals your code produces.'),
+  },
+  {
+    icon: 'wifi', title: 'Bluetooth, GPS and other new parts',
+    html: ul(
+      '<b>HC-05 Bluetooth</b> + <b>virtual phone</b>: wire <code>TXD → RX pin</code> and <code>RXD → TX pin</code> (SoftwareSerial, <code>Serial1/2</code> or <code>machine.UART</code>). While running, tap the module, press <b>Connect phone</b> and send text or the quick buttons (ON, OFF, FWD …). Edit the button list in the part properties.',
+      '<b>GPS NEO-6M</b>: sends NMEA sentences (GPGGA, GPRMC, GPGSA) at 9600 baud after a few seconds. Tap it to set the position, speed and heading, or drive it around on the map.',
+      '<b>SoftwareSerial</b> is now supported on every Arduino board.',
+      '<b>Power &amp; sensing</b>: 7805 / 7812 / AMS1117 regulator, ACS712 current sensor, 0–25 V voltage sensor, BMP280 (library <code>Adafruit_BMP280</code>).',
+      '<b>Drivers &amp; robots</b>: TB6612FNG motor driver, solenoid, 8-way DIP switch, optocoupler, and a two-wheel <b>robot car</b> that drives around an arena.',
+    ),
+  },
+  {
+    icon: 'folder', title: 'Folders & quiz',
+    html: ul(
+      '<b>My Projects</b> now has <b>folders</b>: tap <b>＋ Folder</b>, then open a project\'s <b>⋮ → Move to folder</b>. Rename or delete a folder with the buttons under the chips (projects are kept).',
+      '<b>Menu → Quiz</b>: multiple-choice questions on electronics, Arduino, MicroPython and PLC / VFD. Your best score for each topic is remembered.',
+      '<b>PLC Lab</b> exercises are grouped by topic (ladder basics, motor control, VFD, process, complete projects) with six new labs: star-delta starter, bottle filling, tank level with HMI, alarm annunciator, step-ladder sequence and an automatic VFD speed cycle.',
+    ),
+  },
+  {
     icon: 'book', title: 'Supported libraries',
     html: `<p>Use these <code>#include</code> libraries just like on a real board:</p><div class="gi-libs">${[
       'Servo', 'LiquidCrystal', 'LiquidCrystal_I2C', 'Wire', 'Adafruit_SSD1306', 'Adafruit_GFX', 'Adafruit_NeoPixel', 'TM1637Display', 'LedControl',
       'Arduino_LED_Matrix', 'DHT', 'DHTesp', 'NewPing', 'OneWire', 'DallasTemperature', 'Adafruit_MPU6050', 'MPU6050', 'RTClib', 'Keypad', 'IRremote',
-      'Stepper', 'AccelStepper', 'EEPROM',
+      'Stepper', 'AccelStepper', 'EEPROM', 'SoftwareSerial', 'Adafruit_BMP280',
     ].map((l) => `<span>${l}</span>`).join('')}</div>`,
   },
 ];

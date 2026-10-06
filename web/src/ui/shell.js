@@ -2,7 +2,7 @@
 // (Home, My Projects, Examples, Boards, Components, Guide, Settings, About RAPTI).
 import { getDef, allDefs, CATEGORIES, pinsOf, defaultProps } from '../components/registry.js';
 import { BOARD_TYPES } from '../components/boards.js';
-import { listProjects, loadProject, deleteProject, createProject, cloneProject, saveProject, importJSON, exportJSON } from '../store.js';
+import { listProjects, loadProject, deleteProject, createProject, cloneProject, saveProject, importJSON, exportJSON, listFolders, addFolder, renameFolder, setProjectFolder } from '../store.js';
 import { EXAMPLES, EXAMPLE_CATEGORIES } from '../examples/index.js';
 import { h, toast, popupMenu, confirmDialog, promptDialog, timeAgo, pushBack, Sheet, dialog } from './widgets.js';
 import { icon } from './icons.js';
@@ -11,6 +11,7 @@ import { projectPreview } from './preview.js';
 import { logoMark, wordmark } from './brand.js';
 import { aboutPage, RAPTI } from './about.js';
 import { GUIDE } from './guide.js';
+import { quizPage } from './quiz.js';
 import { Native } from '../native.js';
 import { boardLangs } from '../sim/py/index.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
@@ -24,6 +25,7 @@ export const PAGES = {
   examples: { title: 'Examples', icon: 'book' },
   boards: { title: 'Boards', icon: 'chip' },
   components: { title: 'Components', icon: 'layers' },
+  quiz: { title: 'Quiz', icon: 'award' },
   guide: { title: 'Guide', icon: 'help' },
   settings: { title: 'Settings', icon: 'settings' },
   about: { title: 'About RAPTI', icon: 'graduation' },
@@ -89,7 +91,7 @@ export class Shell {
     this.titleEl.innerHTML = '';
     if (this.page === 'home') this.titleEl.appendChild(h('div', { class: 'brand', html: `${logoMark(34, 'tb')}${wordmark()}` }));
     else this.titleEl.appendChild(h('h1', {}, PAGES[this.page].title));
-    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
+    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, quiz: this.pageQuiz, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
     fill.call(this, pageEl);
     this.host.innerHTML = '';
     this.host.append(pageEl, ...this.extras);
@@ -128,6 +130,7 @@ export class Shell {
         item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
         group('Help'),
         item('guide', 'Guide — how to use', 'help'),
+        item('quiz', 'Quiz', 'award'),
         item('settings', 'Settings', 'settings'),
         group('RAPTI'),
         item('about', 'About RAPTI', 'graduation'),
@@ -242,15 +245,41 @@ export class Shell {
     const list = h('div', { class: 'proj-list' });
     const search = searchBox('Search projects', (q) => draw(q));
     const projects = metas.map((m) => loadProject(m.id)).filter(Boolean);
-    const draw = (q = '') => {
+    const folders = listFolders();
+    if (this.projFolder && this.projFolder !== '*' && this.projFolder !== '-' && !folders.includes(this.projFolder)) this.projFolder = '*';
+    const chips = h('div', { class: 'chips-row' });
+    const folderBar = h('div', { class: 'folder-bar' });
+    let query = '';
+    const inFolder = (p) => (!this.projFolder || this.projFolder === '*' ? true : this.projFolder === '-' ? !p.folder : p.folder === this.projFolder);
+    const draw = (q = query) => {
+      query = q;
       list.innerHTML = '';
       const ql = q.trim().toLowerCase();
-      const shown = projects.filter((p) => !ql || p.name.toLowerCase().includes(ql));
+      const shown = projects.filter((p) => inFolder(p) && (!ql || p.name.toLowerCase().includes(ql)));
       for (const p of shown) list.appendChild(this.projectCard(p));
       if (!shown.length) list.appendChild(h('p', { class: 'muted center' }, 'No matching projects'));
     };
-    el.append(h('div', { class: 'page-tools' }, search, h('div', { class: 'muted small' }, `${projects.length} project${projects.length === 1 ? '' : 's'} on this phone`)), list);
+    const drawChips = () => {
+      chips.innerHTML = '';
+      const chip = (id, label, n) => chips.appendChild(h('button', { class: 'chip' + ((this.projFolder || '*') === id ? ' active' : ''), onclick: () => { this.projFolder = id; drawChips(); draw(); } },
+        label, n === undefined ? null : h('span', { class: 'chip-n' }, String(n))));
+      chip('*', 'All', projects.length);
+      if (folders.length) chip('-', 'No folder', projects.filter((p) => !p.folder).length);
+      for (const f of folders) chip(f, f, projects.filter((p) => p.folder === f).length);
+      chips.appendChild(h('button', { class: 'chip chip-add', html: `${icon('plus', 15)}<span>Folder</span>`, onclick: async () => {
+        const n = await promptDialog('New folder', '');
+        if (n && addFolder(n)) { this.projFolder = n.trim().slice(0, 40); this.render(true); }
+      } }));
+      folderBar.innerHTML = '';
+      if (this.projFolder && this.projFolder !== '*' && this.projFolder !== '-') {
+        folderBar.append(h('span', { class: 'muted small' }, `Folder “${this.projFolder}”`),
+          h('button', { class: 'btn btn-ghost sm', onclick: async () => { const n = await promptDialog('Rename folder', this.projFolder); if (n && n.trim() && n.trim() !== this.projFolder) { renameFolder(this.projFolder, n); this.projFolder = n.trim().slice(0, 40); this.render(true); } } }, 'Rename'),
+          h('button', { class: 'btn btn-danger-ghost sm', onclick: async () => { if (await confirmDialog('Delete folder?', `The projects in “${escapeHtml(this.projFolder)}” are kept and move to “No folder”.`, 'Delete folder', true)) { renameFolder(this.projFolder, ''); this.projFolder = '*'; this.render(true); } } }, 'Delete folder'));
+      }
+    };
+    el.append(h('div', { class: 'page-tools' }, search, chips, folderBar, h('div', { class: 'muted small' }, `${projects.length} project${projects.length === 1 ? '' : 's'} on this phone`)), list);
     this.extras.push(h('button', { class: 'fab fab-page', 'aria-label': 'New project', html: icon('plus', 26), onclick: () => this.newProject() }));
+    drawChips();
     draw();
   }
 
@@ -341,6 +370,8 @@ export class Shell {
     const sheet = new Sheet({ title: def.name, content, cls: 'sheet-tall', icon: cat ? cat.icon : 'layers' });
     sheet.open();
   }
+
+  pageQuiz(el) { quizPage(el); }
 
   pageGuide(el) {
     el.appendChild(h('p', { class: 'page-intro' }, 'Learn RaptiAuto in a few minutes. Tap a topic to open it.'));
@@ -549,9 +580,32 @@ export class Shell {
       { icon: 'copy', label: 'Duplicate', action: () => { const c = cloneProject(p, p.name + ' (copy)'); saveProject(c); this.render(true); toast('Duplicated', 'ok'); } },
       { icon: 'download', label: 'Export (.rapti)', action: () => Native.saveFile(p.name.replace(/[^\w\- ]/g, '') + '.rapti', 'application/json', exportJSON(p)).then((ok) => ok && toast('Exported', 'ok')) },
       { icon: 'share', label: 'Share code', action: () => Native.shareText(p.name, p.code) },
+      { icon: 'folder', label: p.folder ? `Folder: ${p.folder} — change` : 'Move to folder', action: () => this.moveToFolder(p) },
       '-',
       { icon: 'trash', label: 'Delete', danger: true, action: async () => { if (await confirmDialog('Delete project?', `"${escapeHtml(p.name)}" will be removed from this phone.`, 'Delete', true)) { deleteProject(p.id); this.render(true); } } },
     ]);
+  }
+
+  /** Folder picker: existing folders, "No folder" or a new one. */
+  async moveToFolder(p) {
+    const folders = listFolders();
+    const choice = await new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; sheet.close(); resolve(v); };
+      const btn = (label, v, active) => h('button', { class: 'chip' + (active ? ' active' : ''), onclick: () => finish(v) }, label);
+      const body = h('div', { class: 'folder-pick' }, btn('No folder', '', !p.folder), ...folders.map((f) => btn(f, f, p.folder === f)), btn('＋ New folder…', null, false));
+      const sheet = new Sheet({ title: 'Move to folder', content: body, icon: 'folder', onClose: () => { if (!done) { done = true; resolve(undefined); } } });
+      sheet.open();
+    });
+    if (choice === undefined) return;
+    let target = choice;
+    if (choice === null) {
+      const n = await promptDialog('New folder', '');
+      if (!n || !n.trim()) return;
+      target = addFolder(n);
+    }
+    setProjectFolder(p.id, target);
+    this.render(true);
   }
 
   async deleteAll() {
@@ -581,6 +635,7 @@ export class Shell {
       if (!lang) return;
     }
     const p = createProject(boardType, `${def.name.replace('Arduino ', '')} project ${n}`, lang);
+    if (this.projFolder && this.projFolder !== '*' && this.projFolder !== '-') p.folder = this.projFolder;
     saveProject(p);
     this.app.openProject(p);
   }
@@ -685,7 +740,7 @@ function labExampleArt(ex) {
   if (ex.id === 'vfd-modbus-hmi' || ex.id === 'blank' || ex.id === 'tank-level') return labArt();
   const lamps = {
     'start-stop': ['#22c55e', '#ef4444'], 'traffic-light': ['#ef4444', '#f59e0b', '#22c55e'], 'part-counter': ['#f59e0b'], 'vfd-terminals': ['#22c55e', '#f59e0b'], 'analog-speed': [],
-    'star-delta': ['#22c55e', '#f59e0b', '#ef4444'], 'bottle-filling': ['#f59e0b', '#22c55e'], 'alarm-annunciator': ['#ef4444', '#ef4444', '#f59e0b'], 'step-lights': ['#22c55e', '#f59e0b', '#ef4444'], 'vfd-auto-cycle': ['#22c55e'],
+    'star-delta': ['#22c55e', '#f59e0b', '#ef4444'], 'bottle-filling': ['#f59e0b', '#22c55e'], 'alarm-annunciator': ['#ef4444', '#f59e0b'], 'step-lights': ['#22c55e', '#f59e0b', '#ef4444'], 'vfd-auto-cycle': ['#22c55e'],
   }[ex.id] || [];
   const btns = {
     'start-stop': ['#1fa34a', '#d62828'], 'traffic-light': [], 'part-counter': ['#1f5fd6'], 'vfd-terminals': ['#1fa34a', '#f2b705', '#d62828'], 'analog-speed': ['#1fa34a', '#d62828'],
