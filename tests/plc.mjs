@@ -373,6 +373,82 @@ function taskRunner(id, mutate) {
   const done = (i) => !!tasks[i].check(ctx());
   return { ...env, lab, done };
 }
+// ---------------------------------------------------------------- 3.0 examples
+{
+  const { s, run } = sim('star-delta');
+  const st = () => ['k1', 'k2', 'k3'].map((i) => (s.rts.get(i).on ? 1 : 0)).join('');
+  run(500);
+  check('star-delta: idle, no issues', st() === '000' && !s.issues.length, s.issues.map((i) => i.text).join(' | '));
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(1000);
+  check('star-delta: K1 + K2 (star) at the start', st() === '110', st());
+  run(4300);
+  check('star-delta: pause between star and delta', st() === '100', st());
+  run(500);
+  check('star-delta: K1 + K3 (delta) after the star time', st() === '101', st());
+  s.act('stop', 'press', true); run(100); s.act('stop', 'press', false); run(200);
+  check('star-delta: STOP releases everything', st() === '000', st());
+}
+{
+  const { s, run } = sim('bottle-filling');
+  run(500);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(200);
+  const valve = [];
+  for (let n = 0; n < 5; n++) {
+    s.act('bottle', 'toggle'); run(500); const early = s.rts.get('valve').on;
+    run(1500); const mid = s.rts.get('valve').on;
+    run(3000); const late = s.rts.get('valve').on;
+    s.act('bottle', 'toggle'); run(500);
+    valve.push(`${+early}${+mid}${+late}`);
+  }
+  check('bottle filling: valve closed → open → closed for every bottle', valve.every((v) => v === '010'), valve.join(' '));
+  check('bottle filling: 5 bottles = batch done, horn', s.plc.cpu.CV[0] === 5 && s.rts.get('done').on, 'C0=' + s.plc.cpu.CV[0]);
+  s.act('reset', 'press', true); run(100); s.act('reset', 'press', false); run(200);
+  check('bottle filling: NEW BATCH resets the counter', s.plc.cpu.CV[0] === 0 && !s.rts.get('done').on);
+}
+{
+  const { s, run } = sim('tank-level');
+  run(300);
+  check('tank: HMI link OK', s.hmiLinkState.ok, s.hmiLinkState.reason);
+  let min = 999, max = -1, pumped = false, stopped = false, lowSeen = false;
+  for (let t = 0; t < 60; t++) { run(1000); const d = s.plc.cpu.D[10]; min = Math.min(min, d); max = Math.max(max, d); if (s.rts.get('pump').on) pumped = true; else if (pumped) stopped = true; if (s.rts.get('low').on) lowSeen = true; }
+  check('tank: hysteresis keeps the level between 15 % and 82 %', min >= 15 && max <= 82 && pumped && stopped, `min ${min} max ${max}`);
+  check('tank: LOW lamp lights below 20 %', lowSeen);
+  s.act('mode', 'toggle'); run(300);
+  s.act('man', 'press', true); run(4200); s.act('man', 'press', false);
+  check('tank: MANUAL pump button runs the pump', s.plc.cpu.D[10] > 0, 'D10=' + s.plc.cpu.D[10]);
+}
+{
+  const { s, run } = sim('alarm-annunciator');
+  const st = (a) => a.map((i) => (s.rts.get(i).on ? 1 : 0)).join('');
+  run(400);
+  check('alarms: all quiet at first', st(['l1', 'l2', 'l3', 'horn']) === '0000');
+  s.act('a1', 'toggle'); let flashes = new Set(); for (let i = 0; i < 20; i++) { run(100); flashes.add(st(['l1'])); }
+  check('alarms: new alarm flashes and sounds the horn', flashes.size === 2 && s.rts.get('horn').on);
+  s.act('ack', 'press', true); run(100); s.act('ack', 'press', false); run(300);
+  check('alarms: ACK makes the lamp steady and silences the horn', st(['l1', 'horn']) === '10');
+  s.act('a1', 'toggle'); run(300);
+  check('alarms: normal input clears the lamp', st(['l1', 'horn']) === '00');
+}
+{
+  const { s, run } = sim('step-lights');
+  const st = () => ['l1', 'l2', 'l3'].map((i) => (s.rts.get(i).on ? 1 : 0)).join('');
+  run(400);
+  check('step ladder: idle until START', st() === '000' && s.plc.cpu.S[0] === 1);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false);
+  const seq = []; for (let i = 0; i < 12; i++) { run(600); seq.push(st()); }
+  check('step ladder: lamp chase 1 → 2 → 3 → idle', [...new Set(seq)].join(' ') === '100 010 001 000', [...new Set(seq)].join(' '));
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(2200);
+  s.act('stop', 'press', true); run(100); s.act('stop', 'press', false); run(300);
+  check('step ladder: STOP returns to idle', st() === '000' && s.plc.cpu.S[0] === 1);
+}
+{
+  const { s, run } = sim('vfd-auto-cycle');
+  run(2000);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false);
+  const f = []; for (let i = 0; i < 20; i++) { run(1000); f.push(Math.round(s.rts.get('vfd').vfd.f)); }
+  check('VFD auto cycle: 10 Hz → 30 Hz → 50 Hz → stop', f.includes(10) && f.includes(30) && f.includes(50) && f[f.length - 1] === 0, f.join(' '));
+}
+
 for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArray(LAB_TASKS[ex.id]) && LAB_TASKS[ex.id].length >= 3);
 {
   const t = taskRunner('start-stop');

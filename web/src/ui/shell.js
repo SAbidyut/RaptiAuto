@@ -14,7 +14,7 @@ import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
 import { boardLangs } from '../sim/py/index.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
-import { LAB_EXAMPLES, buildExample } from '../plc/examples.js';
+import { LAB_EXAMPLES, LAB_EXAMPLE_CATEGORIES, buildExample } from '../plc/examples.js';
 import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
 
 export const PAGES = {
@@ -425,15 +425,27 @@ export class Shell {
       el.appendChild(h('section', { class: 'home-sec' }, secHead('My labs', `${labs.length} saved on this phone`, 'folder'), list));
     }
     const grid = h('div', { class: 'ex-grid lab-ex-grid' });
-    for (const ex of LAB_EXAMPLES) {
-      grid.appendChild(h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
-        h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
-        h('div', { class: 'ex-body' },
-          h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
-          h('div', { class: 'ex-name' }, ex.name),
-          h('div', { class: 'ex-desc' }, ex.description))));
+    const chips = h('div', { class: 'chips-row' });
+    const draw = () => {
+      grid.textContent = '';
+      for (const ex of LAB_EXAMPLES) {
+        if (this.labCat && this.labCat !== 'all' && ex.category !== this.labCat) continue;
+        grid.appendChild(h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
+          h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
+          h('div', { class: 'ex-body' },
+            h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
+            h('div', { class: 'ex-name' }, ex.name),
+            h('div', { class: 'ex-desc' }, ex.description))));
+      }
+    };
+    for (const c of [{ id: 'all', name: 'All' }, ...LAB_EXAMPLE_CATEGORIES]) {
+      const n = c.id === 'all' ? LAB_EXAMPLES.length : LAB_EXAMPLES.filter((e) => e.category === c.id).length;
+      if (!n) continue;
+      chips.appendChild(h('button', { class: 'chip' + ((this.labCat || 'all') === c.id ? ' active' : ''), onclick: (e) => { this.labCat = c.id; for (const x of chips.children) x.classList.remove('active'); e.currentTarget.classList.add('active'); draw(); } },
+        c.name, h('span', { class: 'chip-n' }, String(n))));
     }
-    el.appendChild(h('section', { class: 'home-sec' }, secHead('Lab exercises', 'Ready-wired, programmed — press Simulate', 'book'), grid));
+    el.appendChild(h('section', { class: 'home-sec' }, secHead('Lab exercises', 'Ready-wired, programmed — press Simulate', 'book'), chips, grid));
+    draw();
   }
 
   /** Card from the saved-lab index (the full lab is only loaded when it is opened). */
@@ -524,7 +536,8 @@ export class Shell {
       h('div', { class: 'ex-body' },
         h('div', { class: 'ex-tags' },
           h('span', { class: 'tag tag-' + (ex.level || 'beginner') }, ex.level || 'beginner'),
-          board ? h('span', { class: 'tag' }, getDef(board.type).name.replace('Arduino ', '')) : null),
+          board ? h('span', { class: 'tag' }, getDef(board.type).name.replace('Arduino ', '')) : null,
+          ex.lang === 'python' ? h('span', { class: 'tag tag-py' }, 'MicroPython') : null),
         h('div', { class: 'ex-name' }, ex.name),
         h('div', { class: 'ex-desc' }, ex.description)));
   }
@@ -669,9 +682,15 @@ function labArt() {
 }
 
 function labExampleArt(ex) {
-  if (ex.id === 'vfd-modbus-hmi' || ex.id === 'blank') return labArt();
-  const lamps = { 'start-stop': ['#22c55e', '#ef4444'], 'traffic-light': ['#ef4444', '#f59e0b', '#22c55e'], 'part-counter': ['#f59e0b'], 'vfd-terminals': ['#22c55e', '#f59e0b'], 'analog-speed': [] }[ex.id] || [];
-  const btns = { 'start-stop': ['#1fa34a', '#d62828'], 'traffic-light': [], 'part-counter': ['#1f5fd6'], 'vfd-terminals': ['#1fa34a', '#f2b705', '#d62828'], 'analog-speed': ['#1fa34a', '#d62828'] }[ex.id] || [];
+  if (ex.id === 'vfd-modbus-hmi' || ex.id === 'blank' || ex.id === 'tank-level') return labArt();
+  const lamps = {
+    'start-stop': ['#22c55e', '#ef4444'], 'traffic-light': ['#ef4444', '#f59e0b', '#22c55e'], 'part-counter': ['#f59e0b'], 'vfd-terminals': ['#22c55e', '#f59e0b'], 'analog-speed': [],
+    'star-delta': ['#22c55e', '#f59e0b', '#ef4444'], 'bottle-filling': ['#f59e0b', '#22c55e'], 'alarm-annunciator': ['#ef4444', '#ef4444', '#f59e0b'], 'step-lights': ['#22c55e', '#f59e0b', '#ef4444'], 'vfd-auto-cycle': ['#22c55e'],
+  }[ex.id] || [];
+  const btns = {
+    'start-stop': ['#1fa34a', '#d62828'], 'traffic-light': [], 'part-counter': ['#1f5fd6'], 'vfd-terminals': ['#1fa34a', '#f2b705', '#d62828'], 'analog-speed': ['#1fa34a', '#d62828'],
+    'star-delta': ['#1fa34a', '#d62828'], 'bottle-filling': ['#1fa34a', '#d62828', '#1f5fd6'], 'alarm-annunciator': ['#1f5fd6'], 'step-lights': ['#1fa34a', '#d62828'], 'vfd-auto-cycle': ['#1fa34a', '#d62828'],
+  }[ex.id] || [];
   const items = [...btns.map((c) => ({ c, t: 'b' })), ...lamps.map((c) => ({ c, t: 'l' }))];
   const vfd = /vfd|analog/.test(ex.id);
   return `<svg viewBox="0 0 320 190" preserveAspectRatio="xMidYMid meet">

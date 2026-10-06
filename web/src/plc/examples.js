@@ -266,6 +266,204 @@ export const LAB_EXAMPLES = [
     },
   },
   {
+    id: 'star-delta', category: 'motor', name: 'Star-delta starter (timers)', level: 'intermediate', tags: ['TMR', 'Interlock', 'Contactors'],
+    description: 'The classic reduced-voltage start: START closes the main contactor and the star contactor, after 5 s the star opens and — 0.5 s later — the delta contactor closes. Star and delta can never be on together (electrical interlock).',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('k1', 'lamp', { label: 'K1 MAIN', color: 'green' });
+      b.dev('k2', 'lamp', { label: 'K2 STAR', color: 'yellow' });
+      b.dev('k3', 'lamp', { label: 'K3 DELTA', color: 'red' });
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'k1', 'X1'); b.w('plc', 'Y1', 'k2', 'X1'); b.w('plc', 'Y2', 'k3', 'X1');
+      b.w('k1', 'X2', 'psu', '-V2'); b.w('k1', 'X2', 'k2', 'X2', '#1e3a8a'); b.w('k2', 'X2', 'k3', 'X2', '#1e3a8a');
+      const prog = program([
+        rung('Run latch: START (X0) latches M0, STOP (X1, NC) releases it', ['X0| X1 => OUT M0', 'M0']),
+        rung('K1 main contactor follows the run command', ['M0 => OUT Y0']),
+        rung('T0: star time 5.0 s', ['M0 => TMR T0 K50']),
+        rung('K2 star contactor: only during the star time and never together with delta (Y2)', ['M0 /T0 /Y2 => OUT Y1']),
+        rung('T1: 0.5 s changeover pause once the star time is over', ['T0 => TMR T1 K5']),
+        rung('K3 delta contactor: after the pause, interlocked with star (Y1)', ['T1 /Y1 => OUT Y2']),
+      ], { X0: 'START', X1: 'STOP (NC)', Y0: 'K1 main contactor', Y1: 'K2 star contactor', Y2: 'K3 delta contactor', T0: 'star time', T1: 'changeover pause' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'bottle-filling', category: 'process', name: 'Bottle filling station', level: 'intermediate', tags: ['TMR', 'CNT', 'Sensor'],
+    description: 'A bottle arrives (sensor X2), the PLC waits 1 s for it to settle, opens the fill valve for 3 s, counts the full bottle and, after 5 bottles, lights the BATCH DONE lamp and beeps. Tap the sensor to move a bottle in and out.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('bottle', 'prox', { label: 'BOTTLE' });
+      b.dev('reset', 'pb', { label: 'NEW BATCH', color: 'blue', contact: 'NO' });
+      b.dev('valve', 'lamp', { label: 'FILL VALVE', color: 'yellow' });
+      b.dev('done', 'lamp', { label: 'BATCH DONE', color: 'green' });
+      b.dev('buz', 'buzzer', { label: 'HORN' });
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626'); b.w('stop', '11', 'reset', '13', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1'); b.w('reset', '14', 'plc', 'X3');
+      b.w('psu', '+V1', 'bottle', 'BN'); b.w('bottle', 'BU', 'psu', '-V1'); b.w('bottle', 'BK', 'plc', 'X2');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'valve', 'X1'); b.w('plc', 'Y1', 'done', 'X1'); b.w('plc', 'Y2', 'buz', '+');
+      b.w('valve', 'X2', 'psu', '-V2'); b.w('valve', 'X2', 'done', 'X2', '#1e3a8a'); b.w('done', 'X2', 'buz', '-', '#1e3a8a');
+      const prog = program([
+        rung('Run latch', ['X0| X1 => OUT M0', 'M0']),
+        rung('T0: the bottle must stand still for 1.0 s before filling', ['M0 X2 /C0 => TMR T0 K10']),
+        rung('Fill valve is open from 1 s until 4 s after the bottle arrived', ['T0 /T1 => OUT Y0']),
+        rung('T1: fill time 3.0 s', ['T0 => TMR T1 K30']),
+        rung('Count every filled bottle (T1 rising edge) — batch size 5', ['T1 => CNT C0 K5']),
+        rung('Batch finished: lamp + horn that beeps (1 s clock)', ['C0 =>| OUT Y1', 'C0 M1013 => OUT Y2']),
+        rung('NEW BATCH button (X3) resets the counter', ['X3 => RST C0']),
+      ], { X0: 'START', X1: 'STOP (NC)', X2: 'Bottle sensor', X3: 'NEW BATCH', Y0: 'Fill valve', Y1: 'BATCH DONE lamp', Y2: 'Horn', C0: 'Bottle counter', T0: 'settle time', T1: 'fill time' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'tank-level', category: 'process', name: 'Tank level control + HMI', level: 'advanced', tags: ['Compare', 'ADD / SUB', 'HMI', 'Hysteresis'],
+    description: 'The tank is simulated in register D10 (0–100 %): the pump adds 5 % per second, the process always takes 2 % per second and the DRAIN button opens a bigger valve. In AUTO the pump starts below 20 % and stops at 80 % (hysteresis). The HMI draws the level.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('mode', 'selector', { label: 'MODE', pos0: 'MANUAL', pos1: 'AUTO' }, { on: true });
+      b.dev('man', 'pb', { label: 'PUMP (MAN)', color: 'green', contact: 'NO' });
+      b.dev('drain', 'pb', { label: 'DRAIN', color: 'blue', contact: 'NO' });
+      b.dev('pump', 'lamp', { label: 'PUMP', color: 'green' });
+      b.dev('high', 'lamp', { label: 'HIGH', color: 'red' });
+      b.dev('low', 'lamp', { label: 'LOW', color: 'yellow' });
+      b.dev('buz', 'buzzer', { label: 'LOW ALARM' });
+      b.w('psu', '+V1', 'mode', '13'); b.w('mode', '13', 'man', '13', '#dc2626'); b.w('man', '13', 'drain', '13', '#dc2626');
+      b.w('mode', '14', 'plc', 'X0'); b.w('man', '14', 'plc', 'X1'); b.w('drain', '14', 'plc', 'X2');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'pump', 'X1'); b.w('plc', 'Y1', 'high', 'X1'); b.w('plc', 'Y2', 'low', 'X1'); b.w('plc', 'Y3', 'buz', '+');
+      b.w('pump', 'X2', 'psu', '-V2'); b.w('pump', 'X2', 'high', 'X2', '#1e3a8a'); b.w('high', 'X2', 'low', 'X2', '#1e3a8a'); b.w('low', 'X2', 'buz', '-', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      const prog = program([
+        rung('First scan: tank starts half full (40 %)', ['M1002 => MOV K40 D10']),
+        rung('Hysteresis: start the pump below 20 %', ['D10<K20 => SET M0']),
+        rung('Hysteresis: stop the pump at 80 %', ['D10>=K80 => RST M0']),
+        rung('Pump: AUTO (X0 = 1) follows M0, MANUAL (X0 = 0) follows the PUMP button (X1)', ['X0 M0| => OUT Y0', '/X0 X1']),
+        rung('Inflow: +5 % every second while the pump runs', ['Y0 ^M1013 => ADDP D10 K5 D10']),
+        rung('Consumption: −2 % every second', ['^M1013 => SUBP D10 K2 D10']),
+        rung('DRAIN valve (X2): another −6 % every second', ['X2 ^M1013 => SUBP D10 K6 D10']),
+        rung('Keep the level between 0 and 100 %', ['D10<K0 =>| MOV K0 D10', 'D10>K100 => MOV K100 D10']),
+        rung('HIGH lamp ≥ 80 %, LOW lamp < 20 %', ['D10>=K80 =>| OUT Y1', 'D10<K20 => OUT Y2']),
+        rung('LOW alarm buzzer below 10 % (beeps with the 1 s clock)', ['D10<K10 M1013 => OUT Y3']),
+      ], { X0: 'MODE (1 = AUTO)', X1: 'PUMP button (manual)', X2: 'DRAIN button', Y0: 'Pump', Y1: 'HIGH lamp', Y2: 'LOW lamp', Y3: 'Low alarm buzzer', D10: 'Tank level (%)', M0: 'Pump request (auto)' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Tank', bg: '#0b1630', elements: [
+            E('rect', 16, 14, 768, 64, { fill: '#10224a', stroke: '#2b4470', radius: 14, title: '' }),
+            E('text', 36, 28, 600, 40, { text: 'TANK LEVEL CONTROL', size: 28, color: '#e2e8f0', align: 'left', bold: true }),
+            E('rect', 16, 94, 380, 370, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'LEVEL' }),
+            E('num', 40, 140, 330, 90, { word: 'D10', dec: 0, unit: '%', label: 'LEVEL' }),
+            E('meter', 40, 250, 330, 190, { word: 'D10', dec: 0, unit: '%', label: 'LEVEL', min: 0, max: 100 }),
+            E('rect', 412, 94, 372, 370, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'STATUS' }),
+            E('lamp', 440, 140, 100, 100, { bit: 'Y0', text: 'PUMP', onColor: '#22c55e', offColor: '#334155', shape: 'circle' }),
+            E('lamp', 570, 140, 100, 100, { bit: 'Y1', text: 'HIGH', onColor: '#ef4444', offColor: '#334155', shape: 'circle' }),
+            E('lamp', 440, 260, 100, 100, { bit: 'Y2', text: 'LOW', onColor: '#f59e0b', offColor: '#334155', shape: 'circle' }),
+            E('bar', 700, 140, 60, 290, { word: 'D10', dec: 0, label: 'TANK', min: 0, max: 100, color: '#22d3ee' }),
+            E('trend', 412, 370, 290, 90, { word: 'D10', word2: 'D10', dec: 0, min: 0, max: 100, span: 60, label: 'LEVEL' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'alarm-annunciator', category: 'basics', name: 'Alarm annunciator with acknowledge', level: 'intermediate', tags: ['SET / RST', 'M1013', 'Edge'],
+    description: 'Three alarm inputs (selectors). A new alarm makes its lamp flash and sounds the horn; ACK makes the lamp steady and silences the horn; when the input returns to normal the lamp goes out.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('a1', 'selector', { label: 'TEMP HIGH', pos0: 'OK', pos1: 'ALARM' }, { on: false });
+      b.dev('a2', 'selector', { label: 'PRESSURE', pos0: 'OK', pos1: 'ALARM' }, { on: false });
+      b.dev('a3', 'selector', { label: 'DOOR OPEN', pos0: 'OK', pos1: 'ALARM' }, { on: false });
+      b.dev('ack', 'pb', { label: 'ACK', color: 'blue', contact: 'NO' });
+      b.dev('l1', 'lamp', { label: 'TEMP', color: 'red' });
+      b.dev('l2', 'lamp', { label: 'PRESS', color: 'red' });
+      b.dev('l3', 'lamp', { label: 'DOOR', color: 'yellow' });
+      b.dev('horn', 'buzzer', { label: 'HORN' });
+      b.w('psu', '+V1', 'a1', '13'); b.w('a1', '13', 'a2', '13', '#dc2626'); b.w('a2', '13', 'a3', '13', '#dc2626'); b.w('a3', '13', 'ack', '13', '#dc2626');
+      b.w('a1', '14', 'plc', 'X0'); b.w('a2', '14', 'plc', 'X1'); b.w('a3', '14', 'plc', 'X2'); b.w('ack', '14', 'plc', 'X3');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'l1', 'X1'); b.w('plc', 'Y1', 'l2', 'X1'); b.w('plc', 'Y2', 'l3', 'X1'); b.w('plc', 'Y3', 'horn', '+');
+      b.w('l1', 'X2', 'psu', '-V2'); b.w('l1', 'X2', 'l2', 'X2', '#1e3a8a'); b.w('l2', 'X2', 'l3', 'X2', '#1e3a8a'); b.w('l3', 'X2', 'horn', '-', '#1e3a8a');
+      const rows = [];
+      [[0, 10, 'Y0', 'Temperature'], [1, 11, 'Y1', 'Pressure'], [2, 12, 'Y2', 'Door']].forEach(([x, m, y, name]) => {
+        rows.push(rung(`${name}: ACK (X3) while the alarm is active acknowledges it (${'M' + m}); a normal input clears it`, [`X3 X${x} => SET M${m}`]));
+        rows.push(rung(`${name}: acknowledged flag is cleared when the input is back to normal`, [`/X${x} => RST M${m}`]));
+        rows.push(rung(`${name} lamp: flashing while unacknowledged, steady after ACK`, [`X${x} /M${m} M1013| => OUT ${y}`, `X${x} M${m} -`]));
+      });
+      rows.push(rung('Horn: any alarm that is not acknowledged', ['X0 /M10| => OUT Y3', 'X1 /M11|', 'X2 /M12']));
+      const prog = program(rows, { X0: 'Temperature alarm', X1: 'Pressure alarm', X2: 'Door alarm', X3: 'ACK button', Y0: 'TEMP lamp', Y1: 'PRESS lamp', Y2: 'DOOR lamp', Y3: 'Horn', M10: 'Temp acknowledged', M11: 'Pressure acknowledged', M12: 'Door acknowledged' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'step-lights', category: 'basics', name: 'Step ladder: sequential lamps', level: 'advanced', tags: ['STL', 'RET', 'Sequence'],
+    description: 'A step-ladder (STL) sequence: START moves from the idle step S0 to S20, S21, S22 — one lamp per step for 2 s each — and back. STOP returns to idle from any step.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('l1', 'lamp', { label: 'STEP 1', color: 'green' });
+      b.dev('l2', 'lamp', { label: 'STEP 2', color: 'yellow' });
+      b.dev('l3', 'lamp', { label: 'STEP 3', color: 'red' });
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'l1', 'X1'); b.w('plc', 'Y1', 'l2', 'X1'); b.w('plc', 'Y2', 'l3', 'X1');
+      b.w('l1', 'X2', 'psu', '-V2'); b.w('l1', 'X2', 'l2', 'X2', '#1e3a8a'); b.w('l2', 'X2', 'l3', 'X2', '#1e3a8a');
+      const prog = program([
+        rung('First scan: enter the idle step S0', ['M1002 => SET S0']),
+        rung('S0 idle: START (X0) → step S20', ['$S0 X0 => SET S20']),
+        rung('S20: lamp 1 for 2 s, then S21; STOP (X1 open) → S0', ['$S20 =>| OUT Y0', '=> TMR T0 K20', 'T0 => SET S21', '/X1 => SET S0']),
+        rung('S21: lamp 2 for 2 s, then S22', ['$S21 =>| OUT Y1', '=> TMR T1 K20', 'T1 => SET S22', '/X1 => SET S0']),
+        rung('S22: lamp 3 for 2 s, then back to idle', ['$S22 =>| OUT Y2', '=> TMR T2 K20', 'T2 => SET S0', '/X1 => SET S0']),
+        rung('End of the step ladder', ['=> RET']),
+      ], { X0: 'START', X1: 'STOP (NC)', Y0: 'Step 1 lamp', Y1: 'Step 2 lamp', Y2: 'Step 3 lamp', S0: 'Idle', S20: 'Step 1', S21: 'Step 2', S22: 'Step 3' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'vfd-auto-cycle', category: 'vfd', name: 'VFD automatic speed cycle (STL)', level: 'advanced', tags: ['STL', 'VFD', 'MS300', 'Multi-step'],
+    description: 'A step-ladder program drives the MS300 through three multi-step speeds: 10 Hz, 30 Hz and 50 Hz, 5 s each, then stops. MI3 / MI4 select the speed (binary code), MI1 runs the drive forward.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('vfd', 'ms300', {}, { params: { '00-21': 1, '00-20': 0, '02-00': 0, '01-12': 2, '01-13': 2, '04-00': 10, '04-01': 30, '04-02': 50 } });
+      b.dev('motor', 'motor', { load: 40 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('run', 'lamp', { label: 'CYCLE', color: 'green' });
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('vfd', 'U/T1', 'motor', 'U'); b.w('vfd', 'V/T2', 'motor', 'V'); b.w('vfd', 'W/T3', 'motor', 'W'); b.w('vfd', 'PE', 'motor', 'PE');
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
+      b.w('plc', 'C0', 'psu', '+V2'); b.w('plc', 'Y0', 'run', 'X1'); b.w('run', 'X2', 'psu', '-V2');
+      b.w('plc', 'C1', 'vfd', 'DCM');
+      b.w('plc', 'Y4', 'vfd', 'MI1'); b.w('plc', 'Y6', 'vfd', 'MI3'); b.w('plc', 'Y7', 'vfd', 'MI4');
+      const prog = program([
+        rung('First scan: enter the idle step S0', ['M1002 => SET S0']),
+        rung('S0 idle: START (X0) → S20', ['$S0 X0 => SET S20']),
+        rung('S20: forward + MI3 → multi-step 1 (Pr.04-00 = 10 Hz) for 5 s', ['$S20 =>| OUT Y4', '=>| OUT Y6', '=>| OUT Y0', '=> TMR T0 K50', 'T0 => SET S21', '/X1 => SET S0']),
+        rung('S21: forward + MI4 → multi-step 2 (Pr.04-01 = 30 Hz) for 5 s', ['$S21 =>| OUT Y4', '=>| OUT Y7', '=>| OUT Y0', '=> TMR T1 K50', 'T1 => SET S22', '/X1 => SET S0']),
+        rung('S22: forward + MI3 + MI4 → multi-step 3 (Pr.04-02 = 50 Hz) for 5 s, then stop', ['$S22 =>| OUT Y4', '=>| OUT Y6', '=>| OUT Y7', '=>| OUT Y0', '=> TMR T2 K50', 'T2 => SET S0', '/X1 => SET S0']),
+        rung('End of the step ladder', ['=> RET']),
+      ], { X0: 'START', X1: 'STOP (NC)', Y0: 'CYCLE lamp', Y4: 'VFD MI1 (FWD)', Y6: 'VFD MI3 (step 1)', Y7: 'VFD MI4 (step 2)', S0: 'Idle', S20: '10 Hz', S21: '30 Hz', S22: '50 Hz' });
+      return finish(this, b, prog);
+    },
+  },
+  {
     id: 'blank', category: 'practice', name: 'Blank lab (PLC + power)', level: 'beginner', tags: ['Empty'],
     description: 'A powered DVP-16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
     build() {
