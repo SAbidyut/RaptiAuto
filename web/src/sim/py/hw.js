@@ -177,7 +177,7 @@ export function makeHwModules(ctx) {
       if (f >= 40 && f <= 60) { h.setServo(n, frac > 0 ? frac * 1e6 / f : null); return; }
       const buzzers = h.partsOnPin(n, (r) => r.def && r.def.type === 'buzzer');
       if (buzzers.length) { if (frac > 0.02) h.tone(n, Math.round(f), 0); else h.noTone(n); return; }
-      h.analogWrite(n, frac, Math.round(frac * 255), 255);
+      h.analogWrite(n, frac, Math.round(frac * 255), 255, f);
     };
     const setDuty = (v, max) => { st.frac = clamp(toNum(v) / max, 0, 1); apply(); };
     withMethods(o, {

@@ -6,6 +6,7 @@ import * as displays from './displays.js';
 import * as motors from './motors.js';
 import * as projects from './projects.js';
 import * as python from './python.js';
+import * as instruments from './instruments.js';
 import * as extA from './ext-a.js';
 import * as extB from './ext-b.js';
 
@@ -20,6 +21,7 @@ export const EXAMPLE_CATEGORIES = [
   { id: 'robotics', name: 'Robotics' },
   { id: 'smart', name: 'Smart home & IoT' },
   { id: 'python', name: 'MicroPython & Pi' },
+  { id: 'tools', name: 'Scope & logic analyzer' },
 ];
 
 const builders = [
@@ -46,5 +48,6 @@ export function addExamples(list) {
 }
 addExamples(builders);
 addExamples(python.BUILDERS);
+addExamples(instruments.BUILDERS);
 addExamples(extA.BUILDERS);
 addExamples(extB.BUILDERS);

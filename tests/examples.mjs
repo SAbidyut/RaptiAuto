@@ -61,6 +61,9 @@ const CHECKS = {
   'py-neopixel': { ms: 1000, check: (e) => { const px = part(e, 'ring').visual.px; return expect(new Set(px).size > 8, 'px=' + px.slice(0, 4)); } },
   'py-servo': { ms: 2500, check: (e) => expect(part(e, 'servo').visual.angle > 30, 'angle=' + part(e, 'servo').visual.angle) },
   'py-timer-irq': { ms: 1600, act: { 300: ['btn', 'press', true], 450: ['btn', 'press', false], 900: ['btn', 'press', true], 1050: ['btn', 'press', false] }, serial: ['Button pressed 1 times', 'Button pressed 2 times'] },
+  'scope-pwm': { ms: 1200, check: (e) => { const m = part(e, 'scope').measure(0); const m2 = part(e, 'scope').measure(2); return expect(Math.abs(m.freq - 988) < 80 && Math.abs(m2.freq - 440) < 40, `ch1 ${m.freq} ch3 ${m2.freq}`); } },
+  'logic-bitbang': { ms: 500, check: (e) => { const l = part(e, 'la'); l.input('tdiv', 9); const m = l.measure(1); return expect(m.edges >= 1 && m.vpp > 4, `clock edges=${m.edges} vpp=${m.vpp}`); } },
+  'fg-adc': { ms: 1500, serial: ['V:'] },
   'rtc-clock': { ms: 2500, check: (e) => expect(/^\w{3} \d\d\/\d\d\/20\d\d$/.test(lcdRow(e, 'lcd', 0)) && /^ {4}\d\d:\d\d:\d\d$/.test(lcdRow(e, 'lcd', 1)), `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0) + '|' + lcdRow(e, 'lcd', 1))}`) },
 };
 

@@ -448,7 +448,7 @@ export class SimEngine {
     const ws = this.watchers.get(st.node);
     if (ws) {
       const level = st.mode === 1 ? st.out : null;
-      for (const fn of ws) fn(level, this.time());
+      for (const fn of ws) fn(level, this.time(), st);
     }
   }
 
@@ -556,10 +556,17 @@ export class SimEngine {
     return Math.max(0, this.vAvg(st.node) - this.vAvg(this.gnd));
   }
 
-  analogWrite(p, duty, raw, max) {
+  /** Default analogWrite() frequency of a pin (Hz): AVR Uno-style 490 / 976 Hz, 1 kHz elsewhere. */
+  pwmFreqFor(p) {
+    if (this.board && this.board.arch === 'avr') return p === 5 || p === 6 ? 976 : 490;
+    return 1000;
+  }
+
+  analogWrite(p, duty, raw, max, freq) {
     const st = this.pin(p);
     if (!st) return;
     if (st.mode !== 1) st.mode = 1;
+    st.pwmFreq = freq || this.pwmFreqFor(p);
     const pwmCapable = !this.board.pwmPins || this.board.pwmPins.includes(p);
     if (!pwmCapable) {
       this.warn(`Pin ${st.id} has no PWM — analogWrite() works like digitalWrite() here. PWM pins: ${this.board.pwmPins.map((x) => this.pins.get(x).id).join(', ')}`, null, 'nopwm' + p);
