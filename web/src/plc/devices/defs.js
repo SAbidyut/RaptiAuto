@@ -153,6 +153,14 @@ export const DEVICE_DEFS = {
     defaults: { label: 'MODE', pos0: 'MAN', pos1: 'AUTO' }, state: { on: false },
     ports: () => sockRow(['13', '14'], null, 'in'),
   },
+  'selector3': {
+    type: 'selector3', name: 'Selector switch 3-position', short: '3-pos selector', part: 'FWD – 0 – REV · 2 NO', category: 'field', sim: 'selector3', zone: 'console', max: 6,
+    size: [64, 86, 6],
+    description: '3-position maintained selector switch (e.g. FWD – 0 – REV or HAND – OFF – AUTO). Left closes 13–14, right closes 23–24, the middle position opens both. Tap to turn it: it goes through 0 to the other side.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, { id: 'pos0', label: 'Left position text', type: 'text' }, { id: 'pos1', label: 'Right position text', type: 'text' }],
+    defaults: { label: 'DIRECTION', pos0: 'FWD', pos1: 'REV' }, state: { pos: 0, last: 1 },
+    ports: () => sockRow(['13', '14', '23', '24'], null, 'in'),
+  },
   'lamp': {
     type: 'lamp', name: 'Pilot lamp 24 V', short: 'Pilot lamp', category: 'field', sim: 'lamp', zone: 'console', max: 16,
     size: [64, 86, 6],
@@ -258,6 +266,41 @@ export const DEVICE_DEFS = {
     ],
   },
 
+  'relay': {
+    type: 'relay', name: 'Interface relay 24 V DC', short: 'Relay', part: 'Plug-in relay + socket · 1 CO · 10 A', brand: '', category: 'switchgear', sim: 'relay', zone: 'rail2', max: 8,
+    size: [28, 80, 76],
+    description: 'Plug-in interface relay on a DIN-rail socket with an LED: 24 V DC coil A1 (+) / A2 (−) and one change-over contact — 11 (common) to 14 (NO) closes, 11 to 12 (NC) opens when the coil is ON. Use it between a PLC output and a bigger load, a 230 V coil or a VFD input.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }], defaults: { label: 'K1' },
+    ports: () => [
+      ...row(['A1', '11'], { x0: -7, x1: 7, y: 72, z: 70, dir: up(0.6), sig: (id) => (id === 'A1' ? 'ctl' : 'in'), labels: ['A1+', '11'] }),
+      ...row(['A2', '12', '14'], { x0: -9, x1: 9, y: 8, z: 70, dir: down(0.6), sig: (id) => (id === 'A2' ? 'ctl' : 'in'), labels: ['A2−', '12', '14'] }),
+    ],
+  },
+  'breaker': {
+    type: 'breaker', name: 'Circuit breaker (MCB / MCCB)', short: 'Breaker', part: 'Miniature circuit breaker', brand: '', category: 'switchgear', sim: 'cb', zone: 'rail2', max: 6,
+    size: [36, 90, 72],
+    description: 'Miniature / moulded-case circuit breaker: 1-pole for a control circuit (24 V or 230 V) or 3-pole to protect a motor feeder. Top terminals in, bottom terminals out; tap the lever to switch it ON / OFF.',
+    props: [
+      { id: 'label', label: 'Label', type: 'text' },
+      { id: 'poles', label: 'Poles', type: 'select', options: { '1P': '1-pole (control)', '3P': '3-pole (motor / MCCB)' } },
+      { id: 'rating', label: 'Rating', type: 'select', options: { C2: 'C2', C6: 'C6', C10: 'C10', C16: 'C16', C32: 'C32' } },
+    ],
+    defaults: { label: 'QF1', poles: '1P', rating: 'C6' }, state: { on: true },
+    ports: (p) => (p.poles === '3P'
+      ? [...row(['L1', 'L2', 'L3'], { x0: -14, x1: 14, y: 82, z: 64, dir: up(0.6), sig: 'mot', labels: ['1', '3', '5'] }), ...row(['T1', 'T2', 'T3'], { x0: -14, x1: 14, y: 8, z: 64, dir: down(0.6), sig: 'mot', labels: ['2', '4', '6'] })]
+      : [{ id: '1', label: '1', kind: 'term', pos: [0, 82, 64], dir: up(0.6), sig: 'ctl', pitch: 12 }, { id: '2', label: '2', kind: 'term', pos: [0, 8, 64], dir: down(0.6), sig: 'ctl', pitch: 12 }]),
+  },
+  'tb': {
+    type: 'tb', name: 'Terminal block strip', short: 'Terminals', part: '6 × feed-through · 4 mm²', brand: '', category: 'switchgear', sim: 'tb', zone: 'rail2', max: 4,
+    size: [60, 56, 48],
+    description: 'Six DIN-rail feed-through terminals (X1:1 … X1:6). Each top terminal is joined to the bottom terminal with the same number — the field wiring lands on one side, the panel wiring on the other.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }], defaults: { label: 'X1' },
+    ports: () => [
+      ...row(['1', '2', '3', '4', '5', '6'], { x0: -25, x1: 25, y: 50, z: 44, dir: up(0.6), sig: 'in', labels: ['1', '2', '3', '4', '5', '6'] }),
+      ...row(['1b', '2b', '3b', '4b', '5b', '6b'], { x0: -25, x1: 25, y: 6, z: 44, dir: down(0.6), sig: 'in', labels: ['1', '2', '3', '4', '5', '6'] }),
+    ],
+  },
+
   // ---------------------------------------------------------------- machines
   'motor': {
     type: 'motor', name: '3-phase induction motor', short: 'Motor 0.75 kW', part: '0.75 kW · 4-pole · 1420 rpm', brand: '', category: 'motor', sim: 'motor', zone: 'motor', max: 3,
@@ -293,7 +336,7 @@ export const CATEGORIES = [
   { id: 'hmi', name: 'Delta HMI', icon: 'display' },
   { id: 'vfd', name: 'Delta VFD', icon: 'motor' },
   { id: 'power', name: 'Power', icon: 'bolt' },
-  { id: 'switchgear', name: 'Contactors & protection', icon: 'magnet' },
+  { id: 'switchgear', name: 'Contactors, relays & panel parts', icon: 'magnet' },
   { id: 'field', name: 'Field devices', icon: 'button' },
   { id: 'sensor', name: 'Industrial sensors', icon: 'sensor' },
   { id: 'motor', name: 'Motors', icon: 'settings' },

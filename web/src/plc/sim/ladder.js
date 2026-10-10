@@ -16,6 +16,7 @@ const OPCLASS = {
   rst: ['Y', 'M', 'S', 'T', 'C', 'D'],
   timer: ['T'],
   counter: ['C'],
+  hcounter: ['C'],
   word: ['K', 'H', 'D', 'T', 'C'],
   wordw: ['D', 'T', 'C'],
   dreg: ['D'],
@@ -52,6 +53,9 @@ export const INSTR = {
   PLF: { kind: 'out', cat: 'coil', name: 'Falling-edge pulse output', ops: ['bitw'], labels: ['Device'], steps: 2, def: ['M11'] },
   TMR: { kind: 'box', cat: 'timer', name: '16-bit timer', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T0', 'K10'] },
   CNT: { kind: 'box', cat: 'timer', name: '16-bit counter', ops: ['counter', 'word'], labels: ['Counter', 'Set value'], steps: 4, def: ['C0', 'K10'] },
+  TON: { kind: 'box', cat: 'timer', name: 'On-delay timer (IEC TON, works like TMR)', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T1', 'K30'] },
+  TOF: { kind: 'box', cat: 'timer', name: 'Off-delay timer (IEC TOF): T stays ON for the set time after the input goes OFF', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T2', 'K30'] },
+  DCNT: { kind: 'box', cat: 'timer', name: '32-bit up/down counter C200–C234 (M1200+ ON = down); C235–C242 = high-speed counter on X0–X7', ops: ['hcounter', 'word'], labels: ['Counter', 'Set value'], steps: 9, def: ['C235', 'K1000'] },
   // program flow
   MC: { kind: 'box', cat: 'flow', name: 'Master control start: OFF → the networks up to MCR run with no power', ops: ['nest'], labels: ['Nesting level'], steps: 3, def: ['N0'], flow: true },
   MCR: { kind: 'box', cat: 'flow', name: 'Master control reset (end of the MC block)', ops: ['nest'], labels: ['Nesting level'], steps: 3, def: ['N0'], flow: true, rail: true },
@@ -59,6 +63,9 @@ export const INSTR = {
   CALL: { kind: 'box', cat: 'flow', api: 1, name: 'Call subroutine P (placed after FEND)', ops: ['ptr'], labels: ['Pointer'], steps: 3, pulse: true, def: ['P1'], flow: true },
   SRET: { kind: 'box', cat: 'flow', api: 2, name: 'End of a subroutine (return)', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
   FEND: { kind: 'box', cat: 'flow', api: 6, name: 'End of the main program (subroutines follow)', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
+  WDT: { kind: 'box', cat: 'flow', api: 7, name: 'Watchdog timer refresh', ops: [], labels: [], steps: 1, pulse: true, def: [] },
+  FOR: { kind: 'box', cat: 'flow', api: 8, name: 'Start of a FOR … NEXT loop: the networks up to NEXT run n times in one scan', ops: ['word'], labels: ['n (times)'], steps: 3, def: ['K3'], flow: true, rail: true },
+  NEXT: { kind: 'box', cat: 'flow', api: 9, name: 'End of the FOR … NEXT loop', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
   RET: { kind: 'box', cat: 'step', name: 'End of the step ladder (STL block)', ops: [], labels: [], steps: 1, def: [], flow: true, rail: true },
   // compare & move
   CMP: { kind: 'box', cat: 'compare', api: 10, name: 'Compare → 3 bits (>, =, <)', ops: ['word', 'word', 'bitw'], labels: ['S1', 'S2', 'D'], steps: 7, pulse: true, def: ['D0', 'K10', 'M10'] },
@@ -90,7 +97,13 @@ export const INSTR = {
   ROR: { kind: 'box', cat: 'logic', api: 30, name: 'Rotate right n bits', ops: ['wordw', 'n'], labels: ['D', 'n'], steps: 5, pulse: true, def: ['D0', 'K1'], defP: true },
   ROL: { kind: 'box', cat: 'logic', api: 31, name: 'Rotate left n bits', ops: ['wordw', 'n'], labels: ['D', 'n'], steps: 5, pulse: true, def: ['D0', 'K1'], defP: true },
   SFTR: { kind: 'box', cat: 'logic', api: 34, name: 'Bit shift right: n2 bits of S enter n1 bits of D', ops: ['bitsrc', 'bitw', 'n', 'n'], labels: ['S', 'D', 'n1', 'n2'], steps: 9, pulse: true, def: ['X0', 'M0', 'K8', 'K1'], defP: true },
+  RCR: { kind: 'box', cat: 'logic', api: 32, name: 'Rotate right n bits through the carry M1022', ops: ['wordw', 'n'], labels: ['D', 'n'], steps: 5, pulse: true, def: ['D0', 'K1'], defP: true },
+  RCL: { kind: 'box', cat: 'logic', api: 33, name: 'Rotate left n bits through the carry M1022', ops: ['wordw', 'n'], labels: ['D', 'n'], steps: 5, pulse: true, def: ['D0', 'K1'], defP: true },
   SFTL: { kind: 'box', cat: 'logic', api: 35, name: 'Bit shift left: n2 bits of S enter n1 bits of D', ops: ['bitsrc', 'bitw', 'n', 'n'], labels: ['S', 'D', 'n1', 'n2'], steps: 9, pulse: true, def: ['X0', 'M0', 'K8', 'K1'], defP: true },
+  WSFR: { kind: 'box', cat: 'logic', api: 36, name: 'Word shift right: n2 words of S enter n1 words of D', ops: ['wordw', 'wordw', 'n', 'n'], labels: ['S', 'D', 'n1', 'n2'], steps: 9, pulse: true, def: ['D0', 'D10', 'K4', 'K1'], defP: true },
+  WSFL: { kind: 'box', cat: 'logic', api: 37, name: 'Word shift left: n2 words of S enter n1 words of D', ops: ['wordw', 'wordw', 'n', 'n'], labels: ['S', 'D', 'n1', 'n2'], steps: 9, pulse: true, def: ['D0', 'D10', 'K4', 'K1'], defP: true },
+  SFWR: { kind: 'box', cat: 'logic', api: 38, name: 'FIFO write: S → queue D+1 … D+n−1, D = pointer', ops: ['word', 'dreg', 'n'], labels: ['S', 'D (pointer)', 'n'], steps: 7, pulse: true, def: ['D0', 'D10', 'K10'], defP: true },
+  SFRD: { kind: 'box', cat: 'logic', api: 39, name: 'FIFO read: first word of queue S+1 … → D, S = pointer', ops: ['dreg', 'wordw', 'n'], labels: ['S (pointer)', 'D', 'n'], steps: 7, pulse: true, def: ['D10', 'D20', 'K10'], defP: true },
   ZRST: { kind: 'box', cat: 'logic', api: 40, name: 'Zone reset', ops: ['zone', 'zone'], labels: ['D1', 'D2'], steps: 5, pulse: true, def: ['M0', 'M9'] },
   DECO: { kind: 'box', cat: 'logic', api: 41, name: 'Decoder: bit number S (n bits) → ON bit in D', ops: ['word', 'bword', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'M0', 'K3'] },
   ENCO: { kind: 'box', cat: 'logic', api: 42, name: 'Encoder: highest ON bit of S (2ⁿ bits) → D', ops: ['wsrc', 'dreg', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['M0', 'D0', 'K3'] },
@@ -99,20 +112,27 @@ export const INSTR = {
   ALT: { kind: 'box', cat: 'logic', api: 66, name: 'Alternate (toggle) bit', ops: ['bitw'], labels: ['D'], steps: 3, pulse: true, def: ['M0'], defP: true },
   // communication
   MODRW: { kind: 'box', cat: 'comm', api: 150, name: 'Modbus read / write (COM2)', ops: ['word', 'word', 'word', 'dreg', 'word'], labels: ['Station', 'Function', 'Address', 'Data reg.', 'Length'], steps: 11, def: ['K1', 'K6', 'H2000', 'D0', 'K1'] },
+  MODRD: { kind: 'box', cat: 'comm', api: 100, name: 'Modbus read (COM2, function 03) → D1050 …', ops: ['word', 'word', 'word'], labels: ['Station', 'Address', 'Length'], steps: 7, def: ['K1', 'H2100', 'K6'] },
+  MODWR: { kind: 'box', cat: 'comm', api: 101, name: 'Modbus write one word (COM2, function 06)', ops: ['word', 'word', 'word'], labels: ['Station', 'Address', 'Data'], steps: 7, def: ['K1', 'H2001', 'K5000'] },
+  FWD: { kind: 'box', cat: 'comm', api: 102, name: 'Delta VFD: run forward at frequency S1 (0.01 Hz)', ops: ['word', 'word', 'n'], labels: ['Frequency', 'Station', 'n (1 = VFD)'], steps: 7, def: ['K5000', 'K1', 'K1'] },
+  REV: { kind: 'box', cat: 'comm', api: 103, name: 'Delta VFD: run reverse at frequency S1 (0.01 Hz)', ops: ['word', 'word', 'n'], labels: ['Frequency', 'Station', 'n (1 = VFD)'], steps: 7, def: ['K5000', 'K1', 'K1'] },
+  STOP: { kind: 'box', cat: 'comm', api: 104, name: 'Delta VFD: stop', ops: ['word', 'n'], labels: ['Station', 'n (1 = VFD)'], steps: 5, def: ['K1', 'K1'] },
+  RDST: { kind: 'box', cat: 'comm', api: 105, name: 'Delta VFD: read status 2100H … 2106H → D1050 … D1056', ops: ['word', 'n'], labels: ['Station', 'n (1 = VFD)'], steps: 5, def: ['K1', 'K1'] },
+  RSTEF: { kind: 'box', cat: 'comm', api: 106, name: 'Delta VFD: reset the fault', ops: ['word', 'n'], labels: ['Station', 'n (1 = VFD)'], steps: 5, def: ['K1', 'K1'] },
 };
 
 /** Instruction picker groups, in order. */
 export const INSTR_GROUPS = [
-  ['contact', 'Contacts'],
-  ['coil', 'Coils'],
-  ['compare', 'Compare'],
-  ['timer', 'Timers & counters'],
-  ['move', 'Data move & conversion'],
-  ['math', 'Arithmetic'],
-  ['logic', 'Word logic, shift & bits'],
-  ['flow', 'Program flow (MC, CJ, CALL, FEND)'],
-  ['step', 'Step ladder (STL / RET)'],
-  ['comm', 'Communication'],
+  ['contact', '01 · Contacts & edges'],
+  ['coil', '01 · Coils (OUT, SET, RST, PLS, PLF)'],
+  ['timer', '02 · Timers & counters (TMR, TON, TOF, CNT, DCNT)'],
+  ['compare', '03 · Compare'],
+  ['move', '03 · Data move & conversion'],
+  ['math', '03 · Arithmetic'],
+  ['flow', '04 · Program flow (CJ, CALL, FEND, FOR/NEXT, MC)'],
+  ['step', '04 · Step ladder (STL / RET)'],
+  ['comm', '05 · Communication & VFD (Modbus, FWD/REV/STOP)'],
+  ['logic', '06 · Shift, rotate, FIFO & bits'],
 ];
 
 export const CMP_OPS = ['=', '<>', '>', '>=', '<', '<=', '&', '|', '^'];
@@ -503,7 +523,23 @@ function checkInstr(el, ops) {
       if (n !== undefined && (!fits(ops[1], el.t === 'MEAN' ? 1 : n) || (el.t !== 'FMOV' && !fits(ops[0], n)))) return `${el.t}: the block runs past the last device`;
       break;
     }
-    case 'ROR': case 'ROL': if (v(1) !== undefined && (v(1) < 1 || v(1) > 16)) return `${el.t}: n must be K1 … K16`; break;
+    case 'DCNT': if (ops[0] && (ops[0].idx < 200 || ops[0].idx > 242)) return 'DCNT: use a 32-bit counter C200 … C234, or C235 … C242 for the high-speed input X0 … X7'; break;
+    case 'CNT': if (ops[0] && ops[0].idx >= 200) return 'CNT: C200 and up are 32-bit counters — use DCNT'; break;
+    case 'WSFR': case 'WSFL': {
+      const n1 = v(2), n2 = v(3);
+      if (n1 !== undefined && n2 !== undefined && (n2 < 1 || n1 < n2 || n1 > 512)) return `${el.t}: needs 1 ≤ n2 ≤ n1 ≤ 512`;
+      if (n1 !== undefined && (!fits(ops[1], n1) || !fits(ops[0], n2 || 1))) return `${el.t}: the words run past the last device`;
+      break;
+    }
+    case 'SFWR': case 'SFRD': {
+      const n = v(2);
+      if (n !== undefined && (n < 2 || n > 512)) return `${el.t}: n must be K2 … K512`;
+      const q = ops[el.t === 'SFWR' ? 1 : 0];
+      if (n !== undefined && !fits(q, n)) return `${el.t}: the queue runs past the last device`;
+      break;
+    }
+    case 'MODRD': if (ops[2] && ops[2].val !== undefined && (ops[2].val < 1 || ops[2].val > 7)) return 'MODRD: length must be K1 … K7 (data goes to D1050 …)'; break;
+    case 'ROR': case 'ROL': case 'RCR': case 'RCL': if (v(1) !== undefined && (v(1) < 1 || v(1) > 16)) return `${el.t}: n must be K1 … K16`; break;
     case 'BON': if (v(2) !== undefined && (v(2) < 0 || v(2) > 15)) return 'BON: n must be K0 … K15'; break;
     case 'SFTR': case 'SFTL': {
       const n1 = v(2), n2 = v(3);
@@ -645,6 +681,18 @@ export function compileProgram(program, model) {
       else if (f.t === 'CJ' && fendAt >= 0 && (f.exec <= fendAt) !== (target <= fendAt)) errors.push({ ...at, msg: `CJ ${f.op.text}: cannot jump between the main program and a subroutine` });
     }
     if (f.t === 'MC' && f.op && !flowUse.some((x) => x.t === 'MCR' && x.op && x.op.idx === f.op.idx && x.exec >= f.exec)) warnings.push({ ...at, msg: `MC ${f.op.text} has no MCR ${f.op.text} after it — the block runs to the end of the program` });
+    if (f.t === 'FOR') {
+      let depth = 0, ok = false;
+      for (const x of flowUse) {
+        if (x.exec <= f.exec) continue;
+        if (x.t === 'FOR') depth++;
+        if (x.t === 'NEXT') { if (!depth) { ok = true; break; } depth--; }
+      }
+      if (!ok) errors.push({ ...at, msg: 'FOR has no NEXT after it — end the loop with NEXT in a later network' });
+      const nest = flowUse.filter((x) => x.t === 'FOR' && x.exec < f.exec).length - flowUse.filter((x) => x.t === 'NEXT' && x.exec < f.exec).length;
+      if (nest >= 5) errors.push({ ...at, msg: 'FOR … NEXT loops nest at most 5 deep' });
+    }
+    if (f.t === 'NEXT' && flowUse.filter((x) => x.t === 'NEXT' && x.exec <= f.exec).length > flowUse.filter((x) => x.t === 'FOR' && x.exec < f.exec).length) errors.push({ ...at, msg: 'NEXT has no FOR before it' });
     if (f.t === 'SRET' && (fendAt < 0 || f.exec <= fendAt)) warnings.push({ ...at, msg: 'SRET belongs at the end of a subroutine, after FEND' });
     if (f.t === 'STL' && !flowUse.some((x) => x.t === 'RET') && !warnings.some((w) => /^Step ladder/.test(w.msg))) warnings.push({ ...at, msg: 'Step ladder: end the last step with RET' });
   }

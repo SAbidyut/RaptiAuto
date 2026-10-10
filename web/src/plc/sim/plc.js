@@ -16,7 +16,7 @@ export class PlcCpu {
     this.TV = new Int16Array(256);
     this.tacc = new Float64Array(256);
     this.C = new Uint8Array(256);
-    this.CV = new Int16Array(256);
+    this.CV = new Int32Array(256); // C200 … C255 are 32-bit (DCNT)
     this.D = new Int16Array(10000);
     this.Xphys = new Uint8Array(256);
     this.ai = [0, 0, 0, 0];
@@ -88,11 +88,12 @@ export class PlcCpu {
   }
 
   setWord(op, v) {
+    const v32 = v;
     v = i16(v);
     switch (op.dev) {
       case 'D': this.D[op.idx] = v; break;
       case 'T': this.TV[op.idx] = v; this.tacc[op.idx] = v * timerInfo(op.idx).base; break;
-      case 'C': this.CV[op.idx] = v; break;
+      case 'C': this.CV[op.idx] = op.idx >= 200 ? v32 | 0 : v; break;
       default: break;
     }
   }
@@ -281,6 +282,7 @@ export class PlcCpu {
     const labels = this.prog.labels || {};
     this.mcOff = 0;
     this.callStack.length = 0;
+    const loops = []; // FOR … NEXT: {start, left}
     let pc = 0, guard = 0;
     while (pc < R.length) {
       if (++guard > 20000) { this.errorFlag = true; this.M[1067] = 1; break; } // endless jump loop: watchdog
@@ -299,6 +301,16 @@ export class PlcCpu {
       this.execRung(r, rail);
       const f = this.flow;
       if (!f) { pc++; continue; }
+      if (f.forN !== undefined) {
+        loops.push({ start: pc + 1, left: Math.max(1, f.forN) - 1 });
+        pc++;
+        continue;
+      }
+      if (f.next) {
+        const L = loops[loops.length - 1];
+        if (L && L.left > 0) { L.left--; pc = L.start; } else { loops.pop(); pc++; }
+        continue;
+      }
       if (f.fend || f.sret) {
         if (this.callStack.length) { pc = this.callStack.pop(); continue; }
         if (f.fend) break; // end of the main program
@@ -379,7 +391,32 @@ export class PlcCpu {
       case 'RST': if (pw) this.reset(a[0].dev, a[0].idx); return;
       case 'PLS': this.setBit(a[0], pw && !st[e.sid]); st[e.sid] = pw; return;
       case 'PLF': this.setBit(a[0], !pw && st[e.sid]); st[e.sid] = pw; return;
-      case 'TMR': this.timer(a[0].idx, this.getWord(a[1]), pw); return;
+      case 'TMR': case 'TON': this.timer(a[0].idx, this.getWord(a[1]), pw); return;
+      case 'TOF': {
+        // off-delay: ON at once, OFF the set time after the input drops
+        const n = a[0].idx, K = this.getWord(a[1]), { base } = timerInfo(n);
+        if (pw) { this.T[n] = 1; this.TV[n] = 0; this.tacc[n] = 0; }
+        else if (this.T[n]) {
+          this.tacc[n] += this.dt;
+          const v = Math.min(K, Math.floor(this.tacc[n] / base));
+          this.TV[n] = i16(v);
+          if (v >= K) this.T[n] = 0;
+        }
+        return;
+      }
+      case 'DCNT': {
+        // C200–C234 count the rung's rising edges, C235–C242 the pulses on X0–X7 while the rung is ON;
+        // M1200+n ON counts down
+        const n = a[0].idx, K = this.getWord(a[1]);
+        const src = n >= 235 ? this.X[n - 235] : pw;
+        const edge = src && !st[e.sid];
+        st[e.sid] = src;
+        if (pw && edge) this.CV[n] = (this.CV[n] + (this.M[1000 + n] ? -1 : 1)) | 0;
+        this.C[n] = this.CV[n] >= K ? 1 : 0;
+        return;
+      }
+      case 'FOR': this.flow = { forN: this.getWord(a[0]) }; return; // FOR / NEXT have no input condition
+      case 'NEXT': this.flow = { next: true }; return;
       case 'CNT': {
         const n = a[0].idx, K = this.getWord(a[1]);
         if (pw && !st[e.sid] && this.CV[n] < K) this.CV[n]++;
@@ -387,18 +424,32 @@ export class PlcCpu {
         this.C[n] = this.CV[n] >= K ? 1 : 0;
         return;
       }
-      case 'MODRW':
+      case 'MODRW': case 'MODRD': case 'MODWR': case 'FWD': case 'REV': case 'STOP': case 'RDST': case 'RSTEF':
+        // COM2 Modbus master: the request is sent (round robin) while the rung is ON
         this.mbSeen.add(e.sid);
-        if (pw) {
-          if (!this.mbReq.has(e.sid)) this.mbReq.set(e.sid, { sid: e.sid });
-          const q = this.mbReq.get(e.sid);
-          q.station = this.getWord(a[0]); q.fc = this.getWord(a[1]); q.addr = this.getWord(a[2]) & 0xFFFF; q.dreg = a[3].idx; q.n = Math.max(1, Math.min(16, this.getWord(a[4])));
-        } else this.mbReq.delete(e.sid);
+        if (pw) this.mbReq.set(e.sid, { sid: e.sid, ...this.commRequest(e) });
+        else this.mbReq.delete(e.sid);
         return;
       default: break;
     }
     if (e.p) { const go = pw && !st[e.sid]; st[e.sid] = pw; if (!go) return; } else if (!pw) return;
     this.apply(e);
+  }
+
+  /** Modbus frame of a COM2 instruction: {station, fc, addr, n, dreg?, values?}. */
+  commRequest(e) {
+    const a = e.a, W = (i) => this.getWord(a[i]);
+    switch (e.t) {
+      case 'MODRW': return { station: W(0), fc: W(1), addr: W(2) & 0xFFFF, dreg: a[3].idx, n: Math.max(1, Math.min(16, W(4))) };
+      case 'MODRD': return { station: W(0), fc: 3, addr: W(1) & 0xFFFF, dreg: 1050, n: Math.max(1, Math.min(7, W(2))) };
+      case 'MODWR': return { station: W(0), fc: 6, addr: W(1) & 0xFFFF, n: 1, values: [W(2)] };
+      // Delta drives: 2000H command word (H12 run FWD, H22 run REV, H01 stop), 2001H frequency
+      case 'FWD': case 'REV': return { station: W(1), fc: 16, addr: 0x2000, n: 2, values: [e.t === 'FWD' ? 0x12 : 0x22, W(0)] };
+      case 'STOP': return { station: W(0), fc: 6, addr: 0x2000, n: 1, values: [0x01] };
+      case 'RDST': return { station: W(0), fc: 3, addr: 0x2100, dreg: 1050, n: 7 };
+      case 'RSTEF': return { station: W(0), fc: 6, addr: 0x2002, n: 1, values: [0x02] };
+      default: return {};
+    }
   }
 
   timer(n, K, pw) {
@@ -517,6 +568,45 @@ export class PlcCpu {
         this.setWord(a[0], v);
         break;
       }
+      case 'RCR': case 'RCL': {
+        // 17-bit rotation: the carry M1022 is the 17th bit
+        const n = this.getWord(a[1]) & 15;
+        let v = (this.getWord(a[0]) & 0xFFFF) | (M[1022] ? 0x10000 : 0);
+        for (let k = 0; k < n; k++) v = e.t === 'RCR' ? (v >>> 1) | ((v & 1) << 16) : ((v << 1) | (v >>> 16)) & 0x1FFFF;
+        M[1022] = (v >> 16) & 1;
+        this.setWord(a[0], v & 0xFFFF);
+        break;
+      }
+      case 'WSFR': case 'WSFL': {
+        const n1 = this.getWord(a[2]), n2 = this.getWord(a[3]);
+        const ws = [];
+        for (let k = 0; k < n1; k++) ws.push(this.getWord(offset(a[1], k)));
+        const src = [];
+        for (let k = 0; k < n2; k++) src.push(this.getWord(offset(a[0], k)));
+        const out = e.t === 'WSFR' ? [...ws.slice(n2), ...src] : [...src, ...ws.slice(0, n1 - n2)];
+        out.forEach((w, k) => this.setWord(offset(a[1], k), w));
+        break;
+      }
+      case 'SFWR': {
+        // D = pointer, D+1 … D+n−1 = queue; full → carry M1022
+        const d = a[1].idx, n = this.getWord(a[2]), p = this.D[d];
+        if (p >= n - 1) { M[1022] = 1; break; }
+        this.D[d] = p + 1;
+        this.D[d + p + 1] = i16(this.getWord(a[0]));
+        M[1022] = p + 1 >= n - 1 ? 1 : 0;
+        break;
+      }
+      case 'SFRD': {
+        // S = pointer, S+1 … = queue: the oldest word goes to D, the rest move up; empty → zero flag M1020
+        const s = a[0].idx, n = this.getWord(a[2]), p = this.D[s];
+        if (p <= 0) { M[1020] = 1; break; }
+        this.setWord(a[1], this.D[s + 1]);
+        for (let k = 1; k < n - 1; k++) this.D[s + k] = this.D[s + k + 1];
+        this.D[s] = p - 1;
+        M[1020] = p - 1 <= 0 ? 1 : 0;
+        break;
+      }
+      case 'WDT': break;
       case 'SFTR': case 'SFTL': {
         const s = a[0], d = a[1], n1 = this.getWord(a[2]), n2 = this.getWord(a[3]);
         const bits = [];

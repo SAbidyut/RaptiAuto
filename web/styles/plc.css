@@ -45,6 +45,11 @@
 .lab.tab-ladder:not(.split), .lab.tab-hmi:not(.split) { --dock-b: 44px; } /* above the ladder / HMI footer */
 .lab.fs .lab-fs-bar { display: flex; flex-direction: row; gap: 4px; position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 16px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b)); z-index: 20; padding: 5px; border-radius: 20px; overflow-x: auto; scrollbar-width: none; }
 .lab.fs .lab-fs-bar::-webkit-scrollbar { display: none; }
+/* the ☰ handle sat at the top right, over the ladder / HMI / VFD tool bars (e.g. Monitor): in the lab
+   it waits at the bottom right, and while the menus are shown the ✕ at the end of the dock hides them */
+.lab.fs .fs-handle.fs-handle { top: auto; bottom: calc(var(--dock-b) + var(--safe-b) + 6px); }
+.lab.fs:not(.fs-clean) .fs-handle.fs-handle { display: none; }
+.lab.fs .lab-fs-bar .fs-hide { color: var(--accent); }
 .lab.fs .lab-fs-bar .fs-btn { flex-shrink: 0; }
 .lab.fs .lab-status { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 24px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b) + 62px); height: 34px; border-radius: 99px; z-index: 20; }
 .lab.fs .lab-fs-bar.fs-bar, .lab.fs .lab-status.sim-status { background: rgba(10, 16, 32, .42) !important; border: 1px solid rgba(148, 163, 184, .24) !important; backdrop-filter: blur(18px) saturate(160%) !important; -webkit-backdrop-filter: blur(18px) saturate(160%) !important; box-shadow: 0 14px 36px -16px rgba(0, 0, 0, .7) !important; }
@@ -311,8 +316,14 @@
 .hv-tools { display: flex; align-items: center; gap: 4px; }
 .hv-tools .btn:disabled, .hv-tools .icon-btn:disabled { opacity: .35; }
 .hv-stage { flex: 1; position: relative; display: grid; place-items: center; overflow: hidden; padding: 12px; background: radial-gradient(90% 70% at 50% 30%, #17264b, #0a1020 75%); }
-.hv-device { position: relative; padding: 12px 12px 28px; border-radius: 18px; background: linear-gradient(160deg, #24272e, #15171b); box-shadow: 0 24px 60px -18px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 255, 255, .08); }
-.hv-screen { position: relative; border-radius: 4px; overflow: hidden; background: #020305; box-shadow: inset 0 0 0 2px #0b0c0f; }
+/* DOP-107BV front: black plastic bezel, recessed glass, logo and LEDs on the lower edge */
+.hv-device { position: relative; padding: 14px 14px 30px; border-radius: 14px; background: linear-gradient(165deg, #2b2e35 0%, #1a1c21 45%, #111317 100%); box-shadow: 0 24px 60px -18px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 -2px 0 rgba(0, 0, 0, .5), 0 0 0 1px #050608; }
+.hv-device::before { content: ''; position: absolute; inset: 7px 7px 24px; border-radius: 8px; background: #08090b; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .8), 0 1px 0 rgba(255, 255, 255, .06); pointer-events: none; }
+.hv-screen { position: relative; border-radius: 3px; overflow: hidden; background: #020305; box-shadow: inset 0 0 0 2px #0b0c0f; }
+.hv-screen::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(125deg, rgba(255, 255, 255, .07) 0%, rgba(255, 255, 255, 0) 38%); }
+.hv-brand em { font-style: normal; font-size: 9px; font-weight: 700; color: #6b7685; letter-spacing: .4px; }
+.hv-led.com.on { background: #ffb020; box-shadow: 0 0 8px #ffb020; animation: hv-blink .5s steps(2) infinite; }
+@keyframes hv-blink { 50% { opacity: .35; } }
 .hmi-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .hv-brand { position: absolute; left: 16px; right: 16px; bottom: 6px; display: flex; align-items: center; gap: 10px; font-size: 11px; color: #9aa6b8; }
 .hv-brand b { font-family: var(--display); color: #e8eef9; letter-spacing: .5px; }
@@ -545,6 +556,7 @@
 .sd-beam.on { opacity: .8; }
 .sd-water { fill: #2f8de4; opacity: .75; transition: y .2s, height .2s; }
 .sd-value { font-family: var(--mono); font-size: 13px; font-weight: 700; fill: #4ade80; }
+.sd-bridge { stroke: #64748b; stroke-width: 2; stroke-dasharray: 3 3; }
 .sd-poles line { stroke: #94a3b8; stroke-width: 2.5; stroke-linecap: round; transition: transform .1s; }
 .sd-poles.on line { stroke: #f43f5e; transform: translateY(-4px); }
 .sd-knobc { fill: #111827; stroke: #64748b; stroke-width: 1.5; }

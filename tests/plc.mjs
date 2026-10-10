@@ -189,6 +189,51 @@ check('double coil warning', dbl.ok && dbl.warnings.some((w) => /Double coil/.te
   check('FEND behind a contact is an error', !!rungIL(r2).error);
 }
 
+// ---------------------------------------------------------------- v2.5 instructions
+{
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const prog = compileProgram(program([
+    rung('', ['X0 => TON T1 K10']),
+    rung('', ['X1 => TOF T2 K10']),
+    rung('', ['X2 => DCNT C235 K3']),
+    rung('', ['X3 => DCNT C200 K2']),
+    rung('', ['=> FOR K5']),
+    rung('', ['M1000 => INC D0']),
+    rung('', ['=> NEXT']),
+    rung('', ['^X4 =>| MOV K1 D10', '=>| MOV K2 D11', '=>| MOV K3 D12', '=>| MOV K9 D20', '=> WSFLP D20 D10 K3 K1']),
+    rung('', ['^X5 =>| MOV K0 D30', '=>| MOV K11 D99', '=>| SFWR D99 D30 K4', '=>| MOV K22 D99', '=>| SFWR D99 D30 K4', '=> SFRD D30 D40 K4']),
+    rung('', ['^X6 =>| MOV H8001 D50', '=>| RST M1022', '=> RCRP D50 K1']),
+  ]), model);
+  check('v2.5 instructions compile', prog.ok, JSON.stringify(prog.errors));
+  check('IL shows FOR / NEXT and DCNT', programIL(prog).map((l) => l.text).join(';').includes('FOR K5;LD M1000;INC D0;NEXT'), programIL(prog).map((l) => l.text).join(';'));
+  const cpu = new PlcCpu(model); cpu.load(prog); cpu.powerOn();
+  cpu.step(5);
+  check('FOR K5 … NEXT runs the loop 5 times per scan', cpu.D[0] === 5, 'D0=' + cpu.D[0]);
+  cpu.Xphys[0] = 1; cpu.step(1100);
+  check('TON = on-delay', cpu.T[1] === 1 && cpu.TV[1] === 10);
+  cpu.Xphys[1] = 1; cpu.step(20);
+  check('TOF turns ON at once', cpu.T[2] === 1);
+  cpu.Xphys[1] = 0; cpu.step(500);
+  check('TOF still ON during the delay', cpu.T[2] === 1 && cpu.TV[2] > 0);
+  cpu.step(700);
+  check('TOF OFF after the delay', cpu.T[2] === 0);
+  cpu.Xphys[2] = 1;
+  for (let k = 0; k < 4; k++) { cpu.Xphys[0] = 0; cpu.step(10); cpu.Xphys[0] = 1; cpu.step(10); }
+  check('DCNT C235 counts X0 pulses', cpu.CV[235] === 4 && cpu.C[235] === 1, 'C235=' + cpu.CV[235]);
+  cpu.CV[200] = 70000; cpu.Xphys[3] = 1; cpu.step(10);
+  check('DCNT C200 is 32-bit', cpu.CV[200] === 70001, 'C200=' + cpu.CV[200]);
+  cpu.M[1200] = 1; cpu.Xphys[3] = 0; cpu.step(10); cpu.Xphys[3] = 1; cpu.step(10);
+  check('DCNT M1200 ON counts down', cpu.CV[200] === 70000, 'C200=' + cpu.CV[200]);
+  cpu.Xphys[4] = 1; cpu.step(10);
+  check('WSFL shifts words left', cpu.D[10] === 9 && cpu.D[11] === 1 && cpu.D[12] === 2, [cpu.D[10], cpu.D[11], cpu.D[12]].join());
+  cpu.Xphys[5] = 1; cpu.step(10);
+  check('SFWR / SFRD FIFO', cpu.D[40] === 11 && cpu.D[30] === 1 && cpu.D[31] === 22, [cpu.D[40], cpu.D[30], cpu.D[31]].join());
+  cpu.Xphys[6] = 1; cpu.step(10);
+  check('RCR rotates through the carry', (cpu.D[50] & 0xFFFF) === 0x4000 && cpu.M[1022] === 1, (cpu.D[50] & 0xFFFF).toString(16) + ' c=' + cpu.M[1022]);
+  const bad = compileProgram(program([rung('', ['=> FOR K3']), rung('', ['X0 => DCNT C5 K3']), rung('', ['=> NEXT']), rung('', ['=> NEXT'])]), model);
+  check('FOR/NEXT pairing and DCNT range are checked', bad.errors.some((e) => /NEXT has no FOR/.test(e.msg)) && bad.errors.some((e) => /DCNT/.test(e.msg)), JSON.stringify(bad.errors));
+}
+
 // ---------------------------------------------------------------- Modbus framing
 check('CRC16 of 01 06 20 00 00 12', crc16([1, 6, 0x20, 0, 0, 0x12]).toString(16) === '702', crc16([1, 6, 0x20, 0, 0, 0x12]).toString(16));
 check('LRC', lrc([1, 3, 0x21, 2, 0, 2]) === 0xD7, lrc([1, 3, 0x21, 2, 0, 2]).toString(16));
@@ -275,20 +320,55 @@ for (const ex of LAB_EXAMPLES) {
   check('modbus: RTU frames in the log', s.log.some((l) => l.link === 'COM2' && /^01 06 20 00 00 12/.test(l.frame)), s.log.filter((l) => l.link === 'COM2').slice(-3).map((l) => l.frame).join(' | '));
   // set 45 Hz on the HMI keypad
   const hmi = s.hmiRt.hmi;
-  hmi.pointerDown(130, 330); hmi.pointerUp(130, 330);
+  hmi.pointerDown(130, 290); hmi.pointerUp(130, 290);
   const L = hmi.keypadLayout();
   const tap = (k) => { const b = L.keys.find((x) => x.k === k); hmi.pointerDown(b.x + 5, b.y + 5); hmi.pointerUp(b.x + 5, b.y + 5); };
   tap('4'); tap('5'); tap('ENT');
   run(4000);
   check('modbus: HMI set point → 45 Hz', Math.abs(v.f - 45) < 0.05, 'f=' + v.f + ' D10=' + s.plc.cpu.D[10]);
+  // the ± 5 Hz buttons next to the set point
+  hmi.pointerDown(80, 350); hmi.pointerUp(80, 350); run(400);
+  check('HMI − 5 Hz button: D10 = 4000', s.plc.cpu.D[10] === 4000, 'D10=' + s.plc.cpu.D[10]);
+  check('HMI status word: RUNNING', s.plc.cpu.D[30] === 1, 'D30=' + s.plc.cpu.D[30]);
   s.act('es', 'toggle'); run(6000);
   check('modbus: E-stop stops the drive', v.f === 0 && !s.plc.cpu.M[0], 'f=' + v.f);
+}
+
+{
+  // the Delta drive instructions FWD / STOP / RDST instead of MODRW
+  const { s, run } = sim('vfd-modbus-hmi', (p) => {
+    const R = p.program.rungs;
+    const i = R.findIndex((r) => r.outs.some((o) => o && o.t === 'MODRW' && o.a[2] === 'H2000'));
+    R.splice(i, 4,
+      rung('', ['M0 => FWD D10 K1 K1']),
+      rung('', ['/M0 => STOP K1 K1']),
+      rung('', ['M1000 => RDST K1 K1']),
+      rung('', ['M1000 =>| MOV D1053 D20', '=> MOV D1050 D22']));
+    p.plc.downloaded = JSON.parse(JSON.stringify(p.program));
+  });
+  run(2500);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false);
+  run(8000);
+  const v = s.rts.get('vfd').vfd;
+  check('FWD: drive at 30 Hz forward', Math.abs(v.f - 30) < 0.05 && v.f > 0, 'f=' + v.f + ' ' + s.log.filter((l) => l.link === 'COM2').slice(-3).map((l) => l.info).join(' | '));
+  check('RDST: status in D1050 … (D1053 = output Hz)', Math.abs(s.plc.cpu.D[1053] - 3000) <= 5, 'D1053=' + s.plc.cpu.D[1053]);
+  check('FWD frame is function 16 at 2000H', s.log.some((l) => l.link === 'COM2' && /^01 10 20 00 00 02/.test(l.frame)), s.log.filter((l) => l.link === 'COM2').slice(-3).map((l) => l.frame).join(' | '));
+  s.act('stop', 'press', true); run(100); s.act('stop', 'press', false); run(8000);
+  check('STOP: drive stops', v.f === 0, 'f=' + v.f);
 }
 
 {
   const { s, run } = sim('vfd-modbus-hmi', (p) => { p.devices.find((d) => d.id === 'vfd').state.params['09-04'] = 1; });
   run(2000);
   check('modbus: protocol mismatch → time-out M1129', s.plc.cpu.M[1129] === 1 && s.rts.get('lflt').on, s.log.slice(-2).map((l) => l.info).join(' | '));
+  const hmi = s.hmiRt.hmi;
+  check('HMI alarm history logs the time-out on every screen', hmi.alarmLog.some((a) => a.bit === 'M1129' && a.off === null), JSON.stringify(hmi.alarmLog));
+  hmi.pointerDown(10, 10); run(1500);
+  check('HMI: holding the top-left corner opens the system menu', !!hmi.sysMenu);
+  hmi.pointerUp(10, 10);
+  const L = hmi.sysMenuLayout(), ex = L.keys.find((k) => k.k === 'exit');
+  hmi.pointerDown(ex.x + 5, ex.y + 5); hmi.pointerUp(ex.x + 5, ex.y + 5);
+  check('HMI: EXIT closes the system menu', !hmi.sysMenu);
 }
 
 {
@@ -367,6 +447,34 @@ for (const ex of LAB_EXAMPLES) {
   s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(500);
   check('230 V AC coil on 24 V DC: KM1 stays open and an issue explains it', !s.rts.get('km1').closed && s.issues.some((i) => /230 V AC coil/.test(i.text)));
   void p;
+}
+
+{
+  // 3-position selector, 1-pole control breaker, terminal block and an interface relay driven by Y0
+  const { s, run } = sim('blank', (p) => {
+    p.devices.push({ id: 'sw', type: 'selector3', props: { label: 'DIR', pos0: 'FWD', pos1: 'REV' }, state: { pos: 0, last: 1 } });
+    p.devices.push({ id: 'qf', type: 'breaker', props: { label: 'QF1', poles: '1P', rating: 'C2' }, state: { on: true } });
+    p.devices.push({ id: 'x1', type: 'tb', props: { label: 'X1' }, state: {} });
+    p.devices.push({ id: 'k1', type: 'relay', props: { label: 'K1' }, state: {} });
+    p.devices.push({ id: 'lamp', type: 'lamp', props: { label: 'K1', color: 'green' }, state: {} });
+    const c = (a, ap, b, bp) => p.conns.push(makeConn(p.devices, a, ap, b, bp));
+    c('psu', '+V1', 'qf', '1'); c('qf', '2', 'x1', '1'); c('x1', '1b', 'sw', '13'); c('sw', '13', 'sw', '23');
+    c('sw', '14', 'plc', 'X0'); c('sw', '24', 'plc', 'X1');
+    c('plc', 'C0', 'psu', '+V2'); c('plc', 'Y0', 'k1', 'A1'); c('k1', 'A2', 'psu', '-V2');
+    c('qf', '2', 'k1', '11'); c('k1', '14', 'lamp', 'X1'); c('lamp', 'X2', 'psu', '-V2');
+    p.program = program([rung('', ['X0 => OUT Y0'])]);
+    p.plc.downloaded = JSON.parse(JSON.stringify(p.program));
+  });
+  run(400);
+  const cpu = s.plc.cpu;
+  check('3-pos selector in 0: X0 = X1 = 0', cpu.X[0] === 0 && cpu.X[1] === 0);
+  s.act('sw', 'toggle'); run(200);
+  check('3-pos selector → FWD (through QF1 and the terminal block): X0 = 1, relay K1 pulls in, its NO contact lights the lamp', cpu.X[0] === 1 && cpu.X[1] === 0 && s.rts.get('k1').closed && s.rts.get('lamp').on, `X0=${cpu.X[0]} K1=${s.rts.get('k1').closed}`);
+  s.act('sw', 'toggle'); run(100); s.act('sw', 'toggle'); run(200);
+  check('3-pos selector → 0 → REV: X1 = 1, K1 drops out', cpu.X[0] === 0 && cpu.X[1] === 1 && !s.rts.get('k1').closed, `X0=${cpu.X[0]} X1=${cpu.X[1]}`);
+  s.act('sw', 'toggle'); run(100); s.act('sw', 'toggle'); run(200);
+  s.act('qf', 'toggle'); run(200);
+  check('control breaker OFF: inputs and lamp go dark, an issue says so', cpu.X[0] === 0 && !s.rts.get('lamp').on && s.issues.some((i) => /QF1 is OFF/.test(i.text)), s.issues.map((i) => i.text).join(' | '));
 }
 
 // ---------------------------------------------------------------- regressions

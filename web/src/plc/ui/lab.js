@@ -73,8 +73,10 @@ export class LabScreen {
     this.fsBar = h('div', { class: 'fs-bar lab-fs-bar' },
       h('button', { class: 'fs-btn', title: 'Exit full screen', html: icon('fullscreenExit', 20), onclick: () => this.setFullscreen(false) }),
       this.fsRun = h('button', { class: 'fs-btn fs-run', html: icon('play', 20), onclick: () => this.toggleSim() }),
-      ...TABS.map(([id, ic]) => h('button', { class: 'fs-btn', 'data-tab': id, html: icon(ic, 20), onclick: () => this.setTab(id) })));
-    // full screen hides every menu; this small handle brings them back
+      ...TABS.map(([id, ic]) => h('button', { class: 'fs-btn', 'data-tab': id, html: icon(ic, 20), onclick: () => this.setTab(id) })),
+      h('button', { class: 'fs-btn fs-hide', title: 'Hide menus', 'aria-label': 'Hide menus', html: icon('close', 20), onclick: () => this.setChrome(false) }));
+    // full screen hides every menu; this small handle (bottom right, clear of every tool bar at the
+    // top) brings them back, and the ✕ at the end of the dock hides them again
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
     this.root.append(this.top, this.status, this.main, this.nav, this.fsBar, this.fsHandle);
     this.updateSub();
@@ -155,7 +157,7 @@ export class LabScreen {
     this.fullscreen = on;
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
-    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (top right) for the menus'); }
+    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (bottom right) for the menus'); }
     Native.setImmersive(on);
     Native.vibrate(8);
   }
@@ -359,7 +361,7 @@ export class LabScreen {
       const h = sys.hmiRt;
       if (h && this.hmiAcc > 0.05) {
         this.hmiAcc = 0;
-        const anim = h.hmi.powered && (h.hmi.bootT > 0 || !h.hmi.commOk || h.hmi.keypad || h.hmi.current.elements.some((e) => e.type === 'motor' || e.type === 'trend' || e.type === 'alarm'));
+        const anim = h.hmi.animated();
         if (h.hmi.dirty || anim) {
           h.hmi.dirty = false;
           if (!this.views.hmi.designing) renderHmi(this.hmiCanvas, h.hmi, h.hmi.current);

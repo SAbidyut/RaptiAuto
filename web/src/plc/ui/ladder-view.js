@@ -66,6 +66,9 @@ export class LadderView {
       B('lb-sym', sym('RST'), 'Reset coil (RST)', () => this.insertOutput('RST')),
       B('lb-txt', '<b>TMR</b>', 'Timer', () => this.insertOutput('TMR')),
       B('lb-txt', '<b>CNT</b>', 'Counter', () => this.insertOutput('CNT')),
+      B('lb-txt', '<b>LD=</b>', 'Compare contact (LD=, LD>, LD< …)', () => this.insertAny('CC')),
+      B('lb-txt', '<b>MOV</b>', 'Move (MOV)', () => this.insertOutput('MOV')),
+      B('lb-txt', '<b>ADD</b>', 'Addition (ADD)', () => this.insertOutput('ADD')),
       B('lb-txt', '<b>ƒ API</b>', 'All instructions (compare, math, shift, MC, CJ, CALL, STL …)', () => openInstrPicker({ onPick: (t) => this.insertAny(t) })),
       B('lb-sym', sym('H'), 'Horizontal line', () => this.insertH()),
       B('lb-sym', sym('V'), 'Vertical line (link to the row below)', () => this.toggleV()),
@@ -872,11 +875,11 @@ export class LadderView {
         items.push({ icon: 'bolt', label: `Force ${op.text} ON`, hint: f === 1 ? '●' : '', action: () => cpu.setForce('X', op.idx, 1) });
         items.push({ icon: 'power', label: `Force ${op.text} OFF`, hint: f === 0 ? '●' : '', action: () => cpu.setForce('X', op.idx, 0) });
         if (f !== undefined) items.push({ icon: 'close', label: `Release force ${op.text}`, action: () => cpu.setForce('X', op.idx, null) });
-      } else if (['Y', 'M', 'S'].includes(op.dev) || (['T', 'C'].includes(op.dev) && el.t !== 'TMR' && el.t !== 'CNT' && INSTR[el.t].kind === 'contact')) {
+      } else if (['Y', 'M', 'S'].includes(op.dev) || (['T', 'C'].includes(op.dev) && INSTR[el.t].kind === 'contact')) {
         items.push({ icon: 'bolt', label: `Set ${op.text} ON`, action: () => cpu.write(op.dev, op.idx, 1) });
         items.push({ icon: 'power', label: `Set ${op.text} OFF`, action: () => cpu.write(op.dev, op.idx, 0) });
       }
-      if (['D', 'T', 'C'].includes(op.dev) && (op.dev === 'D' || el.t === 'TMR' || el.t === 'CNT' || INSTR[el.t].kind === 'box' || el.t === 'CC')) {
+      if (['D', 'T', 'C'].includes(op.dev) && (op.dev === 'D' || INSTR[el.t].kind === 'box' || el.t === 'CC')) {
         items.push({ icon: 'edit', label: `Change ${op.text}${op.dev !== 'D' ? ' value' : ''}…`, action: async () => {
           const cur = op.dev === 'D' ? cpu.D[op.idx] : op.dev === 'T' ? cpu.TV[op.idx] : cpu.CV[op.idx];
           const v = await promptDialog(`New value for ${op.text}`, String(cur));
@@ -958,7 +961,7 @@ export class LadderView {
     dialog({
       title: 'Ladder editor',
       body: `<div class="lab-help">
-        <p>Tap a cell to move the <b>cursor</b>, then a toolbar button: <b>⊣⊢</b> NO contact, <b>⊣/⊢</b> NC contact, the stacked ones add a <b>parallel (OR)</b> branch below, <b>( )</b> output coil, <b>(S)/(R)</b> set / reset, <b>TMR</b>, <b>CNT</b> and <b>ƒ API</b> for every other instruction: compare (LD=, LD&amp;, CMP, ZCP), move &amp; convert (MOV, BMOV, FMOV, XCH, BCD, BIN, SWAP), math (ADD … DIV, INC, DEC, NEG, ABS, SQR, MEAN, SCAL), word logic &amp; shifts (WAND, WOR, WXOR, ROR, ROL, SFTR, SFTL, DECO, ENCO, SUM, BON, ZRST, ALT), program flow (MC/MCR, CJ, CALL/SRET, FEND), step ladder (STL/RET), INV, MEP/MEF and MODRW.</p>
+        <p>Tap a cell to move the <b>cursor</b>, then a toolbar button: <b>⊣⊢</b> NO contact, <b>⊣/⊢</b> NC contact, the stacked ones add a <b>parallel (OR)</b> branch below, <b>( )</b> output coil, <b>(S)/(R)</b> set / reset, <b>TMR</b>, <b>CNT</b> and <b>ƒ API</b> for every other instruction: compare (LD=, LD&amp;, CMP, ZCP), move &amp; convert (MOV, BMOV, FMOV, XCH, BCD, BIN, SWAP), math (ADD … DIV, INC, DEC, NEG, ABS, SQR, MEAN, SCAL), word logic &amp; shifts (WAND, WOR, WXOR, ROR, ROL, SFTR, SFTL, DECO, ENCO, SUM, BON, ZRST, ALT), program flow (MC/MCR, CJ, CALL/SRET, FEND, FOR/NEXT, WDT), step ladder (STL/RET), INV, MEP/MEF, timers TON / TOF, the 32-bit and high-speed counter DCNT, word shift and FIFO (WSFR, WSFL, SFWR, SFRD, RCR, RCL), Modbus (MODRW, MODRD, MODWR) and the Delta drive instructions FWD, REV, STOP, RDST, RSTEF.</p>
         <p>The diagram always fits the screen width; networks are stacked and the program grows downward — scroll up and down.</p>
         <p><b>CJ / CALL:</b> give the target network a pointer — long-press its number → <b>Pointer label</b>. Subroutines go after <b>FEND</b> and end with <b>SRET</b>. <b>Step ladder:</b> <code>M1002 → SET S0</code>, each step starts with <b>STL Sn</b> (first cell), <b>SET Sm</b> moves to the next step, <b>RET</b> ends the block.</p>
         <p>Enter the device with the keypad. <b>X / Y are octal</b> on Delta PLCs (X0–X7, X10–X17). Timers T0–T199 count in 100 ms: <code>TMR T0 K50</code> = 5 s.</p>
@@ -970,11 +973,12 @@ export class LadderView {
   }
 }
 
+const TC = new Set(['TMR', 'TON', 'TOF', 'CNT', 'DCNT']);
 /** Does a box show a live value (timer / counter value or the word it writes) while monitoring? */
 function valueOperand(el) {
   const d = INSTR[el.t];
   if (!d || d.kind !== 'box' || d.flow) return -1;
-  if (el.t === 'TMR' || el.t === 'CNT') return 0;
+  if (TC.has(el.t)) return 0;
   for (let i = d.ops.length - 1; i >= 0; i--) if (d.ops[i] === 'wordw' || d.ops[i] === 'dreg') return i;
   return -1;
 }
@@ -983,9 +987,9 @@ function valueText(el, cpu) {
   const i = valueOperand(el);
   const op = i >= 0 ? parseOperand(el.a[i]) : null;
   if (!op) return '';
-  if (el.t === 'TMR') return `${op.text} = ${cpu.TV[op.idx]}`;
-  if (el.t === 'CNT') return `${op.text} = ${cpu.CV[op.idx]}`;
-  return `${op.text} = ${cpu.getWord(op)}${el.t === 'MODRW' && cpu.M[1129] ? ' · time-out' : ''}`;
+  if (op.dev === 'T') return `${op.text} = ${cpu.TV[op.idx]}`;
+  if (op.dev === 'C') return `${op.text} = ${cpu.CV[op.idx]}`;
+  return `${op.text} = ${cpu.getWord(op)}${INSTR[el.t].cat === 'comm' && cpu.M[1129] ? ' · time-out' : ''}`;
 }
 
 export { isOutputType, elementText, fmtAddr };

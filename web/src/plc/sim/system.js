@@ -96,6 +96,11 @@ export class LabSystem {
       case 'toggle':
         if (rt.kind === 'estop') s.pressed = !s.pressed;
         else if (rt.kind === 'selector') s.on = !s.on;
+        else if (rt.kind === 'selector3') {
+          // a 3-position switch turns through 0: left → 0 → right → 0 → left …
+          if (s.pos) { s.last = s.pos; s.pos = 0; } else s.pos = s.last === -1 ? 1 : -1;
+        }
+        else if (rt.kind === 'cb') s.on = !(s.on !== false);
         else if (rt.kind === 'prox') s.target = !s.target;
         else if (rt.kind === 'limit') s.on = !s.on;
         else if (rt.kind === 'olr') s.tripped = !s.tripped;
@@ -167,6 +172,15 @@ export class LabSystem {
         }
         case 'estop': if (!s.pressed) unite(node(id, '11'), node(id, '12')); break;
         case 'selector': if (s.on) unite(node(id, '13'), node(id, '14')); break;
+        case 'selector3': if (s.pos === -1) unite(node(id, '13'), node(id, '14')); else if (s.pos === 1) unite(node(id, '23'), node(id, '24')); break;
+        case 'relay': if (rt.closed) unite(node(id, '11'), node(id, '14')); else unite(node(id, '11'), node(id, '12')); break;
+        case 'cb':
+          if (s.on !== false) {
+            if (deviceProps(rt.dev).poles === '3P') for (const k of ['1', '2', '3']) unite(node(id, 'L' + k), node(id, 'T' + k));
+            else unite(node(id, '1'), node(id, '2'));
+          }
+          break;
+        case 'tb': for (let k = 1; k <= 6; k++) unite(node(id, String(k)), node(id, k + 'b')); break;
         case 'limit': if (s.on) unite(node(id, '13'), node(id, '14')); else unite(node(id, '21'), node(id, '22')); break;
         case 'contactor':
           // the armature follows the coil of the previous step (a contactor needs a few ms to pull in)
@@ -307,6 +321,14 @@ export class LabSystem {
           if (was !== undefined && was !== rt.closed && this.hooks.onContactor) this.hooks.onContactor(rt);
           break;
         }
+        case 'relay': {
+          const r = diff(id, 'A1', id, 'A2');
+          rt.coil = !!(r && !r.same && !r.ac && r.d >= 18);
+          rt.wrongCoil = !!(r && !r.same && r.ac);
+          rt.reversed = !!(r && !r.same && !r.ac && r.d <= -18);
+          rt.closed = rt.coil || !!rt.pressed;
+          break;
+        }
         case 'lamp': case 'buzzer': {
           const [a, b] = rt.kind === 'lamp' ? ['X1', 'X2'] : ['+', '-'];
           const r = diff(id, a, id, b);
@@ -333,7 +355,7 @@ export class LabSystem {
     for (const v of this.byKind('vfd')) { v.vfd.motor.connected = false; v.motorId = null; v.motorOff = null; }
     // a motor behind an open contactor is wired correctly, just switched off: follow the wiring
     // through the open main contacts so the issue list does not call it "not connected"
-    const open = this.byKind('contactor').filter((k) => !k.closed);
+    const open = [...this.byKind('contactor').filter((k) => !k.closed), ...this.byKind('cb').filter((k) => k.dev.state.on === false && deviceProps(k.dev).poles === '3P')];
     const through = (r0) => {
       let r = r0, by = null;
       const seen = new Set([r]);
@@ -537,7 +559,7 @@ export class LabSystem {
     const req = cpu.nextModbusRequest(m2.last);
     if (!req) return;
     const fmt = cpu.com2Format();
-    const values = req.fc === 6 ? [cpu.D[req.dreg]] : req.fc === 16 ? Array.from({ length: req.n }, (_, i) => cpu.D[req.dreg + i]) : [];
+    const values = req.values ? req.values : req.fc === 6 ? [cpu.D[req.dreg]] : req.fc === 16 ? Array.from({ length: req.n }, (_, i) => cpu.D[req.dreg + i]) : [];
     const payload = { count: req.n, values };
     const bytes = requestBytes(req.station, req.fc, req.addr, payload);
     this.pushLog('COM2', 'TX', 'PLC', req.station ? `Station ${req.station}` : 'Broadcast', encodeFrame(bytes, fmt.mode), describeVfdReq(req, values));
@@ -556,8 +578,9 @@ export class LabSystem {
         const r = v.vfd.modbus({ station: req.station, fc: req.fc, addr: req.addr, count: req.n, values });
         if (req.fc !== 3) this.persistVfd(v);
         if (r) { res = r; responder = v.def.short; }
-        if (r && req.fc === 6 && req.addr === 0x2000 && v.vfd.P('00-21') !== 2) v.ignoredCmd = this.time;
-        if (r && req.fc === 6 && req.addr === 0x2001 && v.vfd.P('00-20') !== 1) v.ignoredFreq = this.time;
+        const writes = (reg) => (req.fc === 6 || req.fc === 16) && reg >= req.addr && reg < req.addr + (req.fc === 6 ? 1 : req.n);
+        if (r && writes(0x2000) && v.vfd.P('00-21') !== 2) v.ignoredCmd = this.time;
+        if (r && writes(0x2001) && v.vfd.P('00-20') !== 1) v.ignoredFreq = this.time;
       }
     }
     const tReq = frameMs(bytes, fmt);
@@ -626,6 +649,11 @@ export class LabSystem {
         case 'contactor':
           if (rt.wrongCoil) add('error', deviceProps(rt.dev).coil === '230AC' ? `${name} ${deviceProps(rt.dev).label || ''}: 24 V DC on a 230 V AC coil — it cannot pull in. Change the coil voltage in its settings or wire it to 230 V AC.` : `${name} ${deviceProps(rt.dev).label || ''}: 230 V AC on a 24 V DC coil! Wire A1 / A2 to 24 V DC (A2 to 0 V) or choose a 230 V AC coil.`, rt.dev.id);
           break;
+        case 'relay':
+          if (rt.wrongCoil) add('error', `${name} ${deviceProps(rt.dev).label || ''}: 230 V AC on a 24 V DC relay coil!`, rt.dev.id);
+          else if (rt.reversed) add('warn', `${name} ${deviceProps(rt.dev).label || ''}: coil polarity reversed — A1 is +24 V, A2 is 0 V (the LED and the free-wheel diode need it).`, rt.dev.id);
+          break;
+        case 'cb': if (rt.dev.state.on === false) add('info', `${name} ${deviceProps(rt.dev).label || ''} is OFF — tap the lever to switch it on.`, rt.dev.id); break;
         case 'olr': if (rt.dev.state.tripped) add('warn', `${name} ${deviceProps(rt.dev).label || ''} tripped (95–96 open). Tap its button to reset it.`, rt.dev.id); break;
         case 'prox': case 'atx': {
           const r = this.diff && this.diff(rt.dev.id, 'BN', rt.dev.id, 'BU');
@@ -661,6 +689,7 @@ function describeVfdReq(req, values) {
     if (a === 0x2000) {
       const run = v & 3, dir = (v >> 4) & 3;
       what = [run === 1 ? 'STOP' : run === 2 ? 'RUN' : run === 3 ? 'JOG' : '', dir === 1 ? 'FWD' : dir === 2 ? 'REV' : ''].filter(Boolean).join(' ');
+      if (req.fc === 16 && values.length > 1) what += ` · ${(values[1] / 100).toFixed(2)} Hz`;
     } else if (a === 0x2001) what = `${(v / 100).toFixed(2)} Hz`;
     else if (a === 0x2002) what = v & 2 ? 'fault reset' : v & 1 ? 'EF' : '';
     else if (a < 0x2000) what = `Pr.${String(a >> 8).padStart(2, '0')}-${String(a & 255).padStart(2, '0')}`;

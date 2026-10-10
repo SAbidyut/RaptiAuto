@@ -46,7 +46,7 @@ function edgeOf(def, port) {
   return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
 }
 
-const BODY_H = { plc: 176, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140 };
+const BODY_H = { plc: 176, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112 };
 
 function symbolFor(dev) {
   const def = DEVICE_DEFS[dev.type];
@@ -440,6 +440,50 @@ function drawDevice(g, sym) {
       txt(cx, h - 12, title, 'sd-label');
       ctl(cx - 28, cy - 28, 56, 56, 'toggle', { label: title });
       update = (rt) => set(bar, 'transform', `rotate(${rt.dev.state.on ? 40 : -40} ${cx} ${cy})`);
+      break;
+    }
+    case 'selector3': {
+      const cx = w / 2, cy = 60;
+      el('circle', { cx, cy, r: 21, class: 'sd-bezelr' }, g);
+      const bar = el('rect', { x: cx - 4, y: cy - 18, width: 8, height: 36, rx: 3, class: 'sd-knob' }, g);
+      txt(cx - 30, 36, props.pos0 || 'L', 'sd-mini');
+      txt(cx, 32, '0', 'sd-mini');
+      txt(cx + 30, 36, props.pos1 || 'R', 'sd-mini');
+      txt(cx, h - 12, title, 'sd-label');
+      ctl(cx - 28, cy - 28, 56, 56, 'toggle', { label: title });
+      update = (rt) => set(bar, 'transform', `rotate(${(rt.dev.state.pos || 0) * 40} ${cx} ${cy})`);
+      break;
+    }
+    case 'relay': {
+      const cx = w / 2, cy = h / 2;
+      txt(cx, cy - 18, props.label || 'K1', 'sd-title');
+      txt(cx, cy - 2, '24 V DC', 'sd-sub');
+      const l = led(cx + 22, cy - 22, '#ff3434', 3.6);
+      const st = txt(cx, cy + 22, 'OFF', 'sd-state');
+      ctl(cx - 34, cy - 30, 68, 64, 'press', { label: `${props.label || 'Relay'} (test button)` });
+      update = (rt) => {
+        ledOn(l, !!rt.coil);
+        const s = rt.closed ? '11–14' : '11–12';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (rt.closed ? ' ok' : '')); }
+      };
+      break;
+    }
+    case 'cb': {
+      const cx = w / 2, cy = h / 2;
+      txt(cx, cy - 18, props.label || 'QF1', 'sd-title');
+      txt(cx, cy - 2, `${props.rating || 'C6'} · ${props.poles === '3P' ? '3P' : '1P'}`, 'sd-sub');
+      const st = txt(cx, cy + 22, 'ON', 'sd-state ok');
+      ctl(cx - 34, cy - 30, 68, 64, 'toggle', { label: `${props.label || 'Breaker'} ON / OFF` });
+      update = (rt) => {
+        const on = rt.dev.state.on !== false, s = on ? 'ON' : 'OFF';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (on ? ' ok' : ' err')); }
+      };
+      break;
+    }
+    case 'tb': {
+      const cx = w / 2, cy = h / 2;
+      for (const sl of sym.slots.values()) if (sl.edge === 'top') el('line', { x1: sl.x, y1: 22, x2: sl.x, y2: h - 22, class: 'sd-bridge' }, g);
+      txt(cx, cy + 4, props.label || 'X1', 'sd-title');
       break;
     }
     case 'lamp': {

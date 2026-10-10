@@ -496,8 +496,8 @@ export class Shell {
     dialog({
       title: 'Delta PLC Lab',
       body: `<div class="lab-help"><p>A virtual industrial-automation trainer with <b>Delta</b> equipment:</p><ul>
-        <li><b>DVP-ES2 / EX2 PLC</b> — X/Y in octal, M, T, C, D, special relays, timers, counters, math, MODRW.</li>
-        <li><b>DOP-107BV HMI</b> — buttons, lamps, numeric input, meters, trends; Delta DVP protocol on COM1/COM2.</li>
+        <li><b>DVP-ES2 / EX2 PLC</b> — X/Y in octal, M, T, C, D, special relays, timers (TMR, TON, TOF), counters (CNT, DCNT), math, FOR/NEXT, FIFO, MODRW and the VFD instructions FWD / REV / STOP / RDST / RSTEF.</li>
+        <li><b>DOP-107BV HMI</b> — buttons, lamps, numeric input, ± buttons, sliders, meters, tanks, trends, multi-state indicators, clock, alarm history and a System Setting menu; Delta DVP protocol on COM1/COM2.</li>
         <li><b>MS300 VFD</b> — keypad, parameters, MI terminals, AVI, RS-485 Modbus, motor with real ramps.</li></ul>
         <p class="muted">The simulator follows Delta conventions for learning. Always follow the official manuals on real equipment.</p></div>`,
       actions: [{ label: 'OK', value: true, cls: 'btn-primary' }],
