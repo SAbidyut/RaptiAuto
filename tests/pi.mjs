@@ -25,10 +25,13 @@ function check(name, cond, extra = '') {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+let live = null;
 async function proc(board, opts = {}) {
+  if (live) live.kill();   // only one interpreter may be alive (like the app)
   const gpio = opts.gpio || new GpioSim(board);
   let text = '';
   const p = new PyProcess({ gpio, libs: LIBS, wasmLoader, out: (t) => { text += t; }, cwd: board.startsWith('pico') ? '/' : '/home/pi', ...opts });
+  live = p;
   await p.start();
   return { p, gpio, get text() { return text; }, clear() { text = ''; } };
 }
@@ -37,6 +40,7 @@ async function proc(board, opts = {}) {
 async function py(gpio, src, opts = {}) {
   const t = await proc(gpio.board, { ...opts, gpio });
   await t.p.runSource(src, opts.name || '<stdin>');
+  t.p.kill();
   gpio.stopProcess();
   return t.text;
 }

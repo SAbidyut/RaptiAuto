@@ -145,6 +145,7 @@ export class PyProcess {
         WebAssembly.instantiate(wasm, imports).then((inst) => receive(inst, wasm));
         return {};
       },
+      locateFile: (f) => f,
       print: () => {},
       printErr: () => {},
     };
@@ -170,16 +171,19 @@ export class PyProcess {
     this.mp.registerJsModule('_rpi_js', bridge(this.gpio, this));
     const FS = this.mp.FS;
     const pico = this.gpio.isPico;
-    FS.mkdirTree('/lib/RPi');
+    // the simulator's own modules live in /rlib (after the user's folders on sys.path)
+    FS.mkdirTree('/rlib/RPi');
     for (const [name, src] of Object.entries(this.libs)) {
       if (pico && PI_ONLY.includes(name)) continue;
       if (!pico && PICO_ONLY.includes(name)) continue;
-      FS.writeFile('/lib/' + name, src);
+      FS.writeFile('/rlib/' + name, src);
     }
-    FS.writeFile('/lib/_rpi_boot.py', BOOT_PY);
+    FS.writeFile('/rlib/_rpi_boot.py', BOOT_PY);
     this.writeFiles(this.files);
     try { FS.mkdirTree(this.cwd); } catch (e) { /* exists */ }
-    await this.exec(`import os, builtins, _rapti\nos.chdir(${JSON.stringify(this.cwd)})\nbuiltins.input = _rapti.input\nimport _rpi_hw\n`);
+    await this.exec(`import sys, os, builtins, _rapti\nsys.path.append('/rlib')\nos.chdir(${JSON.stringify(this.cwd)})\nbuiltins.input = _rapti.input\nimport _rpi_hw\n`);
+    // callbacks (button IRQs, timers) also run while no code is running, e.g. at the >>> prompt
+    this.idleT = setInterval(() => { if (!this.dead && !this.busy && this.gpio.pending()) this.exec('_rpi_hw._dispatch(0)'); }, 15);
     return this;
   }
 
@@ -204,7 +208,7 @@ export class PyProcess {
         const p = (dir === '/' ? '' : dir) + '/' + n;
         let st;
         try { st = FS.stat(p); } catch (e) { continue; }
-        if (FS.isDir(st.mode)) { if (p !== '/lib' && p !== '/proc' && p !== '/dev' && p !== '/tmp') walk(p); }
+        if (FS.isDir(st.mode)) { if (p !== '/rlib' && p !== '/proc' && p !== '/dev' && p !== '/tmp') walk(p); }
         else { try { out[p] = FS.readFile(p, { encoding: 'utf8' }); } catch (e) { /* binary */ } }
       }
     };
@@ -298,6 +302,8 @@ export class PyProcess {
     if (this.dead) return;
     this.flush();
     this.dead = true;
+    clearInterval(this.idleT);
+    if (this.M) this.M.raptiDead = true;
     if (this.pendingRead) { const r = this.pendingRead; this.pendingRead = null; r(''); }
     this.mp = null;
     this.M = null;

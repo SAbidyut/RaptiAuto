@@ -159,6 +159,7 @@ public class MainActivity extends Activity {
         if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
         if (p.endsWith(".webp")) return "image/webp";
         if (p.endsWith(".json")) return "application/json";
+        if (p.endsWith(".wasm")) return "application/wasm";
         if (p.endsWith(".woff2")) return "font/woff2";
         if (p.endsWith(".woff")) return "font/woff";
         if (p.endsWith(".ttf")) return "font/ttf";

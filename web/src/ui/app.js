@@ -27,7 +27,7 @@ export class App {
     this.showHome();
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.handleBack();
-      if ((e.ctrlKey || e.metaKey) && e.key === 's' && (this.editor || this.lab)) { e.preventDefault(); (this.editor || this.lab).saveNow(); toast('Saved', 'ok'); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && (this.editor || this.lab) && !this.pi) { e.preventDefault(); (this.editor || this.lab).saveNow(); toast('Saved', 'ok'); }
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.onPause(); else this.onResume(); });
   }
@@ -37,6 +37,7 @@ export class App {
   showHome(page) {
     if (this.editor) { this.editor.unmount(); this.editor = null; }
     if (this.lab) { this.lab.unmount(); this.lab = null; }
+    if (this.pi) { this.pi.unmount(); this.pi = null; }
     if (!this.home) this.home = new Shell(this);
     if (!this.home.root.isConnected) this.home.mount(this.root);
     else this.home.refreshProjects();
@@ -47,6 +48,7 @@ export class App {
     if (this.home) this.home.unmount();
     if (this.editor) this.editor.unmount();
     if (this.lab) { this.lab.unmount(); this.lab = null; }
+    if (this.pi) { this.pi.unmount(); this.pi = null; }
     this.editor = new Editor(this, p);
     this.editor.mount(this.root);
   }
@@ -58,8 +60,21 @@ export class App {
     if (this.home) this.home.unmount();
     if (this.editor) { this.editor.unmount(); this.editor = null; }
     if (this.lab) this.lab.unmount();
+    if (this.pi) { this.pi.unmount(); this.pi = null; }
     this.lab = new mod.LabScreen(this, p);
     this.lab.mount(this.root);
+  }
+
+  /** Open the Raspberry Pi lab (its bundle with the MicroPython runtime is loaded on first use). */
+  async openPi() {
+    let mod;
+    try { mod = await loadBundle('pi.js', '__raptiPi', 'Starting the Raspberry Pi…'); } catch (e) { toast('Could not load the Raspberry Pi lab', 'error'); return; }
+    if (this.home) this.home.unmount();
+    if (this.editor) { this.editor.unmount(); this.editor = null; }
+    if (this.lab) { this.lab.unmount(); this.lab = null; }
+    if (this.pi) this.pi.unmount();
+    this.pi = new mod.PiScreen(this);
+    this.pi.mount(this.root);
   }
 
   showAbout() {
@@ -77,28 +92,29 @@ export class App {
     return true;
   }
 
-  onPause() { if (this.editor) this.editor.onPause(); if (this.lab) this.lab.saveNow(); }
+  onPause() { if (this.editor) this.editor.onPause(); if (this.lab) this.lab.saveNow(); if (this.pi) this.pi.onPause(); }
   onResume() { if (this.editor) this.editor.onResume(); }
-  onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); if (this.lab) this.lab.root.classList.toggle('kb', h > 0); }
+  onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); if (this.lab) this.lab.root.classList.toggle('kb', h > 0); if (this.pi) this.pi.root.classList.toggle('kb', h > 0); }
 
   persist(p) { saveProject(p); }
 }
 
-let labModule = null;
-/** Load build/www/lab.js once (three.js + the lab screens). */
-function loadLabModule() {
-  if (window.__raptiLab) return Promise.resolve(window.__raptiLab);
-  if (labModule) return labModule;
+const bundles = {};
+/** Load a lazily loaded bundle once: lab.js (three.js + the lab screens), pi.js (Raspberry Pi lab). */
+function loadBundle(file, global, label) {
+  if (window[global]) return Promise.resolve(window[global]);
+  if (bundles[file]) return bundles[file];
   const veil = document.createElement('div');
   veil.className = 'lab-loading';
-  veil.innerHTML = '<div class="ll-box"><div class="ll-spin"></div><span>Loading the lab…</span></div>';
+  veil.innerHTML = `<div class="ll-box"><div class="ll-spin"></div><span>${label}</span></div>`;
   const t = setTimeout(() => document.body.appendChild(veil), 120);
-  labModule = new Promise((resolve, reject) => {
+  bundles[file] = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = 'lab.js';
-    s.onload = () => (window.__raptiLab ? resolve(window.__raptiLab) : reject(new Error('lab bundle')));
-    s.onerror = () => { labModule = null; reject(new Error('lab bundle')); };
+    s.src = file;
+    s.onload = () => (window[global] ? resolve(window[global]) : reject(new Error(file)));
+    s.onerror = () => { bundles[file] = null; reject(new Error(file)); };
     document.head.appendChild(s);
   }).finally(() => { clearTimeout(t); veil.remove(); });
-  return labModule;
+  return bundles[file];
 }
+const loadLabModule = () => loadBundle('lab.js', '__raptiLab', 'Loading the lab…');

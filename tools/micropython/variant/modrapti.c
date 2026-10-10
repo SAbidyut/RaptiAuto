@@ -29,8 +29,25 @@ EM_ASYNC_JS(char *, rapti_js_readline, (const char *prompt), {
     const s = line == null ? "" : String(line); const n = lengthBytesUTF8(s) + 1; const ptr = _malloc(n); stringToUTF8(s, ptr, n); return ptr;
 });
 
+// A stopped program whose interpreter was thrown away must never run again: when its sleep
+// ends, it parks on a promise that never resolves (only one interpreter may be live).
+EM_JS(int, rapti_js_dead, (void), {
+    return Module.raptiDead ? 1 : 0;
+});
+
+EM_ASYNC_JS(void, rapti_js_park, (void), {
+    await new Promise(() => {});
+});
+
+static void rapti_check_dead(void) {
+    if (rapti_js_dead()) {
+        rapti_js_park();
+    }
+}
+
 static void rapti_yield(int ms) {
     emscripten_sleep(ms);
+    rapti_check_dead();
     if (MP_STATE_VM(rapti_dispatch) != MP_OBJ_NULL && MP_STATE_VM(rapti_dispatch) != mp_const_none && rapti_js_pending()) {
         mp_sched_schedule(MP_STATE_VM(rapti_dispatch), mp_const_none);
     }
@@ -73,6 +90,7 @@ static mp_obj_t rapti_input(size_t n_args, const mp_obj_t *args) {
         prompt = mp_obj_str_get_str(s);
     }
     char *line = rapti_js_readline(prompt);
+    rapti_check_dead();
     mp_handle_pending(true);
     mp_obj_t ret = mp_obj_new_str(line, strlen(line));
     free(line);
