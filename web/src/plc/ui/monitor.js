@@ -201,7 +201,7 @@ export class MonitorView {
     if (full || !this.logEls) {
       this.body.innerHTML = '';
       const chips = h('div', { class: 'chips-row mv-filter' },
-        ...[['all', 'All'], ['COM1', 'COM1 · HMI'], ['COM2', 'COM2 · VFD'], ['ERR', 'Errors']].map(([id, label]) => h('button', { class: 'chip' + (this.filter === id ? ' active' : ''), onclick: () => { this.filter = id; this.render(true); } }, label)),
+        ...[['all', 'All'], ['COM1', 'COM1 · HMI'], ['COM2', 'COM2 · RS-485'], ['ERR', 'Errors']].map(([id, label]) => h('button', { class: 'chip' + (this.filter === id ? ' active' : ''), onclick: () => { this.filter = id; this.render(true); } }, label)),
         h('button', { class: 'chip', html: `${icon(this.paused ? 'play' : 'pause', 14)}<span>${this.paused ? 'Resume' : 'Pause'}</span>`, onclick: () => { this.paused = !this.paused; this.render(true); } }),
         h('button', { class: 'chip', html: `${icon('trash', 14)}<span>Clear</span>`, onclick: () => { if (sys) { sys.log.length = 0; } this.render(true); } }));
       this.logList = h('div', { class: 'mv-log' });
@@ -217,7 +217,7 @@ export class MonitorView {
     const seq = sys.logSeq;
     if (seq === this.lastSeq) return;
     this.lastSeq = seq;
-    const rows = sys.log.filter((l) => this.filter === 'all' || (this.filter === 'ERR' ? l.dir === 'ERR' : l.link === this.filter)).slice(-80).reverse();
+    const rows = sys.log.filter((l) => this.filter === 'all' || (this.filter === 'ERR' ? l.dir === 'ERR' : l.link.startsWith(this.filter))).slice(-80).reverse();
     this.logList.innerHTML = '';
     if (!rows.length) this.logList.appendChild(h('p', { class: 'muted center' }, 'No frames yet. The HMI polls COM1; MODRW instructions use COM2.'));
     for (const l of rows) {

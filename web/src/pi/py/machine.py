@@ -257,20 +257,27 @@ class I2C:
         self._freq = freq
 
     def scan(self):
-        return [a for a in (0x27, 0x3C, 0x68, 0x76) if J.i2c_has(a)]
+        s = J.i2c_scan()
+        return [int(a) for a in s.split(',')] if s else []
 
     def writeto(self, addr, buf, stop=True):
         J.i2c_write(addr, bytes(buf).hex())
         return len(buf)
 
     def readfrom(self, addr, n, stop=True):
-        return bytes(n)
+        return bytes.fromhex(J.i2c_read(addr, n))
+
+    def readfrom_into(self, addr, buf, stop=True):
+        b = self.readfrom(addr, len(buf))
+        for i in range(len(buf)):
+            buf[i] = b[i]
 
     def writeto_mem(self, addr, memaddr, buf, *, addrsize=8):
         J.i2c_write(addr, (bytes([memaddr]) + bytes(buf)).hex())
 
     def readfrom_mem(self, addr, memaddr, n, *, addrsize=8):
-        return bytes(n)
+        J.i2c_write(addr, bytes([memaddr]).hex())
+        return bytes.fromhex(J.i2c_read(addr, n))
 
     def __repr__(self):
         return 'I2C(%d, freq=%d)' % (self._id, self._freq)
@@ -321,13 +328,23 @@ class UART:
         return len(buf)
 
     def any(self):
-        return 0
+        return J.uart_any(self._id)
 
     def read(self, n=-1):
-        return None
+        s = J.uart_read(self._id, -1 if n is None else n)
+        return s.encode() if s else None
 
     def readline(self):
-        return None
+        s = J.uart_readline(self._id, 1)
+        return s.encode() if s else None
+
+    def readinto(self, buf, nbytes=None):
+        b = self.read(len(buf) if nbytes is None else nbytes)
+        if not b:
+            return None
+        for i in range(len(b)):
+            buf[i] = b[i]
+        return len(b)
 
     def deinit(self):
         pass

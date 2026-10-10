@@ -32,6 +32,9 @@ function finish(meta, b, prog, extra = {}) {
     devices: b.devices, conns: b.conns, program: prog,
     plc: { downloaded: extra.noDownload ? null : JSON.parse(JSON.stringify(prog)), latched: null },
     hmi: extra.hmi, fromExample: meta.id,
+    // a second PLC's program (already downloaded into it)
+    plcs: extra.plcs ? Object.fromEntries(Object.entries(extra.plcs).map(([id, pr]) => [id, { program: pr, plc: { downloaded: JSON.parse(JSON.stringify(pr)), latched: null } }])) : undefined,
+    activePlc: extra.plcs ? 'plc' : undefined,
   });
   return p;
 }
@@ -288,6 +291,54 @@ export const LAB_EXAMPLES = [
         }],
       };
       return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'plc-master-slave', name: 'Two PLCs: Master → Slave over RS-485', level: 'advanced', tags: ['MODRW', 'RS-485', '2 PLCs'], featured: true,
+    description: 'PLC 1 (master) sends START / STOP and RESET to PLC 2 (slave, station 2) with MODRW and reads its part counter back. The slave runs the conveyor and counts parts. Tap the PLC chip at the top to program either PLC.',
+    build() {
+      const b = builder();
+      base(b);
+      b.devices.find((d) => d.id === 'plc').props.name = 'PLC 1 · Master';
+      b.dev('plc2', 'dvp-32es2', { name: 'PLC 2 · Slave' }, { run: true });
+      b.w('mcb', 'L', 'plc2', 'L'); b.w('mcb', 'N', 'plc2', 'N'); b.w('mcb', 'PE', 'plc2', 'PE');
+      b.w('plc2', 'S/S', 'psu', '-V1');
+      // the RS-485 link: COM2 to COM2 (D+ / D- / SG)
+      b.w('plc', 'COM2', 'plc2', 'COM2');
+      // master: buttons and lamps
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('reset', 'pb', { label: 'RESET', color: 'blue', contact: 'NO' });
+      b.dev('lrun', 'lamp', { label: 'LINE ON', color: 'green' });
+      b.dev('lfull', 'lamp', { label: 'BATCH OK', color: 'yellow' });
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626'); b.w('stop', '11', 'reset', '13', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1'); b.w('reset', '14', 'plc', 'X2');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lfull', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lfull', 'X2', '#1e3a8a');
+      // slave: part sensor and the conveyor contactor lamp
+      b.dev('prox', 'prox', { label: 'PART' });
+      b.dev('lconv', 'lamp', { label: 'CONVEYOR', color: 'white' });
+      b.w('psu', '+V1', 'prox', 'BN'); b.w('prox', 'BU', 'psu', '-V1'); b.w('prox', 'BK', 'plc2', 'X0');
+      b.w('plc2', 'C0', 'psu', '+V2');
+      b.w('plc2', 'Y0', 'lconv', 'X1'); b.w('lconv', 'X2', 'lfull', 'X2', '#1e3a8a');
+      const master = program([
+        rung('First scan: COM2 = 9600 bps 8E1 (H87), Modbus RTU (M1143) — the slave uses the same settings', ['M1002 =>| MOV H87 D1120', '=>| SET M1120', '=> SET M1143']),
+        rung('Line latch: START (X0) turns it on, the NC STOP button (X1) turns it off', ['X0| X1 => OUT M0', 'M0']),
+        rung('D0 = run command for the slave (1 = run, 0 = stop)', ['M0 => MOV K1 D0', '/M0 => MOV K0 D0']),
+        rung('D1 = reset command for the slave (1 while RESET is held)', ['X2 => MOV K1 D1', '/X2 => MOV K0 D1']),
+        rung('Write D0, D1 to the slave\'s D100, D101 (station 2, function 16, 1064H = D100)', ['M1000 => MODRW K2 K16 H1064 D0 K2']),
+        rung('Read the slave\'s counter C0 (0E00H) into D10', ['M1000 => MODRW K2 K3 H0E00 D10 K1']),
+        rung('LINE ON lamp', ['M0 => OUT Y0']),
+        rung('BATCH OK lamp when the slave has counted 5 parts; flashes if the slave does not answer (M1129)', ['D10>=K5 -| => OUT Y1', 'M1129 M1013']),
+      ], { X0: 'START', X1: 'STOP (NC)', X2: 'RESET', Y0: 'LINE ON lamp', Y1: 'BATCH OK lamp', M0: 'Line running', D0: 'Run command → slave D100', D1: 'Reset command → slave D101', D10: 'Parts counted by the slave' });
+      const slave = program([
+        rung('First scan: station address 2 (D1121) and the same COM2 format as the master', ['M1002 =>| MOV K2 D1121', '=>| MOV H87 D1120', '=>| SET M1120', '=> SET M1143']),
+        rung('The master writes D100 = 1 to run the conveyor', ['D100=K1 => OUT Y0']),
+        rung('Count parts while the conveyor runs', ['X0 Y0 => CNT C0 K999']),
+        rung('The master writes D101 = 1 to reset the counter', ['D101=K1 => RST C0']),
+      ], { X0: 'Part sensor', Y0: 'Conveyor', C0: 'Part counter (read by the master)', D100: 'Run command from the master', D101: 'Reset command from the master' });
+      return finish(this, b, master, { plcs: { plc2: slave } });
     },
   },
   {

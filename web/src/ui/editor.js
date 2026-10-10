@@ -42,11 +42,10 @@ export class Editor {
 
   // ------------------------------------------------------------------ DOM
   build() {
-    const board = this.boardPart();
     this.root = h('div', { class: 'screen editor tab-circuit' });
     // top bar
     this.titleEl = h('button', { class: 'ed-title', onclick: () => this.rename() }, h('span', {}, this.project.name));
-    this.boardChip = h('button', { class: 'board-chip', onclick: () => this.showBoardInfo() }, board ? getDef(board.type).name : 'No board');
+    this.boardChip = h('button', { class: 'board-chip', onclick: () => this.showBoardInfo() }, this.boardChipText());
     this.runBtn = h('button', { class: 'run-btn', onclick: () => this.toggleRun(), html: `${icon('play', 20)}<span>Run</span>` });
     const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu', html: icon('dots'), onclick: (e) => this.menu(e.currentTarget) });
     const back = h('button', { class: 'icon-btn', 'aria-label': 'Back', html: icon('back'), onclick: () => this.leave() });
@@ -65,9 +64,9 @@ export class Editor {
     this.buildCircuitOverlay();
 
     // code
+    this.codeTabs = h('div', { class: 'code-tabs' });
     const codeBar = h('div', { class: 'code-bar' },
-      h('span', { class: 'code-file', html: `${icon('code', 16)}<span>sketch.ino</span>` }),
-      h('div', { class: 'grow' }),
+      this.codeTabs,
       h('button', { class: 'icon-btn sm', title: 'Search', html: icon('search', 19), onclick: () => this.code.search() }),
       h('button', { class: 'icon-btn sm', title: 'Smaller text', html: `<b class="tsz">A−</b>`, onclick: () => this.fontSize(-1) }),
       h('button', { class: 'icon-btn sm', title: 'Bigger text', html: `<b class="tsz">A+</b>`, onclick: () => this.fontSize(1) }),
@@ -78,8 +77,10 @@ export class Editor {
     this.code = new CodeEditor(this.codeHost, {
       code: this.project.code,
       fontSize: this.settings.fontSize || 14,
-      onChange: (v) => { this.project.code = v; this.code.clearError(); this.errorBar.classList.add('hidden'); this.save(); if (this.engine) this.showStaleBanner(); },
+      onChange: (v) => { this.setCodeOf(this.codeTarget, v); this.code.clearError(); this.errorBar.classList.add('hidden'); this.save(); if (this.engine) this.showStaleBanner(); },
     });
+
+    this.drawCodeTabs();
 
     // serial
     this.serial = new SerialMonitor(this.serialPane, { onSend: (t) => this.sendSerial(t) });
@@ -261,6 +262,73 @@ export class Editor {
   // ------------------------------------------------------------------ project ops
   boardPart() { return this.project.parts.find((p) => getDef(p.type) && getDef(p.type).board); }
 
+  /** Every programmable board: the first runs project.code, the others their own part.code. */
+  boardParts() { return this.project.parts.filter((p) => getDef(p.type) && getDef(p.type).board); }
+
+  codeOf(id) {
+    const bs = this.boardParts();
+    const b = id && bs.indexOf(bs.find((p) => p.id === id)) > 0 ? bs.find((p) => p.id === id) : null;
+    return b ? b.code || '' : this.project.code;
+  }
+
+  setCodeOf(id, v) {
+    const bs = this.boardParts();
+    const b = id && bs.indexOf(bs.find((p) => p.id === id)) > 0 ? bs.find((p) => p.id === id) : null;
+    if (b) b.code = v; else this.project.code = v;
+  }
+
+  boardChipText() {
+    const bs = this.boardParts();
+    if (!bs.length) return 'No board';
+    if (bs.length === 1) return getDef(bs[0].type).name;
+    return bs.map((p) => getDef(p.type).name.replace('Arduino ', '')).join(' + ');
+  }
+
+  boardTitle(p, i) { return p.title || (i === 0 ? 'Board 1' : 'Board ' + (i + 1)); }
+
+  /** Code tab header: "sketch.ino", or one tab per board when the circuit has several. */
+  drawCodeTabs() {
+    if (!this.codeTabs) return;
+    const bs = this.boardParts();
+    const ids = bs.map((p) => p.id);
+    if (this.codeTarget && !ids.includes(this.codeTarget)) this.codeTarget = null;
+    const cur = this.codeTarget || ids[0] || null;
+    const key = bs.map((p, i) => p.id + this.boardTitle(p, i)).join('|') + '#' + cur;
+    if (key === this._codeTabsKey) return;
+    this._codeTabsKey = key;
+    this.codeTabs.innerHTML = '';
+    if (bs.length < 2) {
+      this.codeTabs.appendChild(h('span', { class: 'code-file', html: `${icon('code', 16)}<span>sketch.ino</span>` }));
+      if (this.code) this.code.setValue(this.project.code);
+      return;
+    }
+    bs.forEach((p, i) => {
+      this.codeTabs.appendChild(h('button', { class: 'code-tab' + (p.id === cur ? ' active' : ''), onclick: () => this.showCodeOf(p.id), oncontextmenu: (e) => { e.preventDefault(); this.renameBoard(p); } },
+        h('b', {}, this.boardTitle(p, i)), h('small', {}, getDef(p.type).name.replace('Arduino ', ''))));
+    });
+    this.codeTabs.appendChild(h('button', { class: 'icon-btn sm code-tab-edit', title: 'Rename the board', 'aria-label': 'Rename the board', html: icon('edit', 16), onclick: () => this.renameBoard(bs.find((p) => p.id === cur)) }));
+    if (this.code) this.code.setValue(this.codeOf(cur));
+  }
+
+  showCodeOf(id) {
+    const ids = this.boardParts().map((p) => p.id);
+    this.codeTarget = id === ids[0] ? null : id;
+    this.code.clearError();
+    this.errorBar.classList.add('hidden');
+    this.drawCodeTabs();
+  }
+
+  async renameBoard(p) {
+    if (!p) return;
+    const bs = this.boardParts();
+    const name = await promptDialog('Board name (e.g. Master, Slave)', this.boardTitle(p, bs.indexOf(p)));
+    if (!name) return;
+    p.title = name.slice(0, 20);
+    this._codeTabsKey = null;
+    this.drawCodeTabs();
+    this.commit('Rename board');
+  }
+
   serialize() { return JSON.stringify({ parts: this.project.parts, wires: this.project.wires }); }
 
   commit(label) {
@@ -273,6 +341,7 @@ export class Editor {
     }
     this.canvas.render();
     this.selectionChanged(this.canvas.selection);
+    this.drawCodeTabs();
     this.save();
     if (this.engine && this.engine.running) this.showStaleBanner(true);
     void label;
@@ -286,6 +355,7 @@ export class Editor {
     this.canvas.selection = null;
     this.canvas.render();
     this.selectionChanged(null);
+    this.drawCodeTabs();
     this.save();
   }
 
@@ -325,7 +395,7 @@ export class Editor {
 
   placePart(def) {
     if (def.board && this.boardPart()) {
-      confirmDialog('Replace board?', `This project already has a <b>${getDef(this.boardPart().type).name}</b>. Only one programmable board is simulated. Add <b>${def.name}</b> anyway?`, 'Add').then((ok) => { if (ok) this.placePartNow(def); });
+      confirmDialog('Add a second board?', `This project already has a <b>${getDef(this.boardPart().type).name}</b>. <b>${def.name}</b> gets its own sketch: pick it at the top of the Code tab. Wire GND to GND, then SDA/SCL (I²C) or TX → RX (Serial) so the boards can talk.`, 'Add').then((ok) => { if (ok) this.placePartNow(def); });
       return;
     }
     this.placePartNow(def);
@@ -338,6 +408,10 @@ export class Editor {
     const w = box[2] - box[0], hh = box[3] - box[1];
     const x = Math.round((cx - w / 2 - box[0]) / 10) * 10, y = Math.round((cy - hh / 2 - box[1]) / 10) * 10;
     const part = { id: newId('p'), type: def.type, x, y, rot: 0, props: {} };
+    if (def.board && this.boardPart()) {
+      part.title = 'Board ' + (this.boardParts().length + 1);
+      part.code = 'void setup() {\n  // this board\'s own sketch\n}\n\nvoid loop() {\n}\n';
+    }
     // avoid stacking exactly on another part
     let tries = 0;
     while (tries++ < 12 && this.project.parts.some((p) => Math.abs(p.x - part.x) < 6 && Math.abs(p.y - part.y) < 6)) { part.x += 20; part.y += 20; }
@@ -348,7 +422,7 @@ export class Editor {
     const [x0, y0, x1, y1] = worldBox(part);
     const [sx0, sy0] = this.canvas.worldToScreen(x0, y0), [sx1, sy1] = this.canvas.worldToScreen(x1, y1);
     if (sx0 < r.left || sy0 < r.top || sx1 > r.right || sy1 > r.bottom) this.canvas.fit();
-    if (def.board) { this.boardChip.textContent = def.name; }
+    if (def.board) this.boardChip.textContent = this.boardChipText();
     this.showHint(def.layer === -1 ? 'Breadboard added. Drag parts onto it — their legs snap into the holes.' : 'Drag to move. Drop legs on breadboard holes or header pins to plug in. Tap a pin to start a wire.');
     Native.vibrate(10);
   }
@@ -458,8 +532,15 @@ export class Editor {
     if (sel && sel.kind === 'multi' && !this.engine) { this.duplicateMany(sel); return; }
     if (!sel || sel.kind !== 'part' || this.engine) return;
     const part = this.project.parts.find((p) => p.id === sel.id);
-    if (getDef(part.type).board) { toast('Only one board can be simulated'); return; }
     const copy = { ...JSON.parse(JSON.stringify(part)), id: newId('p'), x: part.x + 30, y: part.y + 30 };
+    if (getDef(part.type).board) {
+      // a copy of a board is another board with its own sketch (a copy of this one's)
+      copy.title = 'Board ' + (this.boardParts().length + 1);
+      copy.code = this.codeOf(part.id);
+      copy.x = part.x + 320;
+      copy.y = part.y;
+      copy.eeprom = undefined;
+    }
     this.project.parts.push(copy);
     this.commit('Duplicate');
     this.canvas.select({ kind: 'part', id: copy.id });
@@ -472,7 +553,7 @@ export class Editor {
     let skippedBoard = false;
     for (const part of this.project.parts) {
       if (!ids.has(part.id)) continue;
-      if (getDef(part.type).board) { skippedBoard = true; continue; }
+      if (getDef(part.type).board && this.boardParts().length >= 4) { skippedBoard = true; continue; }
       const copy = { ...JSON.parse(JSON.stringify(part)), id: newId('p'), x: part.x + 40, y: part.y + 40 };
       map.set(part.id, copy.id);
       this.project.parts.push(copy);
@@ -485,7 +566,7 @@ export class Editor {
       this.project.wires.push(c);
       wires.push(c.id);
     }
-    if (skippedBoard) toast('Only one board can be simulated — the board was not copied');
+    if (skippedBoard) toast('Up to 4 boards per project — the board was not copied');
     if (!map.size) return;
     this.commit('Duplicate');
     this.canvas.select(makeSelection([...map.values()], wires));
@@ -587,11 +668,19 @@ export class Editor {
     this.errorBar.classList.add('hidden');
     this.warnings = [];
     this.serial.clear();
-    this.usesSerial = sketchUsesSerial(this.project.code);
+    this.usesSerial = this.boardParts().some((p, i) => sketchUsesSerial(i ? p.code : this.project.code));
     this.serialSeen = false;
     this.audio.resume();
+    const lineStart = new Map();
     const engine = new SimEngine(this.project, {
-      onSerial: (port, text) => {
+      onSerial: (port, text, from) => {
+        // other boards' Serial output is tagged with the board's name at the start of each line
+        if (from) {
+          let out = '', at = lineStart.get(from) !== false;
+          for (const ch of text) { if (at && ch !== '\n') { out += `[${from}] `; at = false; } out += ch; if (ch === '\n') at = true; }
+          lineStart.set(from, at);
+          text = out;
+        }
         this.serial.write(text);
         if (!this.serialSeen) { this.serialSeen = true; this.updateLayout(); } // serial used indirectly (e.g. via a #define)
         if (this.tab !== 'serial' && !this.runsplit) this.setBadge('serial', true);
@@ -603,7 +692,8 @@ export class Editor {
     });
     const res = engine.start();
     if (!res.ok) {
-      this.compileError(res.error);
+      if (res.boardId) this.showCodeOf(res.boardId); else this.showCodeOf(null);
+      this.compileError(res.boardLabel ? { ...res.error, message: `${res.boardLabel}: ${res.error.message}` } : res.error);
       return;
     }
     this.engine = engine;
@@ -709,7 +799,8 @@ export class Editor {
       dialog({ title: '⚡ Simulation stopped', body: `<p>${escapeHtml(e.message)}</p>`, actions: [{ label: 'OK', value: true, cls: 'btn-primary' }] });
       return;
     }
-    this.serial.write(`\n[Runtime error${e.line ? ' at line ' + e.line : ''}] ${e.message}\n`);
+    this.serial.write(`\n[Runtime error${e.boardLabel ? ' · ' + e.boardLabel : ''}${e.line ? ' at line ' + e.line : ''}] ${e.message}\n`);
+    this.showCodeOf(e.boardId || null);
     this.setTab('code');
     this.code.setError({ ...e, severity: 'error' });
     this.errorBar.innerHTML = `${icon('warning', 18)}<div><b>Runtime error${e.line ? ' · line ' + e.line : ''}</b><span></span></div>`;

@@ -1,6 +1,8 @@
 // Example programs for the virtual Raspberry Pi (Python 3 style, gpiozero / RPi.GPIO) and the Pico
 // (MicroPython). Each lists the parts it expects on the header; opening one wires them up.
 
+import { bbTrafficLights, bbDoorbell, piI2cMaster, piUartMaster } from './bb-examples.js';
+
 const L = (pin, color = 'red') => ({ type: 'led', pins: { a: pin }, props: { color } });
 const B = (pin) => ({ type: 'button', pins: { a: pin } });
 
@@ -65,6 +67,83 @@ while True:
     sleep(1.5)
     lights.red.off()
     lights.amber.off()
+` },
+  { file: 'bb_traffic_lights.py', title: 'Breadboard: traffic lights', tags: ['breadboard', 'gpiozero'], circuit: bbTrafficLights, code: `# Traffic lights built on a breadboard (Raspberry Pi 4 / 5)
+# Red LED GPIO18, amber GPIO23, green GPIO25 (each through 330 ohm), button GPIO21 to GND.
+from gpiozero import TrafficLights, Button
+from time import sleep
+
+lights = TrafficLights(red=18, amber=23, green=25)
+button = Button(21)
+
+while True:
+    lights.green.on()
+    print("GREEN - press the button to cross")
+    button.wait_for_press()
+    lights.green.off()
+    lights.amber.on()
+    sleep(1.5)
+    lights.amber.off()
+    lights.red.on()
+    print("RED - walk now")
+    sleep(4)
+    lights.red.off()
+` },
+  { file: 'bb_doorbell.py', title: 'Breadboard: doorbell', tags: ['breadboard', 'gpiozero'], circuit: bbDoorbell, code: `# Doorbell on a breadboard: the button (GPIO21) rings the buzzer (GPIO12)
+# and flashes the LED (GPIO18). Counts the visitors.
+from gpiozero import Button, Buzzer, LED
+from time import sleep
+
+button = Button(21)
+buzzer = Buzzer(12)
+led = LED(18)
+visitors = 0
+
+print("Press the doorbell button...")
+while True:
+    button.wait_for_press()
+    visitors += 1
+    print("Ding dong! visitor", visitors)
+    for _ in range(2):
+        buzzer.on(); led.on()
+        sleep(0.25)
+        buzzer.off(); led.off()
+        sleep(0.15)
+    button.wait_for_release()
+` },
+  { file: 'i2c_master_arduino.py', title: 'Pi master → Arduino slave (I²C)', tags: ['master-slave', 'I2C', 'Arduino'], circuit: piI2cMaster, code: `# Raspberry Pi = I2C MASTER, Arduino Uno = SLAVE at address 8.
+# Wiring: GPIO2 (SDA) -> Uno SDA, GPIO3 (SCL) -> Uno SCL, GND -> GND.
+# The Pi blinks the Uno's LED and reads the Uno's button. Press it on the canvas!
+# (Tap the Uno, then Sketch, to see the Arduino program.)
+from smbus2 import SMBus
+import time
+
+ADDR = 8
+bus = SMBus(1)
+print("Devices on the I2C bus:", [hex(a) for a in bus.scan()])
+
+led = 0
+while True:
+    led = 1 - led
+    bus.write_byte_data(ADDR, 0, led)                  # register 0 <- LED on / off
+    pressed, presses = bus.read_i2c_block_data(ADDR, 1, 2)   # register 1 -> button, count
+    print("LED", "ON " if led else "OFF", "| button", "DOWN" if pressed else "up", "| presses", presses)
+    time.sleep(0.5)
+` },
+  { file: 'uart_master_arduino.py', title: 'Pi master → Arduino slave (Serial)', tags: ['master-slave', 'UART', 'Arduino'], circuit: piUartMaster, code: `# Raspberry Pi = SERIAL MASTER, Arduino Uno = SLAVE.
+# Wiring (crossed): GPIO14 TXD -> Uno RX (D0), GPIO15 RXD <- Uno TX (D1), GND -> GND.
+# The Pi sends "L1" / "L0" and prints the Uno's answer.
+import serial
+import time
+
+ser = serial.Serial('/dev/serial0', 9600, timeout=1)
+led = 0
+while True:
+    led = 1 - led
+    ser.write(b'L1\\n' if led else b'L0\\n')
+    reply = ser.readline().decode().strip()
+    print("sent L%d -> Uno says: %s" % (led, reply or "(no answer)"))
+    time.sleep(0.5)
 ` },
   { file: 'rpi_gpio_blink.py', title: 'Blink with RPi.GPIO', tags: ['RPi.GPIO', 'LED'], parts: [L(18, 'green')], code: `# The classic RPi.GPIO way (BCM numbering)
 import RPi.GPIO as GPIO

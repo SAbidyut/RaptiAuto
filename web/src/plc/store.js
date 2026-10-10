@@ -55,8 +55,56 @@ export function normalizeLab(p) {
   p.program = normalizeProgram(p.program || createProgram());
   p.hmi = normalizeHmi(p.hmi);
   p.plc = p.plc || { downloaded: null, latched: null };
+  // labs with two PLCs keep the program of the PLC that is not being edited in p.plcs[devId]
+  const plcIds = new Set(plcDevices(p).map((d) => d.id));
+  if (p.activePlc && !plcIds.has(p.activePlc)) p.activePlc = null;
+  const others = {};
+  for (const [id, st] of Object.entries(p.plcs || {})) {
+    if (!plcIds.has(id) || id === activePlcId(p) || !st) continue;
+    others[id] = { program: normalizeProgram(st.program || createProgram()), plc: st.plc || { downloaded: null, latched: null } };
+  }
+  p.plcs = others;
   p.view = p.view || null;
   return p;
+}
+
+// ------------------------------------------------------------------ several PLCs
+export const plcDevices = (p) => p.devices.filter((d) => DEVICE_DEFS[d.type] && DEVICE_DEFS[d.type].category === 'plc');
+
+/** The PLC whose program is open in the Ladder tab (and that the laptop talks to). */
+export function activePlcId(p) {
+  const list = plcDevices(p);
+  const d = list.find((x) => x.id === p.activePlc) || list[0];
+  return d ? d.id : null;
+}
+
+/** {program, plc: {downloaded, latched}} of one PLC; the active PLC's live in the project itself. */
+export function plcStore(p, id) {
+  if (!id || id === activePlcId(p)) return p;
+  p.plcs = p.plcs || {};
+  if (!p.plcs[id]) p.plcs[id] = { program: createProgram(), plc: { downloaded: null, latched: null } };
+  return p.plcs[id];
+}
+
+/** Make another PLC the active one: its program moves into p.program / p.plc. */
+export function switchPlc(p, id) {
+  const cur = activePlcId(p);
+  if (!id || cur === id) return false;
+  p.plcs = p.plcs || {};
+  const next = p.plcs[id] || { program: createProgram(), plc: { downloaded: null, latched: null } };
+  if (cur) p.plcs[cur] = { program: p.program, plc: p.plc };
+  delete p.plcs[id];
+  p.program = normalizeProgram(next.program);
+  p.plc = next.plc || { downloaded: null, latched: null };
+  p.activePlc = id;
+  return true;
+}
+
+/** Display name of a PLC: its own name, or "PLC 1" / "PLC 2" when the lab has two. */
+export function plcName(p, dev) {
+  if (dev.props && dev.props.name) return dev.props.name;
+  const list = plcDevices(p);
+  return list.length > 1 ? 'PLC ' + (list.indexOf(dev) + 1) : 'PLC';
 }
 
 export function cloneLab(p, name) {

@@ -156,9 +156,11 @@ export class PiScreen {
 
   /** Thonny opened an example: put its parts on the canvas, wired (undo brings the old circuit back). */
   wireExample(ex) {
-    if (!ex.parts || !ex.parts.length) return;
+    if (ex.circuit && this.sys.isPico) return;
+    if (!ex.circuit && (!ex.parts || !ex.parts.length)) return;
     this.stopCircuit();
-    this.circuit.load(autowire(this.sys.board, ex.parts));
+    this.circuit.load(ex.circuit ? ex.circuit(this.sys.board) : autowire(this.sys.board, ex.parts));
+    if (!this.isPico) { this.chosenFile = '/home/pi/' + ex.file; this.drawFileChip(); }
     this.saveCircuit();
   }
 

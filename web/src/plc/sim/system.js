@@ -7,6 +7,7 @@ import { HmiRuntime } from './hmi.js';
 import { requestBytes, responseBytes, encodeFrame, frameMs, formatsMatch, fmtName, EXCEPTIONS } from './modbus.js';
 import { modbusAddr, fmtAddr } from './address.js';
 import { DEVICE_DEFS, PLC_MODELS, deviceProps } from '../devices/defs.js';
+import { activePlcId, plcStore, plcName } from '../store.js';
 
 export const SUBSTEP_MS = 5;
 const COM1_FMT = { baud: 9600, bits: 7, parity: 'E', stop: 1, mode: 'ASCII' };
@@ -22,7 +23,6 @@ export class LabSystem {
     this.issues = [];
     this.issueT = 0;
     this.events = [];
-    this.m2 = { busy: null, last: -1 };
     this.hmiLinkState = { ok: false, reason: '' };
     this.sync();
   }
@@ -43,6 +43,7 @@ export class LabSystem {
         rt.model = PLC_MODELS[dev.type];
         rt.cpu = new PlcCpu({ ...rt.model });
         rt.cpu.switchRun = dev.state.run !== false;
+        rt.m2 = { busy: null, last: -1 };
         rt.yGroup = [];
         let y = 0;
         rt.model.relayGroups.forEach((n, g) => { for (let i = 0; i < n; i++) rt.yGroup[y++] = g; });
@@ -60,13 +61,16 @@ export class LabSystem {
   }
 
   byKind(kind) { const out = []; for (const rt of this.rts.values()) if (rt.kind === kind) out.push(rt); return out; }
-  get plc() { return this.byKind('plc')[0] || null; }
+  /** The PLC being programmed (the laptop's PLC). */
+  get plc() { return this.rts.get(activePlcId(this.project)) || this.byKind('plc')[0] || null; }
+  plcName(rt) { return plcName(this.project, rt.dev); }
   get hmiRt() { return this.byKind('hmi')[0] || null; }
 
   /** Compile the program that was downloaded to the PLC and load it into the CPU. */
   loadProgramInto(rt = this.plc) {
     if (!rt) return null;
-    const prog = this.project.plc && this.project.plc.downloaded;
+    const st = plcStore(this.project, rt.dev.id);
+    const prog = st.plc && st.plc.downloaded;
     if (!prog) { rt.cpu.load(null); return null; }
     const res = compileProgram(prog, rt.model);
     rt.cpu.load(res.ok ? res : null);
@@ -226,7 +230,7 @@ export class LabSystem {
         if (rt.powered && !rt.short) { add(id, '+V1', id, 24); add(id, '-V1', id, 0); }
       } else if (rt.kind === 'plc') {
         const on = acOn(rt);
-        if (on && !rt.cpu.powered) { rt.cpu.powerOn(this.project.plc && this.project.plc.latched); rt.cpu.switchRun = rt.dev.state.run !== false; if (rt.cpu.switchRun) rt.cpu.setRun(true); }
+        if (on && !rt.cpu.powered) { const st = plcStore(this.project, rt.dev.id); rt.cpu.powerOn(st.plc && st.plc.latched); rt.cpu.switchRun = rt.dev.state.run !== false; if (rt.cpu.switchRun) rt.cpu.setRun(true); }
         if (!on && rt.cpu.powered) { this.saveLatched(rt); rt.cpu.powerOff(); }
         if (on && !rt.short) { add(id, '+24V', id + '/24', 24); add(id, '0V', id + '/24', 0); }
         if (on && rt.model.ao) for (let k = 0; k < rt.model.ao; k++) { add(id, 'VO' + k, id + '/a', Math.max(0, Math.min(10, rt.cpu.D[1116 + k] / 200))); }
@@ -403,8 +407,9 @@ export class LabSystem {
   }
 
   saveLatched(rt) {
-    this.project.plc = this.project.plc || {};
-    this.project.plc.latched = rt.cpu.latchedSnapshot();
+    const st = plcStore(this.project, rt.dev.id);
+    st.plc = st.plc || {};
+    st.plc.latched = rt.cpu.latchedSnapshot();
   }
 
   /** Is a conductor carrying a supply voltage? (for the 3D wire glow) */
@@ -454,13 +459,13 @@ export class LabSystem {
     return {
       ok: () => this.hmiLinkState.ok,
       read: (op, word) => {
-        const p = this.plc;
+        const p = this.hmiLinkState.plcRt || this.plc;
         if (!p) return null;
         if (word) return op.dev === 'T' ? p.cpu.TV[op.idx] : op.dev === 'C' ? p.cpu.CV[op.idx] : op.dev === 'D' ? p.cpu.D[op.idx] : 0;
         return p.cpu.read(op.dev, op.idx);
       },
       write: (op, v, word) => {
-        const p = this.plc;
+        const p = this.hmiLinkState.plcRt || this.plc;
         if (!p || !this.hmiLinkState.ok) return false;
         if (word) p.cpu.write(op.dev === 'T' ? 'TV' : op.dev === 'C' ? 'CV' : op.dev, op.idx, v);
         else p.cpu.write(op.dev, op.idx, v);
@@ -474,12 +479,16 @@ export class LabSystem {
   }
 
   updateHmiLink() {
-    const h = this.hmiRt, p = this.plc;
+    const h = this.hmiRt;
     const st = this.hmiLinkState;
     st.ok = false; st.reason = ''; st.port = 'COM1';
     if (!h) return;
     const props = deviceProps(h.dev);
     st.port = props.port || 'COM1';
+    // the HMI talks to the PLC its cable is plugged into
+    const net0 = this.commNet(), hn0 = net0(h.dev.id, st.port);
+    const p = (hn0 && this.byKind('plc').find((x) => net0(x.dev.id, 'COM1') === hn0 || net0(x.dev.id, 'COM2') === hn0)) || this.plc;
+    st.plcRt = p;
     if (!h.hmi.powered) { st.reason = 'HMI has no power'; return; }
     if (!p) { st.reason = 'No PLC in the lab'; return; }
     const net = this.commNet();
@@ -505,7 +514,7 @@ export class LabSystem {
       const tags = h.hmi.poll(dt);
       if (tags && tags.length && this.hmiLinkState.ok) this.logHmiPoll(tags, h);
     }
-    this.stepCom2();
+    for (const p of this.byKind('plc')) this.stepCom2(p);
   }
 
   logHmiPoll(tags, h) {
@@ -522,7 +531,7 @@ export class LabSystem {
       if (!groups.has(key)) groups.set(key, { dev, w: t.w, min: n, max: n });
       const g = groups.get(key); g.min = Math.min(g.min, n); g.max = Math.max(g.max, n);
     }
-    const cpu = this.plc.cpu;
+    const cpu = (this.hmiLinkState.plcRt || this.plc).cpu;
     for (const g of groups.values()) {
       const count = Math.min(64, g.max - g.min + 1);
       const fc = g.w ? 3 : g.dev === 'X' ? 2 : 1;
@@ -537,11 +546,14 @@ export class LabSystem {
     }
   }
 
-  stepCom2() {
-    const p = this.plc;
-    const m2 = this.m2;
-    if (!p || !p.cpu.running) { m2.busy = null; return; }
+  /** COM2 as a Modbus master (MODRW): the slaves are drives and other PLCs on the RS-485 bus. */
+  stepCom2(p) {
+    const m2 = p.m2;
+    if (!p.cpu.running) { m2.busy = null; return; }
     const cpu = p.cpu;
+    const many = this.byKind('plc').length > 1;
+    const me = many ? this.plcName(p) : 'PLC';
+    const link = many ? `COM2 · ${me}` : 'COM2';
     if (m2.busy) {
       if (this.time < m2.busy.tEnd) return;
       const b = m2.busy;
@@ -549,10 +561,10 @@ export class LabSystem {
       m2.last = b.req.sid;
       if (b.res) {
         const respBytes = responseBytes(b.req.station, b.req.fc, b.req.addr, b.res, b.payload);
-        this.pushLog('COM2', b.res.exception ? 'ERR' : 'RX', b.responder, 'PLC', encodeFrame(respBytes, b.fmt.mode), b.res.exception ? `Exception ${b.res.exception}: ${EXCEPTIONS[b.res.exception] || ''}` : b.res.data ? `Data: ${b.res.data.join(', ')}` : 'OK');
+        this.pushLog(link, b.res.exception ? 'ERR' : 'RX', b.responder, me, encodeFrame(respBytes, b.fmt.mode), b.res.exception ? `Exception ${b.res.exception}: ${EXCEPTIONS[b.res.exception] || ''}` : b.res.data ? `Data: ${b.res.data.join(', ')}` : 'OK');
         cpu.modbusDone(b.req, b.res.exception ? { exception: b.res.exception } : { ok: true, data: b.res.data });
       } else {
-        this.pushLog('COM2', 'ERR', '—', 'PLC', '', `No response — time-out. ${b.reason || ''}`);
+        this.pushLog(link, 'ERR', '—', me, '', `No response — time-out. ${b.reason || ''}`);
         cpu.modbusDone(b.req, { timeout: true });
       }
       return;
@@ -563,15 +575,17 @@ export class LabSystem {
     const values = req.values ? req.values : req.fc === 6 ? [cpu.D[req.dreg]] : req.fc === 16 ? Array.from({ length: req.n }, (_, i) => cpu.D[req.dreg + i]) : [];
     const payload = { count: req.n, values };
     const bytes = requestBytes(req.station, req.fc, req.addr, payload);
-    this.pushLog('COM2', 'TX', 'PLC', req.station ? `Station ${req.station}` : 'Broadcast', encodeFrame(bytes, fmt.mode), describeVfdReq(req, values));
     const net = this.commNet();
     const bus = net(p.dev.id, 'COM2');
+    const vfds = bus ? this.byKind('vfd').filter((v) => net(v.dev.id, 'RS485') === bus) : [];
+    const plcs = bus ? this.byKind('plc').filter((x) => x !== p && net(x.dev.id, 'COM2') === bus) : [];
+    const toPlc = plcs.some((x) => req.station === 0 || (x.cpu.D[1121] || 1) === req.station);
+    this.pushLog(link, 'TX', me, req.station ? `Station ${req.station}` : 'Broadcast', encodeFrame(bytes, fmt.mode), toPlc ? describePlcReq(req, values) : describeVfdReq(req, values));
     let res = null, responder = null, reason = '';
     if (!bus) reason = 'Nothing is connected to PLC COM2.';
     else {
-      const slaves = this.byKind('vfd').filter((v) => net(v.dev.id, 'RS485') === bus);
-      if (!slaves.length) reason = 'No drive on the RS-485 bus.';
-      for (const v of slaves) {
+      if (!vfds.length && !plcs.length) reason = 'No drive or PLC on the RS-485 bus.';
+      for (const v of vfds) {
         if (!v.vfd.powered) { reason = reason || `${v.def.short} has no power.`; continue; }
         const vf = vfdFormat(v.vfd.params);
         if (!formatsMatch(fmt, vf)) { reason = `Format mismatch: PLC ${fmtName(fmt)} ≠ VFD ${fmtName(vf)} (check D1120/M1143 and Pr.09-01/09-04).`; continue; }
@@ -582,6 +596,17 @@ export class LabSystem {
         const writes = (reg) => (req.fc === 6 || req.fc === 16) && reg >= req.addr && reg < req.addr + (req.fc === 6 ? 1 : req.n);
         if (r && writes(0x2000) && v.vfd.P('00-21') !== 2) v.ignoredCmd = this.time;
         if (r && writes(0x2001) && v.vfd.P('00-20') !== 1) v.ignoredFreq = this.time;
+      }
+      for (const s of plcs) {
+        const name = this.plcName(s);
+        if (!s.cpu.powered) { reason = reason || `${name} has no power.`; continue; }
+        const sf = s.cpu.com2Format();
+        if (!formatsMatch(fmt, sf)) { reason = `Format mismatch: ${me} ${fmtName(fmt)} ≠ ${name} ${fmtName(sf)} (both PLCs need the same D1120 and M1143).`; continue; }
+        const st = s.cpu.D[1121] || 1;
+        if (req.station !== 0 && st !== req.station) { reason = reason || `No slave with station address ${req.station} (${name} is station ${st}, D1121).`; continue; }
+        if (s.cpu.mbReq.size) { reason = `${name} uses its COM2 as a master too — only one master per RS-485 bus.`; continue; }
+        const r = plcSlave(s.cpu, req.fc, req.addr, req.n, values);
+        if (r && req.station !== 0) { res = r; responder = name; }
       }
     }
     const tReq = frameMs(bytes, fmt);
@@ -627,7 +652,7 @@ export class LabSystem {
           else if (!cpu.prog) add('info', `${name} has no program — write the ladder and press Download.`, rt.dev.id);
           else if (!cpu.running) add('info', `${name} is in STOP — flip its RUN/STOP switch or use RUN in the Ladder tab.`, rt.dev.id);
           if (cpu.powered && cpu.errorFlag) add('warn', `${name}: operation error (M1067), e.g. division by zero.`, rt.dev.id);
-          if (cpu.powered && cpu.running && cpu.M[1129]) add('warn', 'COM2: no response from the drive (time-out). Open Monitor → Comm log for details.', rt.dev.id);
+          if (cpu.powered && cpu.running && cpu.M[1129]) add('warn', 'COM2: no response from the slave (time-out). Open Monitor → Comm log for details.', rt.dev.id);
           break;
         }
         case 'hmi':
@@ -678,6 +703,42 @@ export class LabSystem {
       com2: p && p.cpu.running && p.cpu.mbReq.size ? (p.cpu.M[1129] ? 'err' : 'ok') : null,
     };
   }
+}
+
+/** A DVP PLC answering on COM2 as a Modbus slave: registers D, T, C (and bits read as 0 / 1). */
+function plcSlave(cpu, fc, addr, n, values) {
+  const at = (a) => {
+    if (a >= 0x1000 && a < 0x2000) return { dev: 'D', idx: a - 0x1000 };
+    if (a >= 0x9000 && a < 0x9000 + 5904) return { dev: 'D', idx: 4096 + a - 0x9000 };
+    if (a >= 0x0600 && a < 0x0700) return { dev: 'T', idx: a - 0x0600, word: true };
+    if (a >= 0x0E00 && a < 0x0EC8) return { dev: 'C', idx: a - 0x0E00, word: true };
+    if (a >= 0x0800 && a < 0x0E00) return { dev: 'M', idx: a - 0x0800, bit: true };
+    if (a >= 0xB000 && a < 0xB000 + 2560) return { dev: 'M', idx: 1536 + a - 0xB000, bit: true };
+    if (a >= 0x0500 && a < 0x0600) return { dev: 'Y', idx: a - 0x0500, bit: true };
+    if (a >= 0x0400 && a < 0x0500) return { dev: 'X', idx: a - 0x0400, bit: true };
+    return null;
+  };
+  const count = fc === 6 ? 1 : n;
+  const regs = [];
+  for (let i = 0; i < count; i++) { const r = at((addr + i) & 0xFFFF); if (!r || (r.dev === 'D' && r.idx > 9999)) return { exception: 2 }; regs.push(r); }
+  if (fc === 3) return { data: regs.map((r) => (r.dev === 'D' ? cpu.D[r.idx] : r.dev === 'T' ? cpu.TV[r.idx] : r.dev === 'C' ? cpu.CV[r.idx] : cpu.read(r.dev, r.idx)) & 0xFFFF) };
+  if (fc === 6 || fc === 16) {
+    regs.forEach((r, i) => {
+      const v = values[i] ?? 0;
+      if (r.bit) { if (r.dev !== 'X') cpu.write(r.dev, r.idx, v ? 1 : 0); } else cpu.write(r.dev === 'T' ? 'TV' : r.dev === 'C' ? 'CV' : 'D', r.idx, v);
+    });
+    return { ok: true };
+  }
+  return { exception: 1 };
+}
+
+function describePlcReq(req, values) {
+  const a = req.addr;
+  const name = a >= 0x1000 && a < 0x2000 ? `D${a - 0x1000}` : a >= 0x9000 && a < 0xB000 ? `D${4096 + a - 0x9000}` : a >= 0x0800 && a < 0x0E00 ? `M${a - 0x0800}` : a >= 0x0600 && a < 0x0700 ? `T${a - 0x0600}` : a >= 0x0E00 && a < 0x0F00 ? `C${a - 0x0E00}` : a.toString(16).toUpperCase() + 'H';
+  if (req.fc === 3) return `Read ${name} ×${req.n}`;
+  if (req.fc === 6) return `Write ${name} = ${values[0]}`;
+  if (req.fc === 16) return `Write ${name}… = ${values.join(', ')}`;
+  return `FC ${req.fc}`;
 }
 
 function describeVfdReq(req, values) {

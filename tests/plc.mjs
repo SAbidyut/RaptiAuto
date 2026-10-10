@@ -335,6 +335,33 @@ for (const ex of LAB_EXAMPLES) {
 }
 
 {
+  // two PLCs: the master writes the slave's D100/D101 and reads its counter over RS-485
+  const { p, s, run } = sim('plc-master-slave');
+  run(1500);
+  const m = s.rts.get('plc'), sl = s.rts.get('plc2');
+  check('2 PLCs: both running', m.cpu.running && sl.cpu.running, s.issues.map((i) => i.text).join(' | '));
+  check('2 PLCs: slave station 2', sl.cpu.D[1121] === 2, 'D1121=' + sl.cpu.D[1121]);
+  check('2 PLCs: no time-out', !m.cpu.M[1129], s.log.slice(-4).map((l) => l.info).join(' | '));
+  check('2 PLCs: active PLC is the master', s.plc === m);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(600);
+  check('2 PLCs: slave D100 = 1 → conveyor on', sl.cpu.D[100] === 1 && s.rts.get('lconv').on, 'D100=' + sl.cpu.D[100]);
+  for (let k = 0; k < 5; k++) { s.act('prox', 'toggle'); run(120); s.act('prox', 'toggle'); run(120); }
+  run(600);
+  check('2 PLCs: slave counted 5', sl.cpu.CV[0] === 5, 'C0=' + sl.cpu.CV[0]);
+  check('2 PLCs: master read D10 = 5', m.cpu.D[10] === 5 && s.rts.get('lfull').on, 'D10=' + m.cpu.D[10]);
+  check('2 PLCs: log names both PLCs', s.log.some((l) => l.link.startsWith('COM2') && l.from === 'PLC 2 · Slave'), s.log.slice(-3).map((l) => l.link + ' ' + l.from).join(' | '));
+  s.act('reset', 'press', true); run(500); s.act('reset', 'press', false); run(500);
+  check('2 PLCs: reset clears the slave counter', sl.cpu.CV[0] === 0 && m.cpu.D[10] === 0, 'C0=' + sl.cpu.CV[0]);
+  s.act('stop', 'press', true); run(300); s.act('stop', 'press', false); run(400);
+  check('2 PLCs: STOP stops the slave conveyor', !s.rts.get('lconv').on);
+  // a wrong station address times out
+  sl.cpu.D[1121] = 5; run(1500);
+  check('2 PLCs: wrong station → time-out (M1129)', m.cpu.M[1129] === 1);
+  // the slave's program lives in p.plcs until it becomes the active PLC
+  check('2 PLCs: slave program stored', p.plcs.plc2 && p.plcs.plc2.plc.downloaded && p.plcs.plc2.program.rungs.length === 4);
+}
+
+{
   // the Delta drive instructions FWD / STOP / RDST instead of MODRW
   const { s, run } = sim('vfd-modbus-hmi', (p) => {
     const R = p.program.rungs;

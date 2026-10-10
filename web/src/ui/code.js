@@ -215,6 +215,15 @@ export class CodeEditor {
     this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: v } });
   }
 
+  /** Replace the whole text (another board's sketch) without reporting it as an edit. */
+  setValue(code) {
+    if (code === this.view.state.doc.toString()) return;
+    const cb = this.onChange;
+    this.onChange = null;
+    this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: code || '' }, selection: { anchor: 0 }, scrollIntoView: true });
+    this.onChange = cb;
+  }
+
   setFontSize(px) { this.wrap.style.setProperty('--code-size', px + 'px'); this.fontSize = px; }
   setReadOnly(ro) { this.view.dispatch({ effects: this.readOnly.reconfigure(EditorState.readOnly.of(ro)) }); }
   focus() { this.view.focus(); }

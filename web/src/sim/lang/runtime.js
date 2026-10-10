@@ -160,6 +160,34 @@ export class SketchRunner {
   }
 
   /**
+   * Run one of the sketch's functions to the end right now (an I²C slave's onReceive / onRequest
+   * handler while the master talks to it), with `args` as its parameters.
+   */
+  runNow(fi, args = []) {
+    if (this.state !== 'running' || !fi || !fi.run) return;
+    const rt = this.rt;
+    const savedLimit = rt.limit, savedLine = rt.line, savedDeadline = rt.deadline;
+    rt.limit = Infinity;
+    rt.deadline = Infinity;
+    try {
+      const nf = new Array(fi.frameSize);
+      (fi.params || []).forEach((p, i) => { nf[p.slot] = args[i]; });
+      if (fi.gen) {
+        const g = fi.run(nf);
+        let r = g.next(), guard = 0;
+        while (!r.done && guard++ < 100000) r = g.next();
+      } else fi.run(nf);
+    } catch (e) {
+      this.state = 'error';
+      this.error = e instanceof RuntimeError ? { message: e.message, line: e.line || rt.line } : { message: 'Runtime error: ' + (e && e.message ? e.message : String(e)), line: rt.line };
+    } finally {
+      rt.limit = savedLimit;
+      rt.line = savedLine;
+      rt.deadline = savedDeadline;
+    }
+  }
+
+  /**
    * Runs the sketch until virtual time reaches limitUs or the wall-clock budget is used.
    * Returns 'ok' | 'done' | 'error'.
    */

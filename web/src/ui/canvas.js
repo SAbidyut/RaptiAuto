@@ -208,6 +208,7 @@ export class CircuitCanvas {
     const proj = this.project;
     const seen = new Set();
     const orderBottom = [], orderTop = [];
+    const nBoards = proj.parts.filter((p) => getDef(p.type) && getDef(p.type).board).length;
     for (const p of proj.parts) {
       const def = getDef(p.type);
       if (!def) continue;
@@ -219,11 +220,13 @@ export class CircuitCanvas {
         let el = this.partEls.get(p.id);
         const def = getDef(p.type);
         const props = partProps(p);
-        const key = def.type + JSON.stringify(props);
+        // several boards in one circuit: each carries its name ("Master", "Slave") above it
+        const tag = def.board && !def.piBoard && nBoards > 1 ? (p.title || 'Board 1') : '';
+        const key = def.type + JSON.stringify(props) + tag;
         if (!el || el._key !== key) {
           if (el) el.remove();
           el = svgEl('g', { class: 'part', 'data-id': p.id });
-          el.innerHTML = partMarkup(def, props);
+          el.innerHTML = partMarkup(def, props) + (tag ? boardTag(def, tag) : '');
           el._key = key;
           el._def = def;
           el._props = props;
@@ -1143,3 +1146,12 @@ function nearestIn(list, x, y, max) {
 }
 
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/** Name pill on the left side of a board (reading upwards) when the circuit has several boards. */
+function boardTag(def, name) {
+  const box = typeof def.box === 'function' ? def.box({}) : def.box;
+  const t = String(name).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const w = Math.min(box[3] - box[1] - 10, Math.max(50, t.length * 8.6 + 24));
+  const cx = box[0] - 14, cy = (box[1] + box[3]) / 2;
+  return `<g class="board-tag" pointer-events="none" transform="rotate(-90 ${cx} ${cy})"><rect x="${cx - w / 2}" y="${cy - 10}" width="${w}" height="20" rx="10" fill="#0e7490" stroke="#67e8f9" stroke-width="1"/><text x="${cx}" y="${cy + 4.5}" font-size="12" font-weight="800" fill="#ecfeff" text-anchor="middle" font-family="Inter, sans-serif">${t}</text></g>`;
+}

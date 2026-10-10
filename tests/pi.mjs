@@ -10,6 +10,8 @@ import '../web/src/pi/circuit-parts.js';
 import { SimEngine } from '../web/src/sim/engine.js';
 import { CircuitHw } from '../web/src/pi/circuit-hw.js';
 import { autowire, defaultCircuit } from '../web/src/pi/autowire.js';
+import { bbTrafficLights, bbDoorbell, piI2cMaster, piUartMaster } from '../web/src/pi/bb-examples.js';
+import { PI_EXAMPLES } from '../web/src/pi/examples.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pyDir = join(here, '..', 'web', 'src', 'pi', 'py');
@@ -327,6 +329,65 @@ console.log('Circuit (wired on the canvas)');
   check('auto-wired LED path: GPIO17 → resistor → LED', ex.wires.some((w) => (w.from.part === pi && w.from.pin === 'GPIO17') || (w.to.part === pi && w.to.pin === 'GPIO17')) && nodeOf(led.id, 'C') === nodeOf(pi, 'GND.1'));
   check('auto-wired MCP3008 on SPI', ex.parts.some((p) => p.type === 'mcp3008') && nodeOf(ex.parts.find((p) => p.type === 'mcp3008').id, 'CLK') === nodeOf(pi, 'GPIO11'));
   engine.stop();
+}
+{
+  // breadboard examples: the parts sit in the right holes and the LEDs / buttons work from Python
+  const ex = (f) => PI_EXAMPLES.find((e) => e.file === f);
+  for (const [name, build] of [['traffic', bbTrafficLights], ['doorbell', bbDoorbell], ['i2c', piI2cMaster], ['uart', piUartMaster]]) {
+    for (const board of ['pi5', 'pi4']) {
+      const c = build(board);
+      const e = new SimEngine({ ...c, code: '' }, { external: true });
+      const r = e.start();
+      check(`breadboard example ${name} (${board}) builds`, r.ok && c.parts[1].type === (board === 'pi5' ? 'rpi5' : 'rpi4'), JSON.stringify(r.error || ''));
+      e.stop();
+    }
+  }
+  {
+    const c = bbTrafficLights('pi5');
+    const engine = new SimEngine({ ...c, code: '' }, { external: true });
+    engine.start();
+    const g = new GpioSim('pi5');
+    g.attachHw(new CircuitHw(engine));
+    const timer = setInterval(() => engine.tick(performance.now()), 10);
+    const run = py(g, 'from gpiozero import LED, Button\nimport time\nleds = [LED(p) for p in (18, 23, 25)]\nfor l in leds:\n    l.on()\nprint("btn", Button(21).is_pressed)\ntime.sleep(0.6)\n');
+    await sleep(350);
+    const lit = (id) => { const v = engine.parts.get(id).visual; return Object.values(v).some((x) => (typeof x === 'number' && x > 0.2) || x === true); };
+    check('breadboard traffic lights: all three LEDs light', lit('led9') && lit('led11') && lit('led14'), JSON.stringify(engine.parts.get('led9').visual));
+    const out = await run;
+    check('breadboard button reads released', out.includes('btn False'), out);
+    engine.input('btn23', 'press', true);
+    const o2 = await py(g, 'from gpiozero import Button\nprint("btn", Button(21).is_pressed)\n');
+    check('breadboard button pressed → GPIO21 low', o2.includes('btn True'), o2);
+    clearInterval(timer);
+    g.attachHw(null);
+    engine.stop();
+  }
+  for (const [kind, file] of [['I²C', 'i2c_master_arduino.py'], ['UART', 'uart_master_arduino.py']]) {
+    const c = (kind === 'I²C' ? piI2cMaster : piUartMaster)('pi5');
+    const engine = new SimEngine({ ...c, code: '' }, { external: true });
+    const r = engine.start();
+    check(`Pi + Arduino (${kind}) starts both`, r.ok && engine.boards.length === 2, JSON.stringify(r));
+    const g = new GpioSim('pi5');
+    g.attachHw(new CircuitHw(engine));
+    const timer = setInterval(() => engine.tick(performance.now()), 10);
+    await sleep(150);
+    const src = ex(file).code.replace('while True:', 'for _ in range(4):');
+    engine.input('btn', 'press', true);
+    const out = await py(g, src);
+    await sleep(60);
+    engine.input('btn', 'press', false);
+    clearInterval(timer);
+    const led = engine.parts.get('led');
+    if (kind === 'I²C') {
+      check('Pi I²C master: scan finds the Uno at 0x8', out.includes("['0x8']"), out);
+      check('Pi I²C master: reads the Uno button + count', out.includes('button DOWN | presses 1'), out);
+    } else {
+      check('Pi UART master: the Uno answers', /Uno says: OK led=\d presses=1/.test(out), out);
+    }
+    check(`Pi ${kind} master: the Uno's LED follows the Pi`, engine.boards[1].pins.get(16).out === 0 || engine.boards[1].pins.get(16).out === 1, JSON.stringify(led && led.visual));
+    g.attachHw(null);
+    engine.stop();
+  }
 }
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

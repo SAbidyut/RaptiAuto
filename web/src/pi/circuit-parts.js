@@ -69,7 +69,7 @@ function registerPi(board) {
       pinMap, analogPins: [], pwmPins: null, interruptPins: null,
       i2c: { sda: 2, scl: 3 }, spi: { mosi: 10, miso: 9, sck: 11, ss: 8 }, gndPins: [gnd[0]],
       supplies: [{ pin: '3V3.1', v: 3.3, r: 0.05, maxI: 0.8 }, { pin: '5V.1', v: 5.1, r: 0.02, maxI: 3 }],
-      serialPorts: [], rout: 40, rpull: 50000, pinMaxI: 0.016,
+      serialPorts: [], rout: 40, rpull: 50000, pinMaxI: 0.016, uart: { serial0: { rx: 15, tx: 14 } },
     },
     render() {
       let s = art;
@@ -110,7 +110,7 @@ function registerPico(board) {
       ledBuiltin: info.wifi ? null : 25, pinMap, analogPins: [26, 27, 28], gpioAnalog: true, pwmPins: null, interruptPins: null,
       i2c: { sda: 4, scl: 5 }, spi: { mosi: 19, miso: 16, sck: 18, ss: 17 }, gndPins: [gnd[0]],
       supplies: [{ pin: '3V3', v: 3.3, r: 0.1, maxI: 0.3 }, { pin: 'VBUS', v: 5, r: 0.1 }, { pin: 'VSYS', v: 4.7, r: 0.2 }],
-      serialPorts: [], rout: 40, rpull: 50000, pinMaxI: 0.012,
+      serialPorts: [], rout: 40, rpull: 50000, pinMaxI: 0.012, uart: { UART0: { rx: 1, tx: 0 }, UART1: { rx: 5, tx: 4 } },
     },
     render: () => art,
     update: boardUpdate,

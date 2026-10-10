@@ -683,9 +683,9 @@ export class PanelView {
       const grid = h('div', { class: 'lib-grid dev-grid' });
       for (const def of defs) {
         const count = P.devices.filter((d) => d.type === def.type).length;
-        const full = count >= def.max || (def.category === 'plc' && P.devices.some((d) => DEVICE_DEFS[d.type].category === 'plc'));
+        const full = count >= def.max || (def.category === 'plc' && P.devices.filter((d) => DEVICE_DEFS[d.type].category === 'plc').length >= 2);
         const img = h('img', { class: 'dev-thumb', alt: '' });
-        const card = h('button', { class: 'lib-card dev-card' + (full ? ' disabled' : ''), onclick: () => { if (full) { toast(def.category === 'plc' ? 'The lab has one PLC — delete it first to change the model' : `Maximum ${def.max} × ${def.short}`, 'warn'); return; } sheet.close(); this.addDevice(def); } },
+        const card = h('button', { class: 'lib-card dev-card' + (full ? ' disabled' : ''), onclick: () => { if (full) { toast(def.category === 'plc' ? 'The lab already has two PLCs — delete one first' : `Maximum ${def.max} × ${def.short}`, 'warn'); return; } sheet.close(); this.addDevice(def); } },
           h('div', { class: 'lib-thumb' }, img),
           h('div', { class: 'lib-name' }, def.short),
           h('div', { class: 'lib-sub' }, def.brand ? `${def.brand} · ${def.part}` : def.part || def.name));

@@ -123,6 +123,16 @@ export class LadderView {
   onSimStart() { this.render(); this.updateBanner(); }
   onSimStop() { this.render(); this.updateBanner(); }
   onHardwareChanged() { this.compileSoon(); }
+  /** Another PLC's program is open now: fresh undo history and cursor. */
+  onPlcSwitched() {
+    this.hist = []; this.fut = [];
+    this.snap = JSON.stringify(this.prog);
+    this.cur = { rung: 0, row: 0, col: 0 };
+    this.clampCursor();
+    this.compileSoon();
+    this.render();
+    this.updateBanner();
+  }
 
   // ------------------------------------------------------------------ program edits
   commit(label) {

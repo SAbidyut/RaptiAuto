@@ -47,6 +47,13 @@ export const LAB_TASKS = {
     { text: 'Break the link: set VFD Pr.09-04 to 1 (7N2 ASCII) — the FAULT lamp lights', hint: 'Release the E-STOP first; put 14 back afterwards', check: (c) => !!(c.vfd && c.vfd.params['09-04'] !== 14 && c.cpu && c.cpu.M[1129] && c.rt('lflt') && c.rt('lflt').on) },
     { text: 'Swap two motor wires (e.g. V ↔ W) and run — the motor turns the other way', check: (c) => !!(c.motor && c.motor.rpm < -50 && hz(c) > 1) },
   ],
+  'plc-master-slave': [
+    { text: 'Simulate and press START on the master — the slave turns the CONVEYOR on', check: (c) => !!(c.rt('lconv') && c.rt('lconv').on) },
+    { text: 'Tap the PART sensor 5 times — the master reads the slave\'s count and lights BATCH OK', check: (c) => { const ok = !!(c.rt('lfull') && c.rt('lfull').on && c.rt('plc') && c.rt('plc').cpu.D[10] >= 5); if (ok) c.memo.full = true; return ok; } },
+    { text: 'Press RESET — the master writes D101 = 1 and the slave clears its counter', check: (c) => !!(c.memo.full && c.rt('plc2') && c.rt('plc2').cpu.CV[0] === 0) },
+    { text: 'Find the “Write D100…” and “Read C0” frames in Monitor → Comm log', check: (c) => c.lab.tab === 'monitor' && c.lab.views.monitor.sub === 'log' && !!(c.cpu && c.cpu.running) },
+    { text: 'Tap the PLC chip at the top and open PLC 2 · Slave in the Ladder tab', check: (c) => c.P.activePlc === 'plc2' && c.lab.tab === 'ladder' },
+  ],
   'analog-speed': [
     { text: 'Press START and turn the SPEED pot to 80 % — the drive runs at 40 Hz', check: (c) => near(hz(c), 40, 0.6) },
     { text: 'Watch D1110 (AI CH0) in Monitor → Devices', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },

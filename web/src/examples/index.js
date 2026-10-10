@@ -5,6 +5,7 @@ import * as sensors from './sensors.js';
 import * as displays from './displays.js';
 import * as motors from './motors.js';
 import * as projects from './projects.js';
+import * as multi from './multi.js';
 
 export const EXAMPLE_CATEGORIES = [
   { id: 'basics', name: 'Basics' },
@@ -13,6 +14,7 @@ export const EXAMPLE_CATEGORIES = [
   { id: 'motors', name: 'Motors' },
   { id: 'iot', name: 'ESP32 & Pico' },
   { id: 'electrical', name: 'Electrical' },
+  { id: 'multi', name: 'Master–Slave' },
 ];
 
 const builders = [
@@ -24,6 +26,7 @@ const builders = [
   displays.lcdI2cHello, displays.lcdParallel, displays.oledGraphics, displays.tm1637Counter, displays.max7219Matrix,
   displays.neopixelRing, displays.r4Matrix, displays.weatherStation, projects.rtcClock, projects.keypadLock,
   motors.servoSweep, motors.servoKnob, motors.stepper28byj, motors.stepperA4988, motors.relayLamp, motors.l298nMotor,
+  multi.i2cMasterSlave, multi.uartMasterSlave,
 ];
 
 export const EXAMPLES = [];

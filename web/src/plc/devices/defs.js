@@ -324,7 +324,7 @@ export const DEVICE_DEFS = {
 function plcDef(type, description) {
   const m = PLC_MODELS[type];
   return {
-    type, name: `Delta ${m.short}`, short: m.short, part: m.name, brand: 'Delta', category: 'plc', sim: 'plc', zone: 'rail1', max: 1,
+    type, name: `Delta ${m.short}`, short: m.short, part: m.name, brand: 'Delta', category: 'plc', sim: 'plc', zone: 'rail1', max: 2,
     size: [m.w, 90, 82], model: m, description,
     props: [], defaults: {}, state: { run: true },
     ports: () => plcPorts(type),
