@@ -5,7 +5,7 @@ import { Native } from '../../native.js';
 import { AudioEngine } from '../../ui/audio.js';
 import { saveLab, exportLab, saveLabThumb } from '../store.js';
 import { LabSystem } from '../sim/system.js';
-import { DEVICE_DEFS, deviceProps, devicePorts } from '../devices/defs.js';
+import { DEVICE_DEFS, deviceProps, devicePorts, hasLabel } from '../devices/defs.js';
 import { renderHmi } from './hmi-render.js';
 import { renderLaptop } from './laptop-screen.js';
 import { PanelView } from './panel.js';
@@ -534,7 +534,7 @@ export class LabScreen {
   deviceName(dev) {
     const def = DEVICE_DEFS[dev.type];
     const p = deviceProps(dev);
-    return def.category === 'field' && p.label ? `${def.short} “${p.label}”` : def.short;
+    return hasLabel(def) && p.label ? `${def.short} “${p.label}”` : def.short;
   }
 
   /** Make sure the simulation runs and the PC ↔ PLC link is up. Resolves to the PLC runtime or null. */

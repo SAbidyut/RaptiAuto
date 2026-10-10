@@ -496,7 +496,9 @@
 .panel-view.loading-3d .lab-view-seg .seg[data-view="3d"] { animation: lab-loading .8s ease-in-out infinite alternate; }
 @keyframes lab-loading { from { opacity: 1; } to { opacity: .45; } }
 .panel-view .lab-chips { left: calc(134px + var(--safe-l)); padding-left: 0; }
-.lab-3d-host.view-2d .lab-3d, .lab-3d-host.view-3d .schem { display: none; }
+/* !important: three.js puts an inline display: block on its canvas, which would keep the (frozen)
+   3D picture over the 2D schematic */
+.lab-3d-host.view-2d .lab-3d, .lab-3d-host.view-3d .schem { display: none !important; }
 .panel-view.select-tool .lab-3d-host { cursor: crosshair; }
 
 /* ---------------------------------------------------------------- 2D wiring schematic */
@@ -537,6 +539,14 @@
 @keyframes sdWave { 0% { opacity: .9; r: 22px; } 100% { opacity: 0; r: 34px; } }
 .sd-target { fill: #8892a0; opacity: .35; transition: x .15s; }
 .sd-target.on { opacity: 1; fill: #cbd5e1; }
+.sd-target.liquid { fill: #38bdf8; }
+.sd-target.box { fill: #b07a43; }
+.sd-beam { stroke: #ef4444; stroke-width: 2; stroke-dasharray: 3 3; opacity: 0; }
+.sd-beam.on { opacity: .8; }
+.sd-water { fill: #2f8de4; opacity: .75; transition: y .2s, height .2s; }
+.sd-value { font-family: var(--mono); font-size: 13px; font-weight: 700; fill: #4ade80; }
+.sd-poles line { stroke: #94a3b8; stroke-width: 2.5; stroke-linecap: round; transition: transform .1s; }
+.sd-poles.on line { stroke: #f43f5e; transform: translateY(-4px); }
 .sd-knobc { fill: #111827; stroke: #64748b; stroke-width: 1.5; }
 .sd-ptr { stroke: #fff; stroke-width: 2.5; stroke-linecap: round; }
 .sd-lcd { fill: #1a0505; stroke: #3f1d1d; }

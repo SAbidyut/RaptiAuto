@@ -164,6 +164,48 @@ export const LAB_EXAMPLES = [
     },
   },
   {
+    id: 'contactor-starter', name: 'Motor starter: contactor + overload relay', level: 'intermediate', tags: ['Contactor', 'Overload', 'Sensor'],
+    description: 'A conveyor motor switched by a magnetic contactor (KM1) with a thermal overload relay (F1). START latches the PLC, Y0 pulls in KM1, its auxiliary contact 13–14 tells the PLC it really closed, then the drive runs. The overload NC 95–96 and a photoelectric sensor (box at the end of the belt) stop the motor.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('vfd', 'ms300', {}, { params: { '00-21': 1, '00-20': 0, '02-00': 0, '01-12': 2, '01-13': 1, '04-00': 40 } });
+      b.dev('km1', 'contactor', { label: 'KM1', coil: '24DC' });
+      b.dev('f1', 'olr', { label: 'F1' }, { tripped: false });
+      b.dev('motor', 'motor', { load: 40 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('photo', 'photo', { label: 'BOX END', output: 'PNP' }, { target: false });
+      b.dev('lrun', 'lamp', { label: 'RUN', color: 'green' });
+      b.dev('lfault', 'lamp', { label: 'OVERLOAD', color: 'red' });
+      // power: drive → contactor main contacts → overload relay → motor
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('vfd', 'U/T1', 'km1', 'L1'); b.w('vfd', 'V/T2', 'km1', 'L2'); b.w('vfd', 'W/T3', 'km1', 'L3');
+      b.w('km1', 'T1', 'f1', 'L1'); b.w('km1', 'T2', 'f1', 'L2'); b.w('km1', 'T3', 'f1', 'L3');
+      b.w('f1', 'T1', 'motor', 'U'); b.w('f1', 'T2', 'motor', 'V'); b.w('f1', 'T3', 'motor', 'W'); b.w('vfd', 'PE', 'motor', 'PE');
+      // 24 V inputs: START, STOP (NC), overload 95–96 (NC), KM1 feedback 13–14, photo sensor
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626'); b.w('stop', '11', 'photo', 'BN', '#dc2626');
+      b.w('psu', '+V1', 'f1', '95'); b.w('f1', '95', 'km1', '13', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1'); b.w('f1', '96', 'plc', 'X2'); b.w('km1', '14', 'plc', 'X3'); b.w('photo', 'BK', 'plc', 'X4');
+      b.w('photo', 'BU', 'psu', '-V2');
+      // outputs: KM1 coil, lamps, drive run + speed
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'km1', 'A1'); b.w('km1', 'A2', 'psu', '-V2');
+      b.w('plc', 'Y1', 'lrun', 'X1'); b.w('plc', 'Y2', 'lfault', 'X1'); b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lfault', 'X2', '#1e3a8a');
+      b.w('plc', 'C1', 'vfd', 'DCM');
+      b.w('plc', 'Y4', 'vfd', 'MI1'); b.w('plc', 'Y6', 'vfd', 'MI3');
+      const prog = program([
+        rung('Run latch M0: START (X0) sets it, STOP (X1, NC) and the overload contact 95–96 (X2, NC) break it', ['X0| X1 X2 => OUT M0', 'M0']),
+        rung('KM1 coil (Y0) while running', ['M0 => OUT Y0']),
+        rung('Drive FWD (MI1, Y4) only when KM1 has really closed (13–14 → X3) and no box is at the belt end (X4)', ['M0 X3 /X4 => OUT Y4']),
+        rung('Speed: multi-step 1 (MI3 → Pr.04-00 = 40 Hz)', ['M1000 => OUT Y6']),
+        rung('RUN lamp from the contactor feedback', ['X3 => OUT Y1']),
+        rung('OVERLOAD lamp when F1 has tripped', ['/X2 => OUT Y2']),
+      ], { X0: 'START push button', X1: 'STOP push button (NC)', X2: 'Overload relay F1 95–96 (NC)', X3: 'KM1 auxiliary 13–14', X4: 'Photo sensor: box at belt end', Y0: 'KM1 contactor coil', Y1: 'RUN lamp', Y2: 'OVERLOAD lamp', Y4: 'VFD MI1 (FWD)', Y6: 'VFD MI3 (speed 1)', M0: 'Run latch' });
+      return finish(this, b, prog);
+    },
+  },
+  {
     id: 'vfd-modbus-hmi', name: 'VFD speed control · Modbus RTU + HMI', level: 'advanced', tags: ['MODRW', 'RS-485', 'HMI', 'VFD'], featured: true,
     description: 'The complete system: DOP-107 HMI ↔ DVP PLC (COM1) ↔ MS300 VFD over RS-485 Modbus RTU (MODRW). Set the speed on the HMI, read back frequency, current and fault code.',
     build() {

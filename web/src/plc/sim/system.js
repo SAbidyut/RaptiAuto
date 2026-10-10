@@ -97,6 +97,8 @@ export class LabSystem {
         if (rt.kind === 'estop') s.pressed = !s.pressed;
         else if (rt.kind === 'selector') s.on = !s.on;
         else if (rt.kind === 'prox') s.target = !s.target;
+        else if (rt.kind === 'limit') s.on = !s.on;
+        else if (rt.kind === 'olr') s.tripped = !s.tripped;
         else if (rt.kind === 'mcb') { s.on = !s.on; if (s.on) rt.tripped = false; }
         else if (rt.kind === 'plc') { s.run = !(s.run !== false); rt.cpu.setSwitch(s.run); }
         break;
@@ -165,6 +167,15 @@ export class LabSystem {
         }
         case 'estop': if (!s.pressed) unite(node(id, '11'), node(id, '12')); break;
         case 'selector': if (s.on) unite(node(id, '13'), node(id, '14')); break;
+        case 'limit': if (s.on) unite(node(id, '13'), node(id, '14')); else unite(node(id, '21'), node(id, '22')); break;
+        case 'contactor':
+          // the armature follows the coil of the previous step (a contactor needs a few ms to pull in)
+          if (rt.closed) { for (const k of ['1', '2', '3']) unite(node(id, 'L' + k), node(id, 'T' + k)); unite(node(id, '13'), node(id, '14')); } else unite(node(id, '21'), node(id, '22'));
+          break;
+        case 'olr':
+          for (const k of ['1', '2', '3']) unite(node(id, 'L' + k), node(id, 'T' + k));
+          if (s.tripped) unite(node(id, '97'), node(id, '98')); else unite(node(id, '95'), node(id, '96'));
+          break;
         default: break;
       }
     }
@@ -240,9 +251,20 @@ export class LabSystem {
         const r = this.diff(id, 'BN', id, 'BU');
         rt.powered = !!(r && !r.ac && r.d >= 18);
         if (rt.powered && rt.dev.state.target) {
-          const ra = src.get(find(node(id, 'BN')));
-          const sup = ra && ra.find((x) => x.v === 24);
-          if (sup) add(id, 'BK', sup.sys, 24);
+          // PNP: the output switches +24 V (BN); NPN: it switches 0 V (BU)
+          const npn = deviceProps(rt.dev).output === 'NPN';
+          const ra = src.get(find(node(id, npn ? 'BU' : 'BN')));
+          const sup = ra && ra.find((x) => !x.ac && x.v === (npn ? 0 : 24));
+          if (sup) add(id, 'BK', sup.sys, sup.v);
+        }
+      } else if (rt.kind === 'atx') {
+        // 0–10 V transmitter: BK = 0 V (BU) + 10 V × the measured value within its range
+        const r = this.diff(id, 'BN', id, 'BU');
+        rt.powered = !!(r && !r.ac && r.d >= 18);
+        if (rt.powered) {
+          const a = src.get(find(node(id, 'BN'))), b = src.get(find(node(id, 'BU')));
+          const x = a && a.find((q) => !q.ac && q.v >= 18), y = x && b && b.find((q) => q.sys === x.sys && !q.ac);
+          if (y) add(id, 'BK', x.sys, y.v + Math.max(0, Math.min(1, rt.dev.state.pos ?? 0.5)) * 10);
         }
       } else if (rt.kind === 'pot') {
         const a = src.get(find(node(id, '1'))), b = src.get(find(node(id, '3')));
@@ -274,6 +296,17 @@ export class LabSystem {
           if (on) rt.hmi.powerOn(); else rt.hmi.powerOff();
           break;
         }
+        case 'contactor': {
+          const r = diff(id, 'A1', id, 'A2');
+          const ac = deviceProps(rt.dev).coil === '230AC';
+          const on = !!(r && !r.same && (ac ? r.ac && Math.abs(r.d) > 150 : !r.ac && Math.abs(r.d) >= 18));
+          rt.wrongCoil = !!(r && !r.same && (ac ? !r.ac && Math.abs(r.d) >= 18 : r.ac));
+          const was = rt.closed;
+          rt.coil = on;
+          rt.closed = on || !!rt.pressed;
+          if (was !== undefined && was !== rt.closed && this.hooks.onContactor) this.hooks.onContactor(rt);
+          break;
+        }
         case 'lamp': case 'buzzer': {
           const [a, b] = rt.kind === 'lamp' ? ['X1', 'X2'] : ['+', '-'];
           const r = diff(id, a, id, b);
@@ -297,9 +330,35 @@ export class LabSystem {
     }
     // motors ↔ drives (phase order decides the direction)
     const phases = ['U/T1', 'V/T2', 'W/T3'];
-    for (const v of this.byKind('vfd')) { v.vfd.motor.connected = false; v.motorId = null; }
+    for (const v of this.byKind('vfd')) { v.vfd.motor.connected = false; v.motorId = null; v.motorOff = null; }
+    // a motor behind an open contactor is wired correctly, just switched off: follow the wiring
+    // through the open main contacts so the issue list does not call it "not connected"
+    const open = this.byKind('contactor').filter((k) => !k.closed);
+    const through = (r0) => {
+      let r = r0, by = null;
+      const seen = new Set([r]);
+      for (let hop = 0; hop < 4; hop++) {
+        let nx = null;
+        for (const k of open) for (const n of [1, 2, 3]) {
+          const a = find(node(k.dev.id, 'L' + n)), b = find(node(k.dev.id, 'T' + n));
+          const o = r === b ? a : r === a ? b : null;
+          if (o !== null && !seen.has(o)) { nx = o; by = by || k; }
+        }
+        if (nx === null) break;
+        r = nx; seen.add(r);
+      }
+      return { r, by };
+    };
     for (const m of this.byKind('motor')) {
-      m.driver = null; m.driverConnected = false;
+      m.driver = null; m.driverConnected = false; m.offBy = null;
+      if (open.length) {
+        const via = ['U', 'V', 'W'].map((p) => through(find(node(m.dev.id, p))));
+        const by = via.find((x) => x.by);
+        if (by) for (const v of this.byKind('vfd')) {
+          const vr = phases.map((p) => find(node(v.dev.id, p)));
+          if (via.every((x) => vr.includes(x.r)) && new Set(via.map((x) => x.r)).size === 3) { m.offBy = by.by.dev.id; v.motorOff = m.dev.id; break; }
+        }
+      }
       const roots = ['U', 'V', 'W'].map((p) => find(node(m.dev.id, p)));
       for (const v of this.byKind('vfd')) {
         const vr = phases.map((p) => find(node(v.dev.id, p)));
@@ -556,14 +615,23 @@ export class LabSystem {
           if (!v.powered) add('warn', `${name} has no power — wire R/L1 and S/L2 from the MCB.`, rt.dev.id);
           else {
             if (v.fault) add('error', `${name} fault ${v.fault}: ${FAULTS[v.fault].text}. Press STOP/RESET on the keypad.`, rt.dev.id);
-            if (!rt.motorId) add('info', `${name}: no motor on U/T1, V/T2, W/T3.`, rt.dev.id);
+            if (!rt.motorId && !rt.motorOff) add('info', `${name}: no motor on U/T1, V/T2, W/T3.`, rt.dev.id);
             if (rt.ignoredCmd && this.time - rt.ignoredCmd < 2) add('warn', `${name} ignores RS-485 RUN/STOP because Pr.00-21 is not 2.`, rt.dev.id);
             if (rt.ignoredFreq && this.time - rt.ignoredFreq < 2) add('warn', `${name} ignores the RS-485 frequency because Pr.00-20 is not 1.`, rt.dev.id);
           }
           break;
         }
-        case 'motor': if (!rt.driverConnected) add('info', rt.partial ? `${name}: only some phases are connected.` : `${name} is not connected to a drive.`, rt.dev.id); break;
+        case 'motor': if (!rt.driverConnected && !rt.offBy) add('info', rt.partial ? `${name}: only some phases are connected.` : `${name} is not connected to a drive.`, rt.dev.id); break;
         case 'lamp': if (rt.overvolt) add('error', `${deviceProps(rt.dev).label} lamp: 230 V AC on a 24 V lamp!`, rt.dev.id); break;
+        case 'contactor':
+          if (rt.wrongCoil) add('error', deviceProps(rt.dev).coil === '230AC' ? `${name} ${deviceProps(rt.dev).label || ''}: 24 V DC on a 230 V AC coil — it cannot pull in. Change the coil voltage in its settings or wire it to 230 V AC.` : `${name} ${deviceProps(rt.dev).label || ''}: 230 V AC on a 24 V DC coil! Wire A1 / A2 to 24 V DC (A2 to 0 V) or choose a 230 V AC coil.`, rt.dev.id);
+          break;
+        case 'olr': if (rt.dev.state.tripped) add('warn', `${name} ${deviceProps(rt.dev).label || ''} tripped (95–96 open). Tap its button to reset it.`, rt.dev.id); break;
+        case 'prox': case 'atx': {
+          const r = this.diff && this.diff(rt.dev.id, 'BN', rt.dev.id, 'BU');
+          if (r && r.ac) add('error', `${name} ${deviceProps(rt.dev).label || ''}: 230 V AC on a 24 V DC sensor!`, rt.dev.id);
+          break;
+        }
         default: break;
       }
     }

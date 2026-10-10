@@ -322,6 +322,53 @@ for (const ex of LAB_EXAMPLES) {
   check('L–N short trips the MCB', p.devices.find((d) => d.id === 'mcb').state.on === false);
 }
 
+// ---------------------------------------------------------------- contactor, overload relay, industrial sensors
+{
+  const { s, run } = sim('contactor-starter');
+  run(1500);
+  const km = () => s.rts.get('km1'), rpm = () => s.rts.get('motor').rpm;
+  check('starter: KM1 open, motor still, no false "not connected" issue', !km().closed && rpm() === 0 && !s.issues.some((i) => /not connected|no motor/.test(i.text)), s.issues.map((i) => i.text).join(' | '));
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(4000);
+  check('starter: START pulls in KM1, feedback X3, motor runs', km().closed && s.plc.cpu.X[3] === 1 && rpm() > 1000, 'rpm=' + rpm());
+  s.act('photo', 'toggle'); run(3000);
+  check('starter: PNP photo sensor → X4 stops the drive', s.plc.cpu.X[4] === 1 && Math.abs(s.rts.get('vfd').vfd.f) < 0.01);
+  s.act('photo', 'toggle'); s.act('f1', 'toggle'); run(500);
+  check('starter: overload trip opens 95–96, drops KM1, lights OVERLOAD', s.plc.cpu.X[2] === 0 && !km().closed && s.rts.get('lfault').on);
+  s.act('f1', 'toggle'); run(200);
+  s.act('km1', 'press', true); run(100);
+  check('starter: KM1 pushed in by hand closes 13–14', km().closed && s.plc.cpu.X[3] === 1);
+  s.act('km1', 'press', false); run(100);
+  check('starter: released, KM1 opens again', !km().closed && s.plc.cpu.X[3] === 0);
+}
+{
+  // NPN sensor with S/S at +24 V (sinking inputs), limit switch NC contact, 0–10 V transmitter on the EX2
+  const { s, run } = sim('blank', (p) => {
+    p.devices = p.devices.filter((d) => d.id !== 'plc');
+    p.conns = p.conns.filter((c) => c.a.dev !== 'plc' && c.b.dev !== 'plc');
+    p.devices.push({ id: 'plc', type: 'dvp-20ex2', props: {}, state: { run: true } });
+    p.conns.push(makeConn(p.devices, 'mcb', 'L', 'plc', 'L'), makeConn(p.devices, 'mcb', 'N', 'plc', 'N'), makeConn(p.devices, 'plc', 'S/S', 'psu', '+V1'));
+    p.devices.push({ id: 'cap', type: 'prox-cap', props: { label: 'LEVEL', output: 'NPN' }, state: { target: false } });
+    p.devices.push({ id: 'ls', type: 'limit', props: { label: 'LS1' }, state: { on: false } });
+    p.devices.push({ id: 'tt', type: 'temp-tx', props: { label: 'TEMP', min: 0, max: 150 }, state: { pos: 0.6 } });
+    p.conns.push(makeConn(p.devices, 'psu', '+V2', 'cap', 'BN'), makeConn(p.devices, 'psu', '-V1', 'cap', 'BU'), makeConn(p.devices, 'cap', 'BK', 'plc', 'X0'));
+    p.conns.push(makeConn(p.devices, 'psu', '-V2', 'ls', '21'), makeConn(p.devices, 'ls', '22', 'plc', 'X1'));
+    p.conns.push(makeConn(p.devices, 'cap', 'BN', 'tt', 'BN'), makeConn(p.devices, 'cap', 'BU', 'tt', 'BU'), makeConn(p.devices, 'tt', 'BK', 'plc', 'V0+'), makeConn(p.devices, 'ls', '21', 'plc', 'AIG'));
+  });
+  run(500);
+  const cpu = s.plc.cpu;
+  check('NPN sensor off → X0 = 0, NC limit switch (to 0 V, sinking) → X1 = 1', cpu.X[0] === 0 && cpu.X[1] === 1, `X0=${cpu.X[0]} X1=${cpu.X[1]}`);
+  s.act('cap', 'toggle'); s.act('ls', 'toggle'); run(100);
+  check('NPN sensor on → X0 = 1, limit switch pushed opens NC → X1 = 0', cpu.X[0] === 1 && cpu.X[1] === 0, `X0=${cpu.X[0]} X1=${cpu.X[1]}`);
+  check('temperature transmitter 60 % → 6 V → D1110 = 1200', cpu.ai[0] === 1200, 'ai0=' + cpu.ai[0]);
+}
+{
+  const { p, s, run } = sim('contactor-starter', (p) => { p.devices.find((d) => d.id === 'km1').props.coil = '230AC'; });
+  run(300);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(500);
+  check('230 V AC coil on 24 V DC: KM1 stays open and an issue explains it', !s.rts.get('km1').closed && s.issues.some((i) => /230 V AC coil/.test(i.text)));
+  void p;
+}
+
 // ---------------------------------------------------------------- regressions
 {
   const r = rung('', ['X0| X1 => OUT Y0', 'Y0']);
@@ -408,6 +455,19 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   const v = t.s.rts.get('vfd').vfd; v.setParam('01-12', 0.1);
   t.s.act('spd', 'toggle'); t.run(1000);
   check('task terminals #5 (ocA trip)', t.done(4), 'fault=' + v.fault);
+}
+
+{
+  const t = taskRunner('contactor-starter');
+  t.run(1500);
+  t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(4000);
+  check('task starter #1 (KM1 in, motor turns)', t.done(0));
+  t.s.act('photo', 'toggle'); t.run(3000);
+  check('task starter #2 (box stops the drive)', t.done(1), 'f=' + t.s.rts.get('vfd').vfd.f);
+  t.s.act('photo', 'toggle'); t.s.act('f1', 'toggle'); t.run(300);
+  check('task starter #3 (overload trip)', t.done(2));
+  t.s.act('f1', 'toggle'); t.run(100); t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(300);
+  check('task starter #4 (reset and restart)', t.done(3));
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');

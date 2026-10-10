@@ -49,6 +49,14 @@ export function toast(msg, type = 'info', ms = 2600) {
 }
 
 // ------------------------------------------------------------------ dialogs
+/** Close on a tap on the dimmed backdrop, but not with the tap that opened it: a menu opened on
+ *  finger-up gets that tap's click right after, which landed on the new backdrop and closed the
+ *  menu again at once (the ladder's online NO / NC menu "flashed" while the PLC was running). */
+function onBackdrop(overlay, fn) {
+  const opened = performance.now();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay && performance.now() - opened > 450) fn(); });
+}
+
 export function dialog({ title, body, actions = [], cls = '' }) {
   return new Promise((resolve) => {
     const overlay = h('div', { class: 'overlay dialog-overlay' });
@@ -68,7 +76,7 @@ export function dialog({ title, body, actions = [], cls = '' }) {
     }
     if (actions.length) box.appendChild(row);
     overlay.appendChild(box);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(undefined); });
+    onBackdrop(overlay, () => close(undefined));
     document.body.appendChild(overlay);
     unback = pushBack(() => { unback = null; close(undefined); });
     requestAnimationFrame(() => overlay.classList.add('show'));
@@ -105,7 +113,7 @@ export class Sheet {
     if (content) this.body.appendChild(content);
     this.el.append(handle, head, this.body);
     this.overlay.appendChild(this.el);
-    this.overlay.addEventListener('click', (e) => { if (e.target === this.overlay) this.close(); });
+    onBackdrop(this.overlay, () => this.close());
     this.enableDrag(handle);
     this.enableDrag(head);
   }
@@ -169,7 +177,7 @@ export function popupMenu(anchor, items) {
     }));
   }
   overlay.appendChild(menu);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  onBackdrop(overlay, close);
   document.body.appendChild(overlay);
   const mw = menu.offsetWidth || 230;
   const left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw));
