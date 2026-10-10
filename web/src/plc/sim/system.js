@@ -89,7 +89,7 @@ export class LabSystem {
   /** Operate a device control. */
   act(devId, action, value) {
     const rt = this.rts.get(devId);
-    if (!rt) return;
+    if (!rt) return null;
     const s = rt.dev.state;
     switch (action) {
       case 'press': rt.pressed = !!value; break;
@@ -108,9 +108,10 @@ export class LabSystem {
         else if (rt.kind === 'plc') { s.run = !(s.run !== false); rt.cpu.setSwitch(s.run); }
         break;
       case 'pos': s.pos = Math.max(0, Math.min(1, value)); break;
-      case 'vfdKey': if (rt.vfd) { rt.vfd.key(value); this.persistVfd(rt); } break;
+      case 'vfdKey': if (rt.vfd) { const hint = rt.vfd.key(value); this.persistVfd(rt); return hint; } break;
       default: break;
     }
+    return null;
   }
 
   persistVfd(rt) { rt.dev.state.params = rt.vfd.snapshotParams(); }

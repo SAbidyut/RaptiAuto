@@ -93,7 +93,7 @@ export class App {
   }
 
   onPause() { if (this.editor) this.editor.onPause(); if (this.lab) this.lab.saveNow(); if (this.pi) this.pi.onPause(); }
-  onResume() { if (this.editor) this.editor.onResume(); }
+  onResume() { if (this.editor) this.editor.onResume(); if (this.pi && this.pi.onResume) this.pi.onResume(); }
   onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); if (this.lab) this.lab.root.classList.toggle('kb', h > 0); if (this.pi) this.pi.root.classList.toggle('kb', h > 0); }
 
   persist(p) { saveProject(p); }

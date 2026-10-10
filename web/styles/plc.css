@@ -257,9 +257,14 @@
 .kp-err { min-height: 0; color: #fca5a5; font-size: 12.5px; }
 .kp-err:empty, .kp-info:empty { display: none; }
 .kp-info { color: #94a3b8; font-size: 12.5px; }
-.kp-devs { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
+.kp-devs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.kp-opts { display: flex; flex-direction: column; gap: 6px; }
+.kp-dbl.active { border-color: rgba(167, 139, 250, .55); color: #ddd6fe; background: rgba(167, 139, 250, .1); }
+.ip-chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 4px; scrollbar-width: none; flex: none; }
+.ip-chips::-webkit-scrollbar { display: none; }
+.ip-chips .chip { flex: none; }
 .kp-devs.few { grid-template-columns: repeat(4, 1fr); }
-.kp-digits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.kp-digits { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .kp-digits.hex { grid-template-columns: repeat(4, 1fr); }
 .kp-key { height: 48px; border-radius: 12px; background: #18233f; border: 1px solid rgba(148, 163, 184, .16); font-family: var(--mono); font-size: 19px; font-weight: 700; }
 .kp-key:active { background: #2a3d6a; transform: scale(.95); }
@@ -376,7 +381,9 @@
 .vv-leds span.on i { background: #36ff6a; box-shadow: 0 0 8px #36ff6a; }
 .vv-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .vv-key { height: 48px; border-radius: 12px; background: linear-gradient(180deg, #59606c, #464c57); color: #f8fafc; font-weight: 800; font-size: 13px; box-shadow: 0 3px 0 #2a2e35, inset 0 1px 0 rgba(255, 255, 255, .12); touch-action: manipulation; }
-.vv-key:active { transform: translateY(2px); box-shadow: 0 1px 0 #2a2e35; }
+.vv-key:active, .vv-key.down { transform: translateY(2px); box-shadow: 0 1px 0 #2a2e35; filter: brightness(1.15); }
+.vv-help { margin-top: 10px; font-size: 11.5px; line-height: 1.45; color: #94a3b8; }
+.vv-help b { color: #cbd5e1; }
 .vv-key.k-up, .vv-key.k-down, .vv-key.k-left { font-size: 18px; }
 .vv-key.k-down { grid-column: 2; }
 .vv-key.k-run { grid-column: 1 / span 1; background: linear-gradient(180deg, #22a052, #15803d); }
@@ -626,3 +633,5 @@
 .lab.fs .pane-vfd { padding-top: var(--safe-t); }
 .lab.fs .pane-vfd .vv-body { padding-right: calc(52px + var(--safe-r)); }
 .lab.fs .lab-pane:not(.pane-panel) { padding-right: var(--safe-r); padding-bottom: var(--safe-b); }
+.lr-tag { fill: #c4b5fd; font-family: var(--mono); font-weight: 800; }
+.lad-bar .lb-hot b { color: #fbbf24; }

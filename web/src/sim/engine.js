@@ -190,8 +190,9 @@ export class SimEngine {
   // ------------------------------------------------------------------ lifecycle
   start() {
     this.build();
-    if (!this.board) {
-      // electronics-only circuit: no sketch, just the circuit in (virtual) real time
+    if (!this.board || this.opts.external) {
+      // electronics-only circuit, or a board whose program runs elsewhere (the Raspberry Pi Lab's
+      // Python drives the pins through pinMode / digitalWrite …): the circuit in (virtual) real time
       this.rt = { t: 0, queueIsr() {} };
       this.runner = null;
       this.running = true;
@@ -201,7 +202,7 @@ export class SimEngine {
       this.dirty = true;
       this.ensureSolved();
       for (const p of this.parts.values()) if (p.started) p.started();
-      return { ok: true, noBoard: true, warnings: [] };
+      return { ok: true, noBoard: !this.board, external: !!this.opts.external, warnings: [] };
     }
     const engine = this;
     const board = this.board;
@@ -233,6 +234,19 @@ export class SimEngine {
     return { ok: true, warnings: res.warnings, includes: res.includes };
   }
 
+  /**
+   * External program (no sketch runner): move the circuit's clock to wall time `wall` now, between
+   * frames, so a program that polls a pin in a tight loop (an HC-SR04 echo) sees time pass.
+   */
+  advanceTo(wall = now()) {
+    if (!this.running || this.paused || this.runner || this.lastWall === null) return;
+    const d = Math.min(100, wall - this.lastWall);
+    if (d <= 0) return;
+    this.lastWall = wall;
+    this.rt.t += d * 1000 * this.speed;
+    this.processEvents();
+  }
+
   stop() {
     this.running = false;
     if (this.opts.onSound) this.opts.onSound('*', 0, 0);
@@ -249,7 +263,8 @@ export class SimEngine {
     this.lastWall = wall;
     const rt = this.rt;
     const target = rt.t + dWall * 1000 * this.speed;
-    const frameStart = rt.t;
+    // time an external program already moved on (advanceTo) belongs to this frame too
+    const frameStart = this.frameT !== undefined && this.frameT <= rt.t ? this.frameT : rt.t;
     this.changesThisFrame = 0;
     this.processEvents();
     const t0 = now();
@@ -269,6 +284,7 @@ export class SimEngine {
       this.stats.realtime = this.stats.realtime * 0.9 + Math.min(1, ratio / this.speed) * 0.1;
     }
     this.stats.simTime = rt.t;
+    this.frameT = rt.t;
     this.stats.busy = busy;
     this.computeActivity();
     if (status === 'error') {
@@ -524,7 +540,11 @@ export class SimEngine {
     if (st._noiseSlot !== slot) {
       st._noiseSlot = slot;
       st._noise = Math.random() < 0.5 ? 1 : 0;
-      if (st.mode === 0) this.warn(`Pin ${st.id} is floating (not connected to anything) and reads random values. Use INPUT_PULLUP or a pull-down resistor.`, null, 'float' + st.num);
+      if (st.mode === 0) {
+        this.warn(this.board.python
+          ? `${st.id} is floating (no pull-up / pull-down and nothing drives it), so it reads random values. Use Button(${st.num}) / pull_up=True, GPIO.setup(${st.num}, GPIO.IN, pull_up_down=GPIO.PUD_UP) or Pin(${st.num}, Pin.IN, Pin.PULL_UP).`
+          : `Pin ${st.id} is floating (not connected to anything) and reads random values. Use INPUT_PULLUP or a pull-down resistor.`, null, 'float' + st.num);
+      }
     }
     return st._noise;
   }
@@ -653,8 +673,9 @@ export class SimEngine {
       if (!st.vs.on || st.mode !== 1) continue;
       const i = Math.abs(st.vs.iAvg ?? st.vs.i);
       st.current = i;
-      if (i > 0.04) {
-        this.warn(`Pin ${st.id} is supplying ${(i * 1000).toFixed(0)} mA — more than the 40 mA maximum! Use a resistor or a transistor/driver.`, this.boardPart.id, 'ovc' + st.num);
+      const lim = this.board.pinMaxI || 0.04;
+      if (i > lim) {
+        this.warn(`Pin ${st.id} is supplying ${(i * 1000).toFixed(0)} mA — more than the ${Math.round(lim * 1000)} mA maximum! Use a resistor or a transistor/driver.`, this.boardPart.id, 'ovc' + st.num);
       }
     }
     for (const sp of this.supplies || []) {

@@ -3,7 +3,7 @@ import { parseOperand } from '../web/src/plc/sim/address.js';
 import { compileProgram, rungIL, addRow, programIL, emptyRung, placeOutput } from '../web/src/plc/sim/ladder.js';
 import { VfdMS300 } from '../web/src/plc/sim/vfd.js';
 import { rung, program, labelled } from '../web/src/plc/sim/dsl.js';
-import { PlcCpu } from '../web/src/plc/sim/plc.js';
+import { PlcCpu, bitsToFloat } from '../web/src/plc/sim/plc.js';
 import { crc16, lrc, requestBytes, encodeFrame } from '../web/src/plc/sim/modbus.js';
 import { LabSystem } from '../web/src/plc/sim/system.js';
 import { LAB_EXAMPLES, buildExample } from '../web/src/plc/examples.js';
@@ -576,6 +576,132 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   check('task starter #3 (overload trip)', t.done(2));
   t.s.act('f1', 'toggle'); t.run(100); t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(300);
   check('task starter #4 (reset and restart)', t.done(3));
+}
+
+// ---------------------------------------------------------------- full DVP instruction set (v2.7)
+{
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const mk = (rungs) => { const c = compileProgram(program(rungs), model); const cpu = new PlcCpu(model); cpu.load(c.ok ? c : null); cpu.powerOn(); return { c, cpu }; };
+  const f = (cpu, i) => bitsToFloat((cpu.D[i + 1] << 16) | (cpu.D[i] & 0xFFFF));
+  const d32 = (cpu, i) => (cpu.D[i + 1] << 16) | (cpu.D[i] & 0xFFFF);
+  check('operands: K4M0, D10E0, F1.5, E3', parseOperand('K4M0').dev === 'KM' && parseOperand('D10E0').ix.dev === 'E' && parseOperand('F1.5').val === 1.5 && parseOperand('E3').dev === 'E');
+  const { c, cpu } = mk([
+    rung('32-bit math', ['M1000 =>| DMOV K100000 D0', '=>| DADD D0 K23456 D2', '=>| DSUB D2 K200000 D4', '=>| DMUL K70000 K70000 D10', '=>| DDIV K1000001 K1000 D20', '=> DINCP D30']),
+    rung('float math', ['M1000 =>| DMOVR F2.5 D40', '=>| DEADD D40 F1.25 D42', '=>| DEMUL D42 K4 D44', '=>| DEDIV D44 F3.0 D46', '=>| DESQR F16.0 D48', '=>| FLT K7 D50', '=> INT D46 D52']),
+    rung('trig', ['M1000 =>| DSIN F1.5707963 D54', '=>| DPOW F2.0 F10.0 D56', '=>| DLOG F10.0 F1000.0 D58', '=> DEXP F0.0 D60']),
+    rung('digits & index', ['M1000 =>| MOV H00A5 K2M100', '=>| MOV K4M100 D62', '=>| MOV K3 E0', '=>| MOV K77 D70E0', '=> MOV D70E0 D64']),
+    rung('bit of word', ['M1000 =>| BSET D66 K3', '=>| BRST D66 K0', '=> BOUT D67 K15']),
+    rung('', ['D66.3 => OUT Y2']),
+    rung('', ['/D66.0 #D0>=K100000 => OUT Y3']),
+    rung('', ['~D40<F3.0 => OUT Y4']),
+    rung('convert', ['M1000 =>| GRY K10 D80', '=>| GBIN D80 D81', '=>| SEGD K7 D82', '=>| SMOV K1234 K4 K2 D83 K2', '=>| MMOV K-5 D84', '=> RMOV D0 D86']),
+    rung('table', ['M1000 =>| MOV K5 D90', '=>| MOV K3 D91', '=>| MOV K9 D92', '=>| MOV K3 D93', '=>| SER D90 K3 D100 K4', '=>| WSUM D90 D110 K4', '=> SORT D90 K4 K1 D120 K1']),
+    rung('matrix', ['M1000 =>| MOV HFF00 D130', '=>| MOV H0FF0 D131', '=>| MAND D130 D131 D132 K1', '=>| MXOR D130 D131 D133 K1', '=>| MINV D130 D134 K1', '=> MBC D130 K1 D135']),
+    rung('checksum', ['M1000 =>| MOV H0201 D140', '=>| MOV H0003 D141', '=>| CRC D140 K3 D142', '=> LRC D140 K3 D143']),
+    rung('time', ['M1000 =>| MOV K23 D150', '=>| MOV K30 D151', '=>| MOV K0 D152', '=>| MOV K1 D153', '=>| MOV K45 D154', '=>| MOV K0 D155', '=> TADD D150 D153 D156']),
+    rung('clock', ['M1000 => TRD D160']),
+  ]);
+  check('DVP instructions compile', c.ok, JSON.stringify(c.errors.slice(0, 4)));
+  cpu.step(5);
+  check('DMOV / DADD / DSUB', d32(cpu, 0) === 100000 && d32(cpu, 2) === 123456 && d32(cpu, 4) === -76544, `${d32(cpu, 0)} ${d32(cpu, 2)} ${d32(cpu, 4)}`);
+  const m64 = BigInt(cpu.D[10] & 0xFFFF) + (BigInt(cpu.D[11] & 0xFFFF) << 16n) + (BigInt(cpu.D[12] & 0xFFFF) << 32n) + (BigInt(cpu.D[13] & 0xFFFF) << 48n);
+  check('DMUL 64-bit result', m64 === 4900000000n, String(m64));
+  check('DDIV quotient / remainder', d32(cpu, 20) === 1000 && d32(cpu, 22) === 1, `${d32(cpu, 20)} ${d32(cpu, 22)}`);
+  check('DINCP', d32(cpu, 30) === 1);
+  check('float DMOVR / DEADD / DEMUL / DEDIV', f(cpu, 40) === 2.5 && f(cpu, 42) === 3.75 && f(cpu, 44) === 15 && f(cpu, 46) === 5, `${f(cpu, 40)} ${f(cpu, 42)} ${f(cpu, 44)} ${f(cpu, 46)}`);
+  check('DESQR / FLT / INT', f(cpu, 48) === 4 && f(cpu, 50) === 7 && cpu.D[52] === 5, `${f(cpu, 48)} ${f(cpu, 50)} ${cpu.D[52]}`);
+  check('DSIN / DPOW / DLOG / DEXP', Math.abs(f(cpu, 54) - 1) < 1e-6 && f(cpu, 56) === 1024 && Math.abs(f(cpu, 58) - 3) < 1e-5 && f(cpu, 60) === 1, `${f(cpu, 54)} ${f(cpu, 56)} ${f(cpu, 58)}`);
+  check('K2M100 write / K4M100 read', cpu.M[100] === 1 && cpu.M[101] === 0 && cpu.M[107] === 1 && cpu.D[62] === 0xA5, cpu.D[62]);
+  check('index register D70E0 → D73', cpu.D[73] === 77 && cpu.D[64] === 77, `${cpu.D[73]} ${cpu.D[64]}`);
+  check('BSET / BRST / BOUT', cpu.D[66] === 8 && (cpu.D[67] & 0xFFFF) === 0x8000, `${cpu.D[66]} ${cpu.D[67]}`);
+  cpu.step(5);
+  check('BLD / BLDI / DLD>= contacts', cpu.Y[2] === 1 && cpu.Y[3] === 1);
+  check('FLD< float compare contact', cpu.Y[4] === 1);
+  check('GRY / GBIN / SEGD', cpu.D[80] === 15 && cpu.D[81] === 10 && cpu.D[82] === 0x07, `${cpu.D[80]} ${cpu.D[81]} ${cpu.D[82]}`);
+  check('SMOV moves digits 4–3 of 1234 to digits 2–1', cpu.D[83] === 12, cpu.D[83]);
+  check('MMOV / RMOV', d32(cpu, 84) === -5 && cpu.D[86] === 32767 && cpu.M[1022] === 1, `${d32(cpu, 84)} ${cpu.D[86]}`);
+  check('SER: 2 matches, first 1, last 3, min 1, max 2', [2, 1, 3, 1, 2].every((v, k) => cpu.D[100 + k] === v), [0, 1, 2, 3, 4].map((k) => cpu.D[100 + k]).join(','));
+  check('WSUM → 32-bit', d32(cpu, 110) === 20);
+  check('SORT ascending', [3, 3, 5, 9].every((v, k) => cpu.D[120 + k] === v), [0, 1, 2, 3].map((k) => cpu.D[120 + k]).join(','));
+  check('MAND / MXOR / MINV / MBC', (cpu.D[132] & 0xFFFF) === 0x0F00 && (cpu.D[133] & 0xFFFF) === 0xF0F0 && (cpu.D[134] & 0xFFFF) === 0x00FF && cpu.D[135] === 8, [132, 133, 134, 135].map((i) => (cpu.D[i] & 0xFFFF).toString(16)).join(' '));
+  check('CRC-16 of 01 02 03 = 0x6161', (cpu.D[142] & 0xFFFF) === 0x6161, (cpu.D[142] & 0xFFFF).toString(16));
+  check('LRC of 01 02 03 = 0xFA', cpu.D[143] === 0xFA, cpu.D[143]);
+  check('TADD 23:30:00 + 1:45:00 = 1:15:00 (carry)', cpu.D[156] === 1 && cpu.D[157] === 15 && cpu.D[158] === 0 && cpu.M[1022] === 1, `${cpu.D[156]}:${cpu.D[157]}:${cpu.D[158]}`);
+  check('TRD reads the clock', cpu.D[162] >= 1 && cpu.D[162] <= 12 && cpu.D[163] >= 1 && cpu.D[163] <= 31);
+  check('RTC registers D1313–D1319', cpu.D[1317] === cpu.D[162]);
+  const il = programIL(c).map((l) => l.text).join(';');
+  check('IL names: DMOV, DEADD, DLD>=, FLD<, BLD, BLDI, DINCP', ['DMOV K100000 D0', 'DEADD D40 F1.25 D42', 'DLD>= D0 K100000', 'FLD< D40 F3.0', 'BLD D66 K3', 'LDI', 'DINCP D30'].every((t) => il.includes(t)) || il.includes('BLDI D66 K0'), il.slice(0, 300));
+  // 32-bit operand rules
+  const bad = compileProgram(program([rung('', ['M1000 =>| DMOV K1 T0', '=>| DADD C10 K1 D0', '=> MOV K1 K8M0'])]), model);
+  check('32-bit rules: no T, no C0–C199, K8 only in D instructions', bad.errors.length === 3, JSON.stringify(bad.errors.map((e) => e.msg)));
+}
+
+// ---------------------------------------------------------------- time-based instructions
+{
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const c = compileProgram(program([
+    rung('', ['X0 => PWM K100 K200 Y2']),
+    rung('', ['X1 => PLSY K1000 K500 Y0']),
+    rung('', ['X2 => DDRVI K2000 K4000 Y1 Y3']),
+    rung('', ['X3 => STMR T10 K5 M10']),
+    rung('', ['X4 => ANS T20 K3 S900']),
+    rung('', ['X5 => ANRP']),
+    rung('', ['X6 => RAMP K0 K100 D10 K10']),
+    rung('', ['M1000 => TKY X10 D20 M40']),
+  ]), model);
+  check('timed instructions compile', c.ok, JSON.stringify(c.errors.slice(0, 3)));
+  const cpu = new PlcCpu(model); cpu.load(c); cpu.powerOn();
+  cpu.Xphys[0] = 1; cpu.Xphys[1] = 1;
+  let on = 0, n = 0;
+  for (let t = 0; t < 400; t += 5) { cpu.step(5); n++; if (cpu.Y[2]) on++; }
+  check('PWM 100 / 200 ms ≈ 50 % duty', Math.abs(on / n - 0.5) < 0.1, `${on}/${n}`);
+  check('PLSY counting (≈400 pulses after 0.4 s)', Math.abs(d32(cpu, 1030) - 400) <= 6 && cpu.M[1029] === 0, `${cpu.M[1029]} ${d32(cpu, 1030)}`);
+  cpu.step(150);
+  check('PLSY 500 pulses at 1 kHz done after 0.5 s (M1029)', cpu.M[1029] === 1 && d32(cpu, 1030) === 500, `${cpu.M[1029]} ${d32(cpu, 1030)}`);
+  function d32(cp, i) { return (cp.D[i + 1] << 16) | (cp.D[i] & 0xFFFF); }
+  cpu.Xphys[2] = 1; cpu.step(600);
+  check('DDRVI moves the position 2000 pulses (D1348)', d32(cpu, 1348) === 2000, d32(cpu, 1348));
+  cpu.Xphys[3] = 1; cpu.step(100);
+  check('STMR: off-delay output ON, one-shot after ON running', cpu.M[10] === 1 && cpu.M[12] === 1);
+  cpu.Xphys[3] = 0; cpu.step(100);
+  check('STMR: one-shot after OFF', cpu.M[10] === 1 && cpu.M[11] === 1);
+  cpu.step(600);
+  check('STMR: off after the time', cpu.M[10] === 0 && cpu.M[11] === 0);
+  cpu.Xphys[4] = 1; cpu.step(400);
+  check('ANS sets S900 after 0.3 s (M1048, D1049)', cpu.S[900] === 1 && cpu.M[1048] === 1 && cpu.D[1049] === 900);
+  cpu.Xphys[4] = 0; cpu.Xphys[5] = 1; cpu.step(10);
+  check('ANR resets it', cpu.S[900] === 0);
+  cpu.Xphys[6] = 1; cpu.step(25);
+  check('RAMP halfway', cpu.D[10] === 50 && cpu.D[11] === 5, `${cpu.D[10]} ${cpu.D[11]}`);
+  cpu.step(25);
+  check('RAMP done (M1029)', cpu.D[10] === 100 && cpu.M[1029] === 1);
+  cpu.Xphys[8 + 3] = 1; cpu.step(5); cpu.Xphys[11] = 0; cpu.step(5); cpu.Xphys[8 + 7] = 1; cpu.step(5); cpu.Xphys[15] = 0; cpu.step(5);
+  check('TKY: keys 3 then 7 → 37', cpu.D[20] === 37, cpu.D[20]);
+}
+
+// ---------------------------------------------------------------- VFD keypad: every key does something
+{
+  const v = new VfdMS300({ '00-21': 1, '00-20': 0 });
+  v.powerOn(); v.stepSim(1.3);
+  check('keypad RUN with terminal control gives a hint', /Pr\.00-21/.test(v.key('RUN') || ''));
+  v.key('DOWN'); v.stepSim(0.05);
+  check('keypad ▼ lowers the frequency command', v.fcmd === 49, v.fcmd);
+  v.MI[0] = 1; for (let i = 0; i < 30; i++) v.stepSim(0.1);
+  check('drive runs from MI1', v.runCmd);
+  check('STOP key stops terminal control (Pr.00-32)', /OFF and ON/.test(v.key('STOP') || '') && (v.stepSim(0.1), !v.runCmd));
+  v.MI[0] = 0; v.stepSim(0.1); v.MI[0] = 1; v.stepSim(0.1);
+  check('restart after cycling MI1', v.runCmd);
+  const w = new VfdMS300({}); w.powerOn(); w.stepSim(1.3);
+  for (let i = 0; i < 4; i++) w.key('MODE');
+  check('MODE reaches the direction page (Frd)', w.display().text === 'Frd');
+  w.key('UP');
+  check('▲ on the direction page → rEv', w.display().text === 'rEv' && w.keyDir === -1);
+  w.key('RUN'); for (let i = 0; i < 120; i++) w.stepSim(0.1);
+  check('keypad RUN in reverse', w.f < -49);
+  w.kp.mode = 'H'; w.key('ENTER');
+  check('ENTER on the H page opens PrG', w.kp.mode === 'PrG');
+  w.key('LEFT');
+  check('◀ goes back to the F page', w.kp.mode === 'F');
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');

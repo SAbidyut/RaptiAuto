@@ -5,6 +5,11 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GpioSim } from '../web/src/pi/gpio.js';
 import { PyProcess } from '../web/src/pi/python.js';
+import '../web/src/components/index.js';
+import '../web/src/pi/circuit-parts.js';
+import { SimEngine } from '../web/src/sim/engine.js';
+import { CircuitHw } from '../web/src/pi/circuit-hw.js';
+import { autowire, defaultCircuit } from '../web/src/pi/autowire.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pyDir = join(here, '..', 'web', 'src', 'pi', 'py');
@@ -227,5 +232,101 @@ console.log('Interactive shell');
   check('error with <stdin> frame', t.text.includes('File "<stdin>", line 1') && t.text.includes('ZeroDivisionError'), t.text);
 }
 
+
+console.log('Circuit (wired on the canvas)');
+{
+  // Pi 5 → GPIO17 → 330 Ω → LED → GND, button GPIO2 → GND, MCP3008 + pot, HC-SR04, DHT22, I²C LCD
+  const W = (a, ap, b, bp) => ({ id: 'w' + Math.random().toString(36).slice(2), from: { part: a, pin: ap }, to: { part: b, pin: bp }, points: [], color: '#22c55e' });
+  const project = {
+    parts: [
+      { id: 'pi', type: 'rpi5', x: 0, y: 0, rot: 0, props: {} },
+      { id: 'r1', type: 'resistor', x: 400, y: 0, rot: 0, props: { value: 330 } },
+      { id: 'd1', type: 'led', x: 500, y: 0, rot: 0, props: { color: 'red' } },
+      { id: 'b1', type: 'pushbutton', x: 400, y: 100, rot: 0, props: {} },
+      { id: 'adc', type: 'mcp3008', x: 400, y: 200, rot: 0, props: {} },
+      { id: 'pot', type: 'potentiometer', x: 520, y: 200, rot: 0, props: {} },
+      { id: 'us', type: 'hc-sr04', x: 400, y: 400, rot: 0, props: {} },
+      { id: 'th', type: 'dht22', x: 600, y: 400, rot: 0, props: {} },
+      { id: 'lcd', type: 'lcd-i2c', x: 0, y: 500, rot: 0, props: {} },
+    ],
+    wires: [
+      W('pi', 'GPIO17', 'r1', '1'), W('r1', '2', 'd1', 'A'), W('d1', 'C', 'pi', 'GND.1'),
+      W('pi', 'GPIO2', 'b1', '1.l'), W('b1', '2.l', 'pi', 'GND.2'),
+      W('adc', 'VDD', 'pi', '3V3.1'), W('adc', 'VREF', 'pi', '3V3.1'), W('adc', 'AGND', 'pi', 'GND.3'), W('adc', 'DGND', 'pi', 'GND.3'),
+      W('adc', 'CLK', 'pi', 'GPIO11'), W('adc', 'DOUT', 'pi', 'GPIO9'), W('adc', 'DIN', 'pi', 'GPIO10'), W('adc', 'CS', 'pi', 'GPIO8'),
+      W('pot', 'VCC', 'pi', '3V3.2'), W('pot', 'GND', 'pi', 'GND.4'), W('pot', 'SIG', 'adc', 'CH0'),
+      W('us', 'VCC', 'pi', '5V.1'), W('us', 'GND', 'pi', 'GND.5'), W('us', 'TRIG', 'pi', 'GPIO23'), W('us', 'ECHO', 'pi', 'GPIO24'),
+      W('th', 'VCC', 'pi', '3V3.2'), W('th', 'GND', 'pi', 'GND.6'), W('th', 'DATA', 'pi', 'GPIO4'),
+      W('lcd', 'VCC', 'pi', '5V.2'), W('lcd', 'GND', 'pi', 'GND.7'), W('lcd', 'SDA', 'pi', 'GPIO2'), W('lcd', 'SCL', 'pi', 'GPIO3'),
+    ],
+    code: '',
+  };
+  const warnings = [];
+  const engine = new SimEngine(project, { external: true, onWarning: (m) => warnings.push(m) });
+  const res = engine.start();
+  check('engine starts with a Pi board and no sketch', res.ok && res.external && engine.pins.size === 28, JSON.stringify(res));
+  const g = new GpioSim('pi5');
+  const hw = new CircuitHw(engine);
+  g.attachHw(hw);
+  const tick = () => engine.tick(performance.now());
+  tick();
+  const ledOn = () => engine.parts.get('d1').visual.brightness ?? engine.parts.get('d1').visual.b ?? engine.parts.get('d1').visual.level;
+  let out = await py(g, 'from gpiozero import LED, Button, MCP3008, DistanceSensor\nimport adafruit_dht, board\nled = LED(17)\nled.on()\nb = Button(2)\nprint("pressed", b.is_pressed)\nprint("pot", round(MCP3008(channel=0).value, 1))\nprint("cm", round(DistanceSensor(echo=24, trigger=23).distance * 100))\nd = adafruit_dht.DHT22(board.D4)\nprint("dht", d.temperature, d.humidity)\nimport time\ntime.sleep(0.05)\n');
+  tick();
+  const led = engine.parts.get('d1');
+  check('Python LED(17).on() lights the wired LED', engine.pins.get(17).out === 1 && (led.visual.on || led.visual.lit || led.visual.brightness > 0.2 || Object.values(led.visual).some((v) => typeof v === 'number' && v > 0.2)), JSON.stringify(led.visual));
+  check('Button(2) reads the circuit (not pressed)', out.includes('pressed False'), out);
+  check('MCP3008 reads the pot through the circuit', /pot 0\.5/.test(out), out);
+  check('DistanceSensor reads the wired HC-SR04', out.includes('cm 100'), out);
+  check('DHT22 on GPIO4 from the circuit', out.includes('dht 24'), out);
+  engine.input('b1', 'press', true);
+  tick();
+  out = await py(g, 'from gpiozero import Button\nprint("pressed", Button(2).is_pressed)\n');
+  check('pressing the button on the canvas is seen by Python', out.includes('pressed True'), out);
+  engine.input('b1', 'press', false);
+  tick();
+  // RPi.GPIO polling an HC-SR04 echo in real time (the circuit clock follows the wall clock)
+  out = await py(g, 'import RPi.GPIO as GPIO, time\nGPIO.setmode(GPIO.BCM)\nGPIO.setup(23, GPIO.OUT)\nGPIO.setup(24, GPIO.IN)\nGPIO.output(23, 1)\ntime.sleep(0.00001)\nGPIO.output(23, 0)\nt0 = time.time()\nwhile GPIO.input(24) == 0 and time.time() - t0 < 0.1:\n    start = time.time()\nwhile GPIO.input(24) == 1 and time.time() - t0 < 0.2:\n    stop = time.time()\nprint("echo", round((stop - start) * 17150))\n');
+  check('RPi.GPIO echo timing loop on the circuit', /echo (8[5-9]|9[0-9]|10[0-9]|11[0-5])\b/.test(out), out);
+  check('5 V on a GPIO is warned about', warnings.some((w) => /3\.3 V only/.test(w)), warnings.join('\n'));
+  out = await py(g, 'from i2c_lcd import I2cLcd\nlcd = I2cLcd(0x27, 2, 16)\nlcd.putstr("Hello Pi!")\nlcd.move_to(0, 1)\nlcd.putstr("RAPTI")\n');
+  const lcd = engine.parts.get('lcd').hd44780;
+  const row = (r) => Array.from({ length: 16 }, (_, c) => String.fromCharCode(lcd.charAt(c, r))).join('').trimEnd();
+  check('I²C LCD (PCF8574) shows the text', row(0) === 'Hello Pi!' && row(1) === 'RAPTI', JSON.stringify([row(0), row(1), out]));
+  g.attachHw(null);
+  engine.stop();
+}
+{
+  // Pico: pot on GP26 (ADC0), LED on GP15
+  const W = (a, ap, b, bp) => ({ id: 'w' + Math.random().toString(36).slice(2), from: { part: a, pin: ap }, to: { part: b, pin: bp }, points: [] });
+  const project = {
+    parts: [{ id: 'pico', type: 'pi-pico', x: 0, y: 0, rot: 0, props: {} }, { id: 'pot', type: 'potentiometer', x: 300, y: 0, rot: 0, props: {} }],
+    wires: [W('pot', 'VCC', 'pico', '3V3'), W('pot', 'GND', 'pico', 'GND.1'), W('pot', 'SIG', 'pico', 'GP26')],
+    code: '',
+  };
+  const engine = new SimEngine(project, { external: true });
+  engine.start();
+  const g = new GpioSim('pico');
+  g.attachHw(new CircuitHw(engine));
+  engine.input('pot', 'pos', 25);
+  engine.tick(performance.now());
+  const out = await py(g, 'from machine import ADC\nprint("adc", round(ADC(26).read_u16() / 65535, 2))\n');
+  check('Pico ADC(26) reads the pot wiper from the circuit', /adc 0\.2[3-7]/.test(out), out);
+  engine.stop();
+}
+{
+  // examples wire themselves onto the canvas
+  const c = defaultCircuit('pi5');
+  check('default Pi circuit has the board and parts', c.parts[0].type === 'rpi5' && c.parts.length > 3 && c.wires.length > 3);
+  const ex = autowire('pi5', [{ type: 'led', pins: { a: 17 }, props: { color: 'red' } }, { type: 'button', pins: { a: 2 } }, { type: 'ultrasonic', pins: { trig: 23, echo: 24 } }, { type: 'pot', pins: {}, props: { ch: 0 } }]);
+  const engine = new SimEngine({ ...ex, code: '' }, { external: true });
+  check('auto-wired example circuit builds', engine.start().ok);
+  const nodeOf = (part, pin) => engine.nodeOf(part, pin);
+  const pi = ex.parts[0].id;
+  const led = ex.parts.find((p) => p.type === 'led');
+  check('auto-wired LED path: GPIO17 → resistor → LED', ex.wires.some((w) => (w.from.part === pi && w.from.pin === 'GPIO17') || (w.to.part === pi && w.to.pin === 'GPIO17')) && nodeOf(led.id, 'C') === nodeOf(pi, 'GND.1'));
+  check('auto-wired MCP3008 on SPI', ex.parts.some((p) => p.type === 'mcp3008') && nodeOf(ex.parts.find((p) => p.type === 'mcp3008').id, 'CLK') === nodeOf(pi, 'GPIO11'));
+  engine.stop();
+}
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

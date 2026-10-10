@@ -263,6 +263,12 @@ function picoArt(board) {
   return s;
 }
 
-export function boardSVG(board) {
-  return BOARDS[board].kind === 'pico' ? picoArt(board) : piArt(board);
+/**
+ * Top view of a board. Every drawing gets its own gradient ids (prefix): a gradient inside a hidden
+ * tab would otherwise paint nothing for every other drawing that points to the same id.
+ */
+export function boardSVG(board, prefix = 'b' + (++svgSeq) + '-') {
+  const s = BOARDS[board].kind === 'pico' ? picoArt(board) : piArt(board);
+  return s.replace(/id="(pcb|pcbPico|metal|lid|gold|glow)"/g, `id="${prefix}$1"`).replace(/url\(#(pcb|pcbPico|metal|lid|gold|glow)\)/g, `url(#${prefix}$1)`);
 }
+let svgSeq = 0;

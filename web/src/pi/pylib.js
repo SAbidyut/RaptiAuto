@@ -13,9 +13,10 @@ import rp2 from './py/rp2.py';
 import network from './py/network.py';
 import neopixel from './py/neopixel.py';
 import dht from './py/dht.py';
+import i2cLcd from './py/i2c_lcd.py';
 
 export const LIBS = {
   '_rpi_hw.py': hw, 'time.py': time, 'random.py': random, 'signal.py': signal,
   'RPi/__init__.py': rpiInit, 'RPi/GPIO.py': rpiGpio, 'gpiozero.py': gpiozero, 'board.py': board, 'adafruit_dht.py': adafruitDht,
-  'machine.py': machine, 'rp2.py': rp2, 'network.py': network, 'neopixel.py': neopixel, 'dht.py': dht,
+  'machine.py': machine, 'rp2.py': rp2, 'network.py': network, 'neopixel.py': neopixel, 'dht.py': dht, 'i2c_lcd.py': i2cLcd,
 };

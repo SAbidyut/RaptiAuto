@@ -336,3 +336,39 @@
 .pb-legrow { display: flex; align-items: center; gap: 8px; }
 .pb-legrow .pb-legend { flex: 1; }
 .pb-legrow .pb-zooms { position: static; }
+
+/* ---------------------------------------------------------------- circuit tab (the Arduino canvas) */
+.pi-screen .pi-circuit { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.pi-screen .pi-runbtn { flex-shrink: 0; }
+.pi-filechip { position: absolute; z-index: 3; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); height: 34px; padding: 0 11px; border-radius: 12px; font-family: var(--mono); font-size: 12.5px; color: #e2e8f0; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.pi-filechip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-filechip .ic:first-child { color: #4ade80; }
+.pi-circuit .canvas-hint { top: 52px; }
+.pi-circuit .pi-sim-status { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); border-radius: 99px; border: 1px solid rgba(34, 197, 94, .3); background: rgba(8, 14, 26, .78); backdrop-filter: blur(10px); z-index: 4; height: 30px; }
+.pi-circuit .stale-banner { top: 50px; }
+@media (max-width: 520px) { .pi-circuit .pi-sim-status { top: 50px; } .pi-circuit .stale-banner { top: 88px; } }
+/* program output: a drawer at the bottom of the circuit */
+.pi-out { position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; height: 34%; min-height: 140px; display: none; flex-direction: column; background: rgba(5, 8, 15, .94); border-top: 1px solid var(--line2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.pi-circuit.out-open .pi-out { display: flex; animation: barIn .2s ease; }
+.pi-outhead { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); cursor: pointer; }
+.pi-outhead b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #cbd5e1; font-family: var(--mono); font-weight: 600; }
+.pi-outgrip { width: 26px; height: 4px; border-radius: 3px; background: rgba(148, 163, 184, .35); }
+.pi-out .pb-mini { flex: 1; height: auto; min-height: 0; }
+.pi-circuit.out-open .fab-main { bottom: calc(34% + 14px); }
+.pi-circuit.out-open .sel-bar, .pi-circuit.out-open .wire-bar { bottom: calc(34% + 10px); }
+/* pinout tab */
+.pb-note { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(34, 211, 238, .07); border: 1px solid rgba(34, 211, 238, .25); }
+.pb-note > span { color: var(--accent); display: grid; place-items: center; }
+.pb-note > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pb-note b { font-size: 13.5px; }
+.pb-note small { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+/* full screen (the .editor rules hide the top bar and tabs, float the dock and the ☰ handle) */
+.pi-screen.fs .pi-fsbar .fs-btn[hidden] { display: none; }
+.pi-screen.fs:not(.fs-clean) .pi-filechip { left: calc(68px + var(--safe-l)); top: calc(10px + var(--safe-t)); }
+.pi-screen.fs .pi-circuit .pi-sim-status { top: calc(56px + var(--safe-t)); }
+@media (min-width: 640px) { .pi-screen.fs .pi-circuit .pi-sim-status { top: calc(10px + var(--safe-t)); } }
+.pi-screen.fs.fs-clean .pi-circuit .pi-sim-status { display: none; }
+.pi-screen.fs.fs-clean .pi-filechip { display: none; }
+.pi-screen.fs:not(.fs-clean) .pane-thonny, .pi-screen.fs:not(.fs-clean) .pane-terminal, .pi-screen.fs:not(.fs-clean) .pane-desktop, .pi-screen.fs:not(.fs-clean) .pane-board { padding-left: calc(64px + var(--safe-l)); }
+.pi-screen.fs .pane-thonny, .pi-screen.fs .pane-terminal, .pi-screen.fs .pane-desktop, .pi-screen.fs .pane-board { padding-top: var(--safe-t); padding-right: calc(46px + var(--safe-r)); }
+.pi-screen.fs .pi-out { padding-bottom: var(--safe-b); }

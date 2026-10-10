@@ -73,3 +73,43 @@ register({
     },
   },
 });
+
+// MCP3008: 8-channel 10-bit SPI ADC (the Raspberry Pi has no analog inputs). CH0–CH7 on one side,
+// supply and SPI on the other, like the DIP-16 package. Read with gpiozero MCP3008(channel=n).
+const ADC_TOP = ['VDD', 'VREF', 'AGND', 'CLK', 'DOUT', 'DIN', 'CS', 'DGND'];
+const ADC_BOT = ['CH0', 'CH1', 'CH2', 'CH3', 'CH4', 'CH5', 'CH6', 'CH7'];
+register({
+  type: 'mcp3008', name: 'MCP3008 8-ch ADC (SPI)', category: 'ics', tags: ['mcp3008', 'adc', 'analog', 'spi', 'raspberry pi', 'potentiometer'],
+  description: '10-bit analog-to-digital converter for the Raspberry Pi: VDD and VREF to 3V3, AGND/DGND to GND, CLK → SCLK (GPIO11), DOUT → MISO (GPIO9), DIN → MOSI (GPIO10), CS → CE0 (GPIO8).',
+  box: [-6, -4, 76, 34],
+  pins: [...ADC_TOP.map((id, i) => ({ id, x: i * 10, y: 0, label: id })), ...ADC_BOT.map((id, i) => ({ id, x: i * 10, y: 30, label: id }))],
+  render() {
+    let s = rect(-5, 3, 80, 24, { fill: '#1f2023', rx: 2 });
+    s += path('M-5 12 a3 3 0 0 1 0 6', { fill: '#121214' });
+    for (let i = 0; i < 8; i++) { s += rect(i * 10 - 1.6, 0, 3.2, 3, { fill: '#c8ccd2' }) + rect(i * 10 - 1.6, 27, 3.2, 3, { fill: '#c8ccd2' }); }
+    s += text(35, 13.5, 'MCP3008', { size: 5, fill: '#cfd2d6', font: 'monospace' });
+    s += ADC_TOP.map((t, i) => text(i * 10, 7.5, t, { size: 2.4, fill: '#9ca3af' })).join('');
+    s += ADC_BOT.map((t, i) => text(i * 10, 22.5, t, { size: 2.4, fill: '#9ca3af' })).join('');
+    s += circle(0, 23, 1.2, { fill: '#3a3a3e' });
+    return s;
+  },
+  sim: {
+    create(ctx) {
+      const vdd = ctx.node('VDD'), agnd = ctx.node('AGND'), vref = ctx.node('VREF');
+      ctx.add(new Resistor(vdd, agnd, 20000));
+      if (vref >= 0) ctx.add(new Resistor(vref, agnd, 100000));
+      return {
+        mcp3008: true,
+        powered() { return ctx.v(vdd) - ctx.v(agnd) > 2.5; },
+        /** Channel n as a fraction of VREF (0 … 1), 10-bit steps. */
+        read(n) {
+          if (!this.powered()) return 0;
+          const ref = vref >= 0 ? ctx.v(vref) - ctx.v(agnd) : ctx.v(vdd) - ctx.v(agnd);
+          const ch = ctx.node('CH' + n);
+          if (ch < 0 || ref <= 0.1) return 0;
+          return Math.round(Math.max(0, Math.min(1, (ctx.v(ch) - ctx.v(agnd)) / ref)) * 1023) / 1023;
+        },
+      };
+    },
+  },
+});

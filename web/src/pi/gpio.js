@@ -44,11 +44,26 @@ export class GpioSim {
     return { n, mode: 'in', out: 0, pull: this.defaultPull(n), freq: 0, duty: 0, watch: null, cbs: [], detected: false, last: 0, bounceUntil: 0, used: false, owner: '' };
   }
 
+  // ---------------------------------------------------------------- circuit
+  /**
+   * Wire the GPIOs to a circuit (CircuitHw on a SimEngine): outputs drive the board part's pins,
+   * inputs, ADCs and sensors are read from the circuit. null detaches (back to the plain pins).
+   */
+  attachHw(hw) {
+    this.hw = hw || null;
+    if (this.hw && this.pins) for (const p of this.pins.values()) this.sync(p);
+    this.inputsChanged();
+  }
+
+  /** Push one pin's state into the circuit (if one is attached). */
+  sync(p) { if (this.hw && this.hw.has(p.n)) this.hw.syncPin(p); }
+
   /** Power-on state: every pin an input with its default pull, no timers, no events. */
   reset() {
     this.stopProcess();
     this.pins = new Map();
     for (const n of this.pinIds) this.pins.set(n, this.fresh(n));
+    if (this.hw) for (const p of this.pins.values()) this.sync(p);
     this.neo = new Map();
     this.lcd = new Map();
     this.wifiState = { state: 0, ssid: '' };
@@ -66,7 +81,7 @@ export class GpioSim {
     if (this.pins) {
       for (const p of this.pins.values()) {
         p.watch = null; p.cbs = []; p.detected = false;
-        if (releaseZero && p.owner === 'zero') Object.assign(p, this.fresh(p.n));
+        if (releaseZero && p.owner === 'zero') { Object.assign(p, this.fresh(p.n)); this.sync(p); }
       }
     }
     this.changed();
@@ -86,11 +101,12 @@ export class GpioSim {
     if (mode === 'out') { p.mode = 'out'; p.duty = p.out; }
     else if (mode === 'in') { p.mode = 'in'; p.pull = pull || 'none'; p.duty = 0; }
     else { p.mode = mode; }
+    this.sync(p);
     this.inputsChanged();
     this.changed(n);
   }
 
-  setPull(n, pull) { this.pin(n).pull = pull; this.inputsChanged(); this.changed(n); }
+  setPull(n, pull) { const p = this.pin(n); p.pull = pull; this.sync(p); this.inputsChanged(); this.changed(n); }
 
   write(n, v, fromBg = false) {
     const p = this.pin(n);
@@ -102,7 +118,8 @@ export class GpioSim {
     if (p.mode === 'pwm') p.mode = 'out';
     if (p.mode === 'out') p.duty = v;
     const t = now();
-    if (was !== v) for (const part of this.parts) { const s = PART_SIM[part.type]; if (s && s.onWrite) s.onWrite(part, n, v, this, t); }
+    if (this.hw) this.sync(p);
+    else if (was !== v) for (const part of this.parts) { const s = PART_SIM[part.type]; if (s && s.onWrite) s.onWrite(part, n, v, this, t); }
     this.inputsChanged();
     this.changed(n);
   }
@@ -114,6 +131,7 @@ export class GpioSim {
     p.used = true;
     p.freq = freq;
     p.duty = Math.max(0, Math.min(1, duty));
+    this.sync(p);
     this.changed(n);
   }
 
@@ -121,6 +139,7 @@ export class GpioSim {
     const p = this.pin(n);
     this.bg.delete(n);
     p.mode = 'out'; p.duty = 0; p.out = 0; p.freq = 0;
+    this.sync(p);
     this.changed(n);
   }
 
@@ -157,6 +176,7 @@ export class GpioSim {
     const p = this.pin(n);
     if (p.mode === 'out') return p.out;
     if (p.mode === 'pwm') return p.duty >= 0.5 ? 1 : 0;
+    if (this.hw && this.hw.has(n)) return this.hw.read(n);
     const ext = this.external(n);
     if (ext != null) return ext;
     if (p.pull === 'up') return 1;
@@ -199,6 +219,7 @@ export class GpioSim {
     if (!this.pins.has(n)) return;
     this.bg.delete(n);
     this.pins.set(n, this.fresh(n));
+    this.sync(this.pins.get(n));
     this.inputsChanged();
     this.changed(n);
   }
@@ -267,6 +288,7 @@ export class GpioSim {
   partOn(type, key, n) { return this.parts.find((p) => p.type === type && p.pins[key] === n); }
 
   adc(ch) {
+    if (this.hw) { const v = this.hw.adc(ch); if (v != null) return v; }
     if (this.isPico) {
       if (ch === 4) { // RP2040 internal temperature sensor: 0.706 V at 27 °C, −1.721 mV/°C
         const tC = 27 + Math.sin(now() / 9000) * 0.8;
@@ -284,20 +306,23 @@ export class GpioSim {
   }
 
   mcp3008(ch) {
+    if (this.hw) return this.hw.mcp3008(ch);
     const pot = this.parts.find((p) => (p.type === 'pot' || p.type === 'ldr') && Number(p.props.ch ?? 0) === ch && !this.isPico);
     if (!pot) return 0;
     const v = pot.type === 'pot' ? pot.props.value ?? 0.5 : pot.props.light ?? 0.6;
     return clamp01(Math.round(v * 1023) / 1023);
   }
 
-  light(n) { const l = this.partOn('ldr', 'a', n); return l ? clamp01(l.props.light ?? 0.6) : 0; }
+  light(n) { if (this.hw) return this.hw.light(n); const l = this.partOn('ldr', 'a', n); return l ? clamp01(l.props.light ?? 0.6) : 0; }
 
   distance(echo) {
+    if (this.hw) return this.hw.distance(echo);
     const u = this.partOn('ultrasonic', 'echo', echo);
     return u ? Math.max(0.02, Math.min(4, (u.props.cm ?? 50) / 100)) : -1;
   }
 
   dht(n, which) {
+    if (this.hw) return this.hw.dht(n, which);
     const d = this.partOn('dht', 'data', n);
     if (!d) return -999;
     return which ? (d.props.h ?? 60) : (d.props.t ?? 28);
@@ -307,12 +332,21 @@ export class GpioSim {
     const colors = [];
     for (let i = 0; i < count; i++) colors.push([parseInt(hex.substr(i * 6, 2), 16) || 0, parseInt(hex.substr(i * 6 + 2, 2), 16) || 0, parseInt(hex.substr(i * 6 + 4, 2), 16) || 0]);
     this.neo.set(n, colors);
+    if (this.hw) this.hw.neo(n, colors);
     this.changed(n);
   }
 
   cpuTemp() {
     const base = this.board === 'pi5' ? 51.5 : 47.2;
     return Math.round((base + Math.sin(now() / 7000) * 1.6 + (this.busy ? 6 : 0)) * 10) / 10;
+  }
+
+  i2cHas(addr) { return this.hw ? (this.hw.i2cHas(addr) ? 1 : 0) : 0; }
+  i2cWrite(addr, hex) {
+    if (!this.hw) return;
+    const bytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+    this.hw.i2cWrite(addr, bytes);
   }
 
   // ---------------------------------------------------------------- yielding

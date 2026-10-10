@@ -417,7 +417,7 @@ export class Shell {
       h('div', { class: 'lb-content' },
         h('div', { class: 'hero-kicker', html: `${icon('sparkles', 15)}<span>NEW · Raspberry Pi</span>` }),
         h('h2', {}, 'Virtual ', h('span', { class: 'grad' }, 'Raspberry Pi')),
-        h('p', {}, 'Pi 5, Pi 4 and Pico boards with live GPIO, a Pi OS desktop, terminal and Thonny. Real MicroPython runs your Python code.'),
+        h('p', {}, 'Pi 5, Pi 4 and Pico boards: wire LEDs, buttons, sensors and motors on the circuit canvas, then run Python from Thonny — with a Pi OS desktop and terminal. Real MicroPython runs your code.'),
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('play', 18)}<span>Open the Pi lab</span>`, onclick: (e) => { e.stopPropagation(); this.app.openPi(); } }))));
   }

@@ -1,23 +1,28 @@
-// The Raspberry Pi Lab screen: Board (live header, parts, run bar) · Desktop · Terminal · Thonny
-// for a Raspberry Pi 5 / 4, or Board · Thonny for a Pico / Pico W / Pico 2 / Pico 2 W.
+// The Raspberry Pi Lab screen: Circuit (wire parts to the board on the canvas, like the Arduino
+// editor) · Pinout · Desktop · Terminal · Thonny for a Raspberry Pi 5 / 4, or Circuit · Pinout ·
+// Thonny for a Pico / Pico W / Pico 2 / Pico 2 W. Run powers the circuit and runs the Python file;
+// full screen works like the Arduino editor's (menus behind the ☰ handle).
 import { h, toast, pushBack, Sheet, popupMenu, confirmDialog } from '../ui/widgets.js';
 import { icon } from '../ui/icons.js';
 import { Native } from '../native.js';
 import { AudioEngine } from '../ui/audio.js';
 import { PiSystem } from './system.js';
 import { LIBS } from './pylib.js';
-import { BOARDS, BOARD_ORDER, boardSVG, headerOf, pinLabel, physOf, wirablePins } from './boards.js';
-import { PART_TYPES, PART_ORDER, newPart, partPins, partCard } from './parts.js';
+import { BOARDS, BOARD_ORDER, boardSVG, headerOf, pinLabel } from './boards.js';
 import { PICO_W_LED } from './gpio.js';
 import { Console } from './console.js';
 import { Terminal } from './terminal.js';
 import { Thonny } from './thonny.js';
 import { Desktop } from './desktop.js';
-import { normPath } from './vfs.js';
+import { normPath, basename } from './vfs.js';
+import { CIRCUIT_TYPE } from './circuit-parts.js';
+import { PiCircuit } from './circuit.js';
+import { CircuitHw } from './circuit-hw.js';
+import { autowire, defaultCircuit, boardOnly } from './autowire.js';
 
-const TABS_PI = [['board', 'chip', 'Board'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny']];
-const TABS_PICO = [['board', 'chip', 'Board'], ['thonny', 'code', 'Thonny']];
-const ANIMATED = new Set(['motor', 'pir', 'ultrasonic', 'servo', 'buzzer']);
+const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny']];
+const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny']];
+const CIRCUIT_KEY = (board) => 'rapti.pi.circuit.v1.' + board;
 
 export class PiScreen {
   constructor(app) {
@@ -26,28 +31,33 @@ export class PiScreen {
     try { board = localStorage.getItem('rapti.pi.board') || 'pi5'; } catch (e) { /* ignore */ }
     if (!BOARDS[board]) board = 'pi5';
     this.sys = new PiSystem(board, LIBS);
+    this.sys.gpio.parts = []; // the parts live on the circuit canvas now
     this.audio = new AudioEngine();
     try { this.audio.enabled = localStorage.getItem('rapti.pi.mute') !== '1'; } catch (e) { /* ignore */ }
-    this.tab = 'board';
-    this.cards = [];
+    this.tab = 'circuit';
+    this.fullscreen = false;
     this.build();
     this.offSys = this.sys.on((what) => this.onSys(what));
     this.offGpio = this.sys.gpio.on(() => this.refresh());
-    this.offOut = this.sys.onOut((t, s) => this.mini.write(t, s === 'err' ? 'err' : ''));
+    this.offOut = this.sys.onOut((t, s) => this.programOutput(t, s));
   }
 
   get isPico() { return this.sys.isPico; }
+  get settings() { return this.app.settings; }
 
   // ---------------------------------------------------------------- DOM
   build() {
-    this.root = h('div', { class: 'screen pi-screen' });
+    // "editor": the Arduino editor's full-screen, tool and simulation styles apply here too
+    this.root = h('div', { class: 'screen pi-screen editor' });
     const back = h('button', { class: 'icon-btn', 'aria-label': 'Back', html: icon('back'), onclick: () => this.leave() });
     this.boardChip = h('button', { class: 'board-chip', onclick: () => this.boardSheet() });
     this.runDot = h('span', { class: 'pi-run-dot' });
+    this.runBtn = h('button', { class: 'run-btn pi-runbtn', onclick: () => this.toggleRun() });
     const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu', html: icon('dots'), onclick: (e) => this.menu(e.currentTarget) });
-    this.top = h('header', { class: 'ed-top pi-top' }, back, h('div', { class: 'ed-titles' }, h('div', { class: 'pi-title' }, 'Raspberry Pi Lab', this.runDot), this.boardChip), menuBtn);
+    this.top = h('header', { class: 'ed-top pi-top' }, back, h('div', { class: 'ed-titles' }, h('div', { class: 'pi-title' }, 'Raspberry Pi Lab', this.runDot), this.boardChip), this.runBtn, menuBtn);
     this.main = h('main', { class: 'pi-main' });
     this.panes = {
+      circuit: h('div', { class: 'pi-pane pane-pcircuit' }),
       board: h('div', { class: 'pi-pane pane-board' }),
       desktop: h('div', { class: 'pi-pane pane-desktop' }),
       terminal: h('div', { class: 'pi-pane pane-terminal' }),
@@ -55,16 +65,28 @@ export class PiScreen {
     };
     for (const p of Object.values(this.panes)) this.main.appendChild(p);
     this.nav = h('nav', { class: 'ed-nav pi-nav' });
-    this.root.append(this.top, this.main, this.nav);
+    // full screen: a small dock of buttons and the ☰ handle that brings the menus back
+    const fb = (ic, title, fn, extra = {}) => h('button', { class: 'fs-btn', title, 'aria-label': title, html: icon(ic, 20), onclick: fn, ...extra });
+    this.fsRun = fb('play', 'Run', () => this.toggleRun(), { class: 'fs-btn fs-run' });
+    this.fsOut = fb('terminal', 'Output', () => this.toggleOutput());
+    this.fsBar = h('div', { class: 'fs-bar pi-fsbar' },
+      fb('fullscreenExit', 'Exit full screen', () => this.setFullscreen(false)), this.fsRun,
+      fb('circuit', 'Circuit', () => this.setTab('circuit'), { 'data-tab': 'circuit' }),
+      fb('code', 'Thonny', () => this.setTab('thonny'), { 'data-tab': 'thonny' }),
+      fb('chip', 'Pinout', () => this.setTab('board'), { 'data-tab': 'board' }),
+      this.fsOut);
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
+    this.root.append(this.top, this.main, this.nav, this.fsBar, this.fsHandle);
 
     // Thonny and the desktop are shared by every tab; the terminal tab has its own shell
-    this.thonny = new Thonny({ sys: this.sys, wire: (ex) => { this.sys.wireExample(ex); this.drawParts(); } });
+    this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex) });
     this.desktop = new Desktop({ sys: this.sys, thonny: this.thonny });
     this.panes.desktop.appendChild(this.desktop.el);
-    this.thonny.el.addEventListener('focusin', () => {});
+    this.buildCircuitPane();
     this.buildBoardPane();
     this.drawNav();
     this.drawBoard();
+    this.updateRun();
   }
 
   drawNav() {
@@ -72,14 +94,16 @@ export class PiScreen {
     for (const [id, ic, label] of this.isPico ? TABS_PICO : TABS_PI) {
       this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span>` }));
     }
+    this.fsBar.querySelector('[data-tab="thonny"]').hidden = false;
   }
 
   setTab(id) {
     const prev = this.tab;
-    if (this.isPico && (id === 'desktop' || id === 'terminal')) id = 'board';
+    if (this.isPico && (id === 'desktop' || id === 'terminal')) id = 'circuit';
     this.tab = id;
     for (const [k, p] of Object.entries(this.panes)) p.classList.toggle('active', k === id);
     this.nav.querySelectorAll('.nav-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
+    this.fsBar.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
     this.root.dataset.tab = id;
     if (prev === 'desktop' && id !== 'desktop') this.desktop.hidden();
     if (id === 'thonny') {
@@ -94,10 +118,187 @@ export class PiScreen {
       }
       setTimeout(() => this.term.con.focus(), 80);
     }
+    if (id === 'circuit') this.circuit.shown();
     if (id === 'board') this.refresh(true);
+    if (id !== 'circuit' && this.circuit) { if (this.circuit.canvas.wiring) this.circuit.canvas.cancelWiring(); }
   }
 
-  // ---------------------------------------------------------------- board pane
+  // ---------------------------------------------------------------- circuit pane
+  buildCircuitPane() {
+    this.circuit = new PiCircuit(this.app, { name: 'Pi circuit', parts: [], wires: [], code: '' }, this);
+    this.circuit.load(this.loadCircuit(this.sys.board), { undoable: false });
+    this.circuit.mount(this.panes.circuit);
+    // the file Run starts, and the program's output
+    this.fileChip = h('button', { class: 'pi-filechip', onclick: () => this.fileSheet() });
+    this.mini = new Console({ cls: 'pb-mini' });
+    this.outTitle = h('b', {}, 'Output');
+    this.outBox = h('div', { class: 'pi-out' },
+      h('div', { class: 'pi-outhead', onclick: (e) => { if (!e.target.closest('button')) this.toggleOutput(); } },
+        h('span', { class: 'pi-outgrip' }), this.outTitle,
+        h('button', { class: 'th-clear', onclick: () => this.mini.clear() }, 'Clear'),
+        h('button', { class: 'icon-btn sm', 'aria-label': 'Hide output', html: icon('close', 16), onclick: () => this.toggleOutput(false) })),
+      this.mini.el);
+    this.circuit.root.append(this.fileChip, this.outBox);
+    this.drawFileChip();
+  }
+
+  loadCircuit(board) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CIRCUIT_KEY(board)) || 'null');
+      if (saved && Array.isArray(saved.parts) && saved.parts.some((p) => p.type === CIRCUIT_TYPE[board])) return { parts: saved.parts, wires: saved.wires || [] };
+    } catch (e) { /* ignore */ }
+    return defaultCircuit(board);
+  }
+
+  saveCircuit() {
+    try { localStorage.setItem(CIRCUIT_KEY(this.sys.board), JSON.stringify({ parts: this.circuit.project.parts, wires: this.circuit.project.wires })); } catch (e) { toast('Storage is full — the circuit could not be saved', 'error'); }
+  }
+
+  /** Thonny opened an example: put its parts on the canvas, wired (undo brings the old circuit back). */
+  wireExample(ex) {
+    if (!ex.parts || !ex.parts.length) return;
+    this.stopCircuit();
+    this.circuit.load(autowire(this.sys.board, ex.parts));
+    this.saveCircuit();
+  }
+
+  /** Every frame while the circuit is powered: inputs → Python, live pins on the board drawing. */
+  onCircuitFrame() {
+    const g = this.sys.gpio, hw = g.hw;
+    if (!hw) return;
+    if (g.pins) { for (const p of g.pins.values()) if (p.watch) { g.inputsChanged(); break; } }
+    const brt = this.circuit.engine && this.circuit.engine.boardRt;
+    if (brt && (this.fr = (this.fr || 0) + 1) % 3 === 0) {
+      brt.visual.pinSt = hw.pinStates(g);
+      const now = performance.now();
+      brt.visual.act = this.sys.running ? Math.sin(now / 37) + Math.sin(now / 13) > 0.4 : (now % 4000) < 90;
+      const led = this.sys.info.led;
+      brt.visual.L = led != null && g.pins.has(led) ? g.drive(led) || 0 : 0;
+    }
+  }
+
+  /** Power the circuit (and connect the GPIOs to it). */
+  powerOn() {
+    if (this.circuit.engine) return true;
+    const engine = this.circuit.startEngine();
+    if (!engine) { this.noAutoUntil = performance.now() + 5000; return false; }
+    this.sys.gpio.attachHw(new CircuitHw(engine));
+    this.updateRun();
+    return true;
+  }
+
+  stopCircuit() {
+    if (!this.circuit.engine) return;
+    this.sys.gpio.attachHw(null);
+    this.circuit.stopEngine();
+    this.updateRun();
+  }
+
+  programRunning() { return !!(this.thonny.running || this.sys.running); }
+
+  // ---------------------------------------------------------------- run / stop
+  async toggleRun() {
+    if (this.circuit.engine || this.programRunning()) { await this.stopAll(); return; }
+    await this.runProgram();
+  }
+
+  async runProgram() {
+    const f = this.runFile();
+    if (!f) { toast('No Python file yet: write one in Thonny', 'warn'); return; }
+    this.audio.resume();
+    if (!this.powerOn()) return;
+    this.mini.clear();
+    this.outTitle.textContent = `Output · ${this.isPico ? f.replace(/^\//, '') : basename(f)}`;
+    this.thonny.open(f);
+    this.thonny.run();
+    this.updateRun();
+  }
+
+  async stopAll() {
+    this.noAutoUntil = performance.now() + 900;
+    if (this.programRunning()) await this.thonny.stop();
+    this.stopCircuit();
+    this.updateRun();
+  }
+
+  async restart() { await this.stopAll(); await this.runProgram(); }
+
+  updateRun() {
+    const on = !!(this.circuit && this.circuit.engine) || this.programRunning();
+    this.runDot.classList.toggle('on', this.programRunning());
+    this.runBtn.classList.toggle('running', on);
+    this.runBtn.innerHTML = on ? `${icon('stop', 18)}<span>Stop</span>` : `${icon('play', 20)}<span>Run</span>`;
+    this.fsRun.innerHTML = icon(on ? 'stop' : 'play', 20);
+    this.fsRun.classList.toggle('running', on);
+  }
+
+  /** The .py file Run starts: the one chosen with the file chip, else Thonny's, else blink / main. */
+  runFile() {
+    const files = this.pyFiles();
+    let f = this.chosenFile && files.includes(this.chosenFile) ? this.chosenFile : null;
+    if (!f && this.thonny.cur && files.includes(this.thonny.cur.path)) f = this.thonny.cur.path;
+    if (!f) f = files.includes(this.isPico ? '/main.py' : '/home/pi/blink.py') ? (this.isPico ? '/main.py' : '/home/pi/blink.py') : files[0];
+    return f || null;
+  }
+
+  pyFiles() {
+    const fs = this.sys.fs, files = [];
+    const walk = (d, depth) => { for (const n of fs.list(d)) { const p = normPath(n, d); if (n.startsWith('.')) continue; if (fs.isDir(p)) { if (depth < 2) walk(p, depth + 1); } else if (n.endsWith('.py')) files.push(p); } };
+    try { walk(this.sys.home, 0); } catch (e) { /* ignore */ }
+    return files;
+  }
+
+  drawFileChip() {
+    const f = this.runFile();
+    this.fileChip.innerHTML = `${icon('code', 15)}<span>${f ? (this.isPico ? f.replace(/^\//, '') : f.replace('/home/pi/', '')) : 'no .py file'}</span>${icon('forward', 12)}`;
+  }
+
+  fileSheet() {
+    const box = h('div', { class: 'pin-pick' });
+    const cur = this.runFile();
+    for (const f of this.pyFiles()) {
+      box.appendChild(h('button', { class: 'pin-opt' + (f === cur ? ' active' : ''), onclick: () => { sheet.close(); this.chosenFile = f; this.drawFileChip(); } },
+        h('b', {}, this.isPico ? f.replace(/^\//, '') : f.replace('/home/pi/', '')), h('span', {}, 'Run this file')));
+    }
+    box.appendChild(h('button', { class: 'btn btn-ghost', html: `${icon('code', 16)}<span>Open in Thonny</span>`, onclick: () => { sheet.close(); const f = this.runFile(); this.setTab('thonny'); if (f) this.thonny.open(f); } }));
+    const sheet = new Sheet({ title: 'Program to run', icon: 'code', content: box, height: '70vh' }).open();
+  }
+
+  programOutput(t, s) {
+    this.mini.write(t, s === 'err' ? 'err' : '');
+    if (!this.outShown && this.outAuto !== false) this.toggleOutput(true, true);
+  }
+
+  toggleOutput(on = !this.outShown, auto = false) {
+    this.outShown = on;
+    if (!auto) this.outAuto = on;
+    this.circuit.root.classList.toggle('out-open', on);
+    this.fsOut.classList.toggle('active', on);
+    if (on && this.tab !== 'circuit' && !auto) this.setTab('circuit');
+  }
+
+  // ---------------------------------------------------------------- full screen (like the Arduino editor)
+  setFullscreen(on) {
+    this.fullscreen = on;
+    this.circuit.fullscreen = on;
+    this.root.classList.toggle('fs', on);
+    this.setChrome(!on, false);
+    if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus'); }
+    Native.setImmersive(on);
+    Native.vibrate(8);
+    setTimeout(() => this.circuit.canvas.applyView(), 60);
+    setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 400);
+  }
+
+  setChrome(on, buzz = true) {
+    this.root.classList.toggle('fs-clean', !on);
+    this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
+    this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (buzz) Native.vibrate(6);
+    setTimeout(() => this.circuit.canvas.applyView(), 30);
+  }
+
+  // ---------------------------------------------------------------- pinout pane
   buildBoardPane() {
     const p = this.panes.board;
     this.svgWrap = h('div', { class: 'pb-svg' });
@@ -108,16 +309,12 @@ export class PiScreen {
     this.boardBox = h('div', { class: 'pb-board' }, this.svgWrap, this.strip);
     this.legend = h('div', { class: 'pb-legend' });
     this.legendRow = h('div', { class: 'pb-legrow' }, this.legend, this.zooms);
-    this.fileSel = h('select', { class: 'select pb-file' });
-    this.runBtn = h('button', { class: 'run-btn pb-runbtn', onclick: () => this.toggleRun() });
-    this.runBar = h('div', { class: 'pb-runbar' }, this.fileSel, this.runBtn,
-      h('button', { class: 'icon-btn pb-edit', title: 'Open in Thonny', html: icon('code', 20), onclick: () => { const v = this.fileSel.value; this.setTab('thonny'); if (v) this.thonny.open(v); } }));
-    this.mini = new Console({ cls: 'pb-mini' });
-    this.miniBox = h('div', { class: 'pb-minibox' }, h('div', { class: 'pb-minihead' }, h('b', {}, 'Output'), h('button', { class: 'th-clear', onclick: () => this.mini.clear() }, 'Clear')), this.mini.el);
-    this.partsHead = h('div', { class: 'pb-parts-head' });
-    this.partsGrid = h('div', { class: 'pb-parts' });
+    this.pinoutNote = h('div', { class: 'pb-note' },
+      h('span', { html: icon('circuit', 18) }),
+      h('div', {}, h('b', {}, 'Wire parts in the Circuit tab'), h('small', {}, 'Add LEDs, buttons, sensors, motors … with ＋, tap a pin then another pin to draw a wire, then Run. Tap a pin here for its functions.')),
+      h('button', { class: 'btn btn-primary sm', onclick: () => this.setTab('circuit') }, 'Circuit'));
     this.specs = h('div', { class: 'pb-specs' });
-    p.append(h('div', { class: 'pb-inner' }, this.boardBox, this.legendRow, this.runBar, this.miniBox, this.partsHead, this.partsGrid, this.specs));
+    p.append(h('div', { class: 'pb-inner' }, this.boardBox, this.legendRow, this.pinoutNote, this.specs));
     const tapPin = (e) => { const g = e.target.closest('[data-phys]'); if (g) this.pinSheet(Number(g.dataset.phys)); };
     this.svgWrap.addEventListener('click', tapPin);
     this.strip.addEventListener('click', tapPin);
@@ -126,7 +323,7 @@ export class PiScreen {
   drawBoard() {
     const b = this.sys.info;
     this.boardChip.innerHTML = `${icon('chip', 14)}<span>${b.name}</span>${icon('forward', 12)}`;
-    this.svgWrap.innerHTML = boardSVG(this.sys.board);
+    this.svgWrap.innerHTML = boardSVG(this.sys.board, 'po-');
     this.svg = this.svgWrap.querySelector('svg');
     this.pinEls = new Map();
     this.svg.querySelectorAll('.hp[data-gpio]').forEach((el) => this.pinEls.set(Number(el.dataset.gpio), el));
@@ -157,8 +354,7 @@ export class PiScreen {
     const lg = (cls, label) => h('span', { class: 'lg ' + cls }, h('i'), label);
     this.legend.append(lg('l-3v3', '3V3'), lg('l-5v', '5V'), lg('l-gnd', 'GND'), lg('l-gpio', 'GPIO'), lg('l-hi', 'HIGH'), lg('l-pwm', 'PWM'), lg('l-in', 'Input'));
     this.drawSpecs();
-    this.drawFiles();
-    this.drawParts();
+    this.drawFileChip();
     this.refresh(true);
   }
 
@@ -166,57 +362,19 @@ export class PiScreen {
     const b = this.sys.info;
     const row = (k, v) => (v ? h('div', { class: 'spec' }, h('span', {}, k), h('b', {}, v)) : null);
     this.specs.innerHTML = '';
-    this.specs.append(h('div', { class: 'pb-sec' }, h('b', {}, b.name), h('span', { class: 'muted' }, ` · ${b.year}`)),
+    this.specs.append(...[h('div', { class: 'pb-sec' }, h('b', {}, b.name), h('span', { class: 'muted' }, ` · ${b.year}`)),
       row(b.kind === 'pico' ? 'MCU' : 'SoC', b.mcu || b.soc), row('CPU', b.cpu), row('Memory', b.ram), row('Flash', b.flash), row('GPU', b.gpu), row('I/O', b.io),
-      row('Runs', b.kind === 'pico' ? 'MicroPython 1.29 (machine, rp2' + (b.wifi ? ', network' : '') + ', neopixel, dht)' : 'Python 3 programs (gpiozero, RPi.GPIO, neopixel, adafruit_dht) on a MicroPython 1.29 engine'));
+      row('Runs', b.kind === 'pico' ? 'MicroPython 1.29 (machine, rp2' + (b.wifi ? ', network' : '') + ', neopixel, dht, i2c_lcd)' : 'Python 3 programs (gpiozero, RPi.GPIO, neopixel, adafruit_dht, i2c_lcd) on a MicroPython 1.29 engine')].filter(Boolean));
   }
 
-  drawFiles() {
-    const fs = this.sys.fs;
-    const keep = this.fileSel.value;
-    const files = [];
-    const walk = (d, depth) => { for (const n of fs.list(d)) { const p = normPath(n, d); if (n.startsWith('.')) continue; if (fs.isDir(p)) { if (depth < 2) walk(p, depth + 1); } else if (n.endsWith('.py')) files.push(p); } };
-    try { walk(this.sys.home, 0); } catch (e) { /* ignore */ }
-    this.fileSel.innerHTML = '';
-    for (const f of files) this.fileSel.appendChild(h('option', { value: f }, this.isPico ? f.slice(1) : f.replace('/home/pi/', '')));
-    const pref = keep && files.includes(keep) ? keep : (this.thonny.cur && files.includes(this.thonny.cur.path) ? this.thonny.cur.path : files.includes(this.isPico ? '/main.py' : '/home/pi/blink.py') ? (this.isPico ? '/main.py' : '/home/pi/blink.py') : files[0]);
-    if (pref) this.fileSel.value = pref;
-    this.updateRun();
-  }
-
-  drawParts() {
-    this.partsGrid.innerHTML = '';
-    for (const c of this.cards) this.audio.set(c.part.id, 0);
-    this.cards = [];
-    const gpio = this.sys.gpio;
-    this.partsHead.innerHTML = '';
-    this.partsHead.append(h('div', {}, h('b', {}, 'Parts on the header'), h('span', { class: 'muted' }, ` · ${gpio.parts.length}`)),
-      h('button', { class: 'btn btn-primary pb-add', html: `${icon('plus', 16)}<span>Add part</span>`, onclick: () => this.addPartSheet() }));
-    for (const part of gpio.parts) {
-      const card = partCard(part, {
-        gpio, board: this.sys.board, isPico: this.isPico,
-        onPin: (pt, key) => this.pinPicker(pt, key),
-        onRemove: (pt) => { gpio.removePart(pt.id); this.audio.set(pt.id, 0); this.sys.saveParts(); this.drawParts(); },
-        onChange: () => this.sys.saveParts(),
-        onChannel: (pt) => this.channelPicker(pt),
-        vibrate: () => Native.vibrate(6),
-        tone: (id, f) => this.audio.set(id, f, 0.6),
-      });
-      this.cards.push(card);
-      this.partsGrid.appendChild(card.el);
-    }
-    if (!gpio.parts.length) this.partsGrid.appendChild(h('p', { class: 'muted pb-empty' }, 'No parts yet. Add LEDs, buttons, sensors … and wire them to GPIO pins.'));
-    this.refresh(true);
-  }
-
-  /** Update pin colours, LEDs and part cards (called on every GPIO change, throttled to frames). */
+  /** Pin colours on the Pinout drawing (called on every GPIO change, throttled to frames). */
   refresh(force) {
     if (this.tab !== 'board' && !force) return;
-    const gpio = this.sys.gpio;
+    const gpio = this.sys.gpio, hw = gpio.hw;
     for (const [g, el] of this.pinEls || []) {
       const p = gpio.pins.get(g);
       if (!p) continue;
-      const lvl = gpio.read(g);
+      const lvl = p.mode !== 'in' ? gpio.level(g) : hw && hw.has(g) ? hw.quietLevel(g) : gpio.read(g);
       const st = p.mode === 'pwm' ? 'pwm' : p.mode === 'out' ? (p.out ? 'ohi' : 'olo') : (p.used || p.watch) ? (lvl ? 'ihi' : 'ilo') : (lvl ? 'fhi' : 'flo');
       if (el.dataset.st !== st) el.dataset.st = st;
       const se = this.stripEls && this.stripEls.get(g);
@@ -230,37 +388,20 @@ export class PiScreen {
       this.userLed.style.setProperty('--on', String(d));
       this.userLed.classList.toggle('on', d > 0.02);
     }
-    for (const c of this.cards) c.update();
   }
 
   loop() {
     this.raf = requestAnimationFrame(() => this.loop());
     const now = performance.now();
-    if (this.actLed) {
+    if (this.actLed && this.tab === 'board') {
       const busy = this.sys.running;
       const on = busy ? Math.sin(now / 37) + Math.sin(now / 13) > 0.4 : (now % 4000) < 90;
       if (on !== this.actOn) { this.actOn = on; this.actLed.classList.toggle('on', on); }
     }
-    const running = this.thonny.running || this.sys.running;
+    // a program started from Thonny, the Terminal or the desktop powers the circuit too
+    if (!this.circuit.engine && this.sys.running && !(this.noAutoUntil > now)) this.powerOn();
+    const running = this.programRunning();
     if (running !== this.lastRunning) { this.lastRunning = running; this.updateRun(); }
-    if (this.tab === 'board') for (const c of this.cards) if (ANIMATED.has(c.part.type)) c.update();
-  }
-
-  updateRun() {
-    const running = this.thonny.running;
-    this.runDot.classList.toggle('on', !!(this.thonny.running || this.sys.running));
-    this.runBtn.classList.toggle('running', running);
-    this.runBtn.innerHTML = running ? `${icon('stop', 18)}<span>Stop</span>` : `${icon('play', 18)}<span>Run</span>`;
-  }
-
-  async toggleRun() {
-    if (this.thonny.running) { await this.thonny.stop(); return; }
-    const f = this.fileSel.value;
-    if (!f) { toast('No Python file yet: write one in Thonny', 'warn'); return; }
-    this.audio.resume();
-    this.mini.clear();
-    this.thonny.open(f);
-    this.thonny.run();
   }
 
   // ---------------------------------------------------------------- sheets
@@ -269,13 +410,15 @@ export class PiScreen {
     for (const id of BOARD_ORDER) {
       const b = BOARDS[id];
       box.appendChild(h('button', { class: 'pi-bopt' + (id === this.sys.board ? ' active' : ''), onclick: () => { sheet.close(); if (id !== this.sys.board) this.switchBoard(id); } },
-        h('div', { class: 'pi-bthumb', html: boardSVG(id) }),
+        h('div', { class: 'pi-bthumb', html: boardSVG(id, `th-${id}-`) }),
         h('div', {}, h('b', {}, b.name), h('small', {}, `${b.cpu} · ${b.ram}`), h('small', { class: 'muted' }, b.kind === 'pico' ? 'MicroPython · Thonny' : 'Desktop · Terminal · Thonny · Python 3'))));
     }
     const sheet = new Sheet({ title: 'Choose a board', icon: 'chip', content: box, height: '80vh' }).open();
   }
 
   switchBoard(id) {
+    this.stopCircuit();
+    this.saveCircuit();
     this.sys.setBoard(id);
     toast(`${BOARDS[id].name} ready`, 'ok');
   }
@@ -290,74 +433,29 @@ export class PiScreen {
       rows.push([this.isPico ? 'GP number' : 'BCM number', String(hdr.gpio)]);
       if (hdr.alt) rows.push(['Alt functions', hdr.alt]);
       rows.push(['Mode', p.mode === 'pwm' ? `PWM ${p.freq} Hz, ${Math.round(p.duty * 100)}%` : p.mode === 'out' ? 'Output' : 'Input']);
-      rows.push(['Level', gpio.read(hdr.gpio) ? 'HIGH (3.3 V)' : 'LOW (0 V)']);
+      rows.push(['Level', (p.mode !== 'in' ? gpio.level(hdr.gpio) : gpio.hw && gpio.hw.has(hdr.gpio) ? gpio.hw.quietLevel(hdr.gpio) : gpio.read(hdr.gpio)) ? 'HIGH (3.3 V)' : 'LOW (0 V)']);
       if (p.mode === 'in') rows.push(['Pull', p.pull === 'up' ? 'Pull-up' : p.pull === 'down' ? 'Pull-down' : 'None (floating)']);
-      const wired = gpio.parts.filter((pt) => Object.values(pt.pins).includes(hdr.gpio)).map((pt) => PART_TYPES[pt.type].name);
-      rows.push(['Wired to', wired.length ? wired.join(', ') : '—']);
-      rows.push(['gpiozero', this.isPico ? `Pin(${hdr.gpio})` : `LED(${hdr.gpio}) · Button(${hdr.gpio}) · "BOARD${phys}"`]);
+      const pid = (this.isPico ? 'GP' : 'GPIO') + hdr.gpio;
+      const bp = this.circuit.boardPart();
+      const wired = bp ? this.circuit.project.wires.filter((w) => (w.from.part === bp.id && w.from.pin === pid) || (w.to.part === bp.id && w.to.pin === pid)).length : 0;
+      rows.push(['Wires on the canvas', String(wired)]);
+      rows.push(['Python', this.isPico ? `Pin(${hdr.gpio})` : `LED(${hdr.gpio}) · Button(${hdr.gpio}) · GPIO.setup(${hdr.gpio}, …)`]);
     } else if (hdr.type === 'power3') rows.push(['Note', 'Max ~50 mA from the 3V3 pins.']);
     else if (hdr.type === 'power5') rows.push(['Note', 'Straight from the power supply. Never connect 5 V to a GPIO pin!']);
     const box = h('div', { class: 'pin-info' }, ...rows.map(([k, v]) => h('div', { class: 'spec' }, h('span', {}, k), h('b', {}, v))));
-    if (hdr.gpio != null) box.appendChild(h('button', { class: 'btn btn-ghost', html: `${icon('plus', 16)}<span>Wire a part to this pin</span>`, onclick: () => { sheet.close(); this.addPartSheet(hdr.gpio); } }));
+    box.appendChild(h('button', { class: 'btn btn-ghost', html: `${icon('circuit', 16)}<span>Wire it in the Circuit tab</span>`, onclick: () => { sheet.close(); this.setTab('circuit'); } }));
     const sheet = new Sheet({ title: hdr.gpio != null ? `${pinLabel(this.sys.board, hdr.gpio)} · pin ${phys}` : `${hdr.name} · pin ${phys}`, icon: 'pin', content: box }).open();
-  }
-
-  addPartSheet(atPin = null) {
-    const box = h('div', { class: 'pi-addparts' });
-    for (const type of PART_ORDER) {
-      const t = PART_TYPES[type];
-      box.appendChild(h('button', { class: 'pi-addpart', onclick: () => { sheet.close(); this.addPart(type, atPin); } }, h('span', { class: 'pc-ic', html: icon(t.ic, 20) }), h('div', {}, h('b', {}, t.name), h('small', {}, t.desc))));
-    }
-    const sheet = new Sheet({ title: 'Add a part', icon: 'plus', content: box, height: '80vh' }).open();
-  }
-
-  addPart(type, atPin) {
-    const gpio = this.sys.gpio;
-    const used = new Set(gpio.parts.flatMap((p) => Object.values(p.pins)));
-    const part = newPart(type, {});
-    const need = partPins(part, this.isPico);
-    for (const pd of need) {
-      const cands = wirablePins(this.sys.board, pd.adc && this.isPico);
-      let g = atPin != null && cands.includes(atPin) && !used.has(atPin) ? atPin : cands.find((x) => !used.has(x) && (this.isPico || x > 3));
-      if (g == null) g = cands[0];
-      part.pins[pd.key] = g; used.add(g); atPin = null;
-    }
-    if (!this.isPico && (type === 'pot' || type === 'ldr')) {
-      const chans = new Set(gpio.parts.filter((p) => p.type === 'pot' || p.type === 'ldr').map((p) => Number(p.props.ch)));
-      part.props.ch = [0, 1, 2, 3, 4, 5, 6, 7].find((c) => !chans.has(c)) ?? 0;
-    }
-    gpio.addPart(part);
-    this.sys.saveParts();
-    this.drawParts();
-    toast(`${PART_TYPES[type].name} added: tap its pin chip to rewire`, 'ok');
-  }
-
-  pinPicker(part, key) {
-    const pd = PART_TYPES[part.type].pins.find((p) => p.key === key);
-    const gpio = this.sys.gpio;
-    const users = new Map();
-    for (const p of gpio.parts) for (const [k, g] of Object.entries(p.pins)) if (!(p === part && k === key)) users.set(g, PART_TYPES[p.type].name);
-    const box = h('div', { class: 'pin-pick' });
-    for (const g of wirablePins(this.sys.board, pd.adc && this.isPico)) {
-      const hdr = headerOf(this.sys.board).find((x) => x.gpio === g);
-      box.appendChild(h('button', { class: 'pin-opt' + (part.pins[key] === g ? ' active' : '') + (users.has(g) ? ' used' : ''), onclick: () => { sheet.close(); part.pins[key] = g; gpio.partChanged(); this.sys.saveParts(); this.drawParts(); } },
-        h('b', {}, pinLabel(this.sys.board, g)), h('span', {}, `pin ${physOf(this.sys.board, g)}${hdr && hdr.alt ? ' · ' + hdr.alt.split(' · ')[0] : ''}`), users.has(g) ? h('small', {}, users.get(g)) : null));
-    }
-    const sheet = new Sheet({ title: `${PART_TYPES[part.type].name}: ${pd.label} →`, icon: 'pin', content: box, height: '75vh' }).open();
-  }
-
-  channelPicker(part) {
-    const box = h('div', { class: 'pin-pick' });
-    for (let c = 0; c < 8; c++) box.appendChild(h('button', { class: 'pin-opt' + (Number(part.props.ch) === c ? ' active' : ''), onclick: () => { sheet.close(); part.props.ch = c; this.sys.saveParts(); this.drawParts(); } }, h('b', {}, `CH${c}`), h('span', {}, `MCP3008(channel=${c})`)));
-    const sheet = new Sheet({ title: 'MCP3008 channel (SPI0, CE0)', icon: 'pin', content: box }).open();
   }
 
   menu(anchor) {
     popupMenu(anchor, [
       { icon: 'chip', label: 'Change board', action: () => this.boardSheet() },
+      { icon: 'fullscreen', label: this.fullscreen ? 'Exit full screen' : 'Full screen', action: () => this.setFullscreen(!this.fullscreen) },
+      { icon: 'terminal', label: this.outShown ? 'Hide program output' : 'Show program output', action: () => this.toggleOutput() },
       { icon: this.audio.enabled ? 'bell' : 'close', label: this.audio.enabled ? 'Mute buzzer sound' : 'Turn buzzer sound on', action: () => { this.audio.enabled = !this.audio.enabled; if (!this.audio.enabled) this.audio.stopAll(); try { localStorage.setItem('rapti.pi.mute', this.audio.enabled ? '0' : '1'); } catch (e) { /* ignore */ } } },
       '-',
-      { icon: 'restart', label: 'Reset the wiring', action: async () => { if (await confirmDialog('Reset the wiring', 'Remove all parts and put back the default ones?', 'Reset', true)) { try { localStorage.removeItem(this.sys.partsKey()); } catch (e) { /* ignore */ } this.sys.gpio.parts = this.sys.loadParts(this.sys.board); this.sys.gpio.partChanged(); this.sys.saveParts(); this.drawParts(); } } },
+      { icon: 'restart', label: 'Default circuit', action: async () => { if (await confirmDialog('Default circuit', 'Replace the circuit with the default parts? (Undo brings it back.)', 'Replace')) { this.stopCircuit(); this.circuit.load(defaultCircuit(this.sys.board)); this.saveCircuit(); this.setTab('circuit'); } } },
+      { icon: 'trash', label: 'Clear the circuit (keep the board)', danger: true, action: async () => { if (await confirmDialog('Clear the circuit', 'Remove every part and wire except the board? (Undo brings them back.)', 'Clear', true)) { this.stopCircuit(); this.circuit.load(boardOnly(this.sys.board)); this.saveCircuit(); this.setTab('circuit'); } } },
       { icon: 'trash', label: this.isPico ? 'Erase the Pico flash' : 'Reset the SD card (files)', danger: true, action: () => this.resetFiles() },
       '-',
       { icon: 'info', label: 'About the simulator', action: () => this.about() },
@@ -374,21 +472,26 @@ export class PiScreen {
   about() {
     const body = h('div', { class: 'dialog-body pi-about' },
       h('p', {}, 'Python runs on a real MicroPython 1.29 interpreter compiled to WebAssembly, inside the app (no internet needed).'),
-      h('p', {}, 'Raspberry Pi 5 / 4: Python 3 style programs with gpiozero, RPi.GPIO, neopixel, adafruit_dht and signal. Pico boards: MicroPython machine, rp2, neopixel, dht and network (Pico W).'),
+      h('p', {}, 'The Circuit tab uses the same parts and circuit solver as the Arduino simulator: wire LEDs with resistors, buttons, sensors, motors, displays … to the header, and the GPIOs drive and read the real circuit (3.3 V logic, ~16 mA per pin, pull-ups, 5 V warnings).'),
+      h('p', {}, 'Raspberry Pi 5 / 4: Python 3 style programs with gpiozero, RPi.GPIO, neopixel, adafruit_dht, i2c_lcd and signal. Pico boards: MicroPython machine, rp2, neopixel, dht, i2c_lcd and network (Pico W).'),
       h('p', { class: 'muted' }, 'Not simulated: a real Linux kernel, apt / pip installs, internet, the camera, PIO programs, CPython-only libraries such as numpy or OpenCV.'));
     new Sheet({ title: 'About the Raspberry Pi Lab', icon: 'info', content: body }).open();
   }
 
   onSys(what) {
     if (what === 'board') {
-      if (this.isPico && (this.tab === 'desktop' || this.tab === 'terminal')) this.setTab('board');
+      if (this.isPico && (this.tab === 'desktop' || this.tab === 'terminal')) this.setTab('circuit');
+      this.sys.gpio.parts = [];
       this.drawNav();
       this.drawBoard();
+      this.circuit.load(this.loadCircuit(this.sys.board), { undoable: false });
       this.mini.clear();
+      this.chosenFile = null;
+      this.drawFileChip();
       this.panes.board.scrollTop = 0;
-    } else if (what === 'files') this.drawFiles();
-    else if (what === 'input') { if (this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin())) this.setTab('thonny'); }
-    else if (what === 'parts') { /* cards already redrawn */ } else if (what === 'start') { /* new process */ } else if (what === 'run') { this.updateRun(); this.drawFiles(); } else if (what === 'proc') this.updateRun();
+    } else if (what === 'files') this.drawFileChip();
+    else if (what === 'input') { if (this.tab === 'circuit' || this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin())) this.setTab('thonny'); }
+    else if (what === 'run' || what === 'proc') { this.updateRun(); this.drawFileChip(); }
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -397,34 +500,46 @@ export class PiScreen {
     this.unback = pushBack(() => this.onBack());
     this.setTab(this.tab);
     this.loop();
-    this.audioResume = () => this.audio.resume();
+    this.audioResume = () => { this.audio.resume(); this.circuit.audio.resume(); };
     this.root.addEventListener('pointerdown', this.audioResume);
+    if (this.circuit.project.parts.length <= 1) this.circuit.showHint('Tap ＋ to add parts, tap a pin and then another pin to draw a wire, then Run.');
   }
 
   onBack() {
     const rearm = () => { this.unback = pushBack(() => this.onBack()); };
+    if (this.fullscreen) { this.setFullscreen(false); rearm(); return; }
+    if (this.tab === 'circuit' && this.circuit.canvas.wiring) { this.circuit.canvas.cancelWiring(); rearm(); return; }
+    if (this.tab === 'circuit' && this.circuit.canvas.selection) { this.circuit.canvas.select(null); rearm(); return; }
     if (this.tab === 'desktop' && this.desktop.top && this.desktop.wins.length) { this.desktop.close(this.desktop.top); rearm(); return; }
-    if (this.tab !== 'board') { this.setTab('board'); rearm(); return; }
+    if (this.tab !== 'circuit') { this.setTab('circuit'); rearm(); return; }
     this.unback = null;
     this.leave();
   }
 
-  leave() { this.app.showHome(); }
+  leave() {
+    if (this.fullscreen) this.setFullscreen(false);
+    this.saveCircuit();
+    this.app.showHome();
+  }
 
   unmount() {
     cancelAnimationFrame(this.raf);
     if (this.unback) this.unback();
     this.unback = null;
     this.thonny.hidden();
+    this.sys.gpio.attachHw(null);
+    this.circuit.unmount();
     this.sys.killProcess();
     this.audio.stopAll();
     this.audio.close && this.audio.close();
     this.offSys(); this.offGpio(); this.offOut();
+    if (this.fullscreen) Native.setImmersive(false);
     this.root.remove();
   }
 
-  saveNow() { if (this.thonny.cur) { this.thonny.cur.text = this.thonny.editor.value; this.thonny.saveTabs(); } }
-  onPause() { this.saveNow(); this.audio.suspend(); }
+  saveNow() { if (this.thonny.cur) { this.thonny.cur.text = this.thonny.editor.value; this.thonny.saveTabs(); } this.saveCircuit(); }
+  onPause() { this.saveNow(); this.audio.suspend(); this.circuit.audio.suspend(); if (this.circuit.engine) this.circuit.engine.paused = true; }
+  onResume() { if (this.circuit.engine) { this.circuit.engine.paused = false; this.circuit.engine.lastWall = null; } }
 }
 
 export { PICO_W_LED };

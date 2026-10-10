@@ -246,7 +246,7 @@ export class Thonny {
     if (ex.parts && ex.parts.length) {
       const names = ex.parts.map((p) => p.type).join(', ');
       if (this.ctx.wire) this.ctx.wire(ex);
-      toast(`Wired for this example: ${names}`, 'ok');
+      toast(`Wired on the Circuit tab: ${names}`, 'ok');
     }
   }
 

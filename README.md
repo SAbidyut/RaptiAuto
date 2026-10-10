@@ -4,6 +4,12 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.7
+
+- **Raspberry Pi circuit builder:** the Raspberry Pi Lab now opens on a **Circuit** tab, the same canvas, parts library and circuit solver as the Arduino editor. The Pi 5 / Pi 4 (40-pin header) or Pico / Pico W / Pico 2 / Pico 2 W is a board part; add LEDs, resistors, buttons, buzzers, relays, servos, motors with an L298N, PIR, HC-SR04, DHT22, LDR modules, NeoPixels, an I²C LCD, an **MCP3008** ADC … with ＋, tap a pin and then another pin to draw wires, then **Run** (top bar): the chosen Python file runs in Thonny and its GPIOs drive and read the solved circuit — 3.3 V logic, ~16 mA per pin, the Pi's pull-ups, LED current, floating inputs, and a warning when 5 V reaches a GPIO (e.g. an HC-SR04 ECHO without a divider). Press buttons, move sensors and pots on the canvas while the program runs; the board drawing shows live pin states. Opening an example in Thonny wires its parts on the canvas automatically (with LED resistors, an MCP3008 for analog parts and a voltage divider on the ECHO). **Full screen** works like the Arduino editor: menus behind the ☰ handle, a dock with Run / Stop, Circuit, Thonny, Pinout and the program output. The old Board tab is now the **Pinout** reference. New `i2c_lcd` library for character LCDs on both the Pi and the Pico.
+- **The whole Delta ISPSoft (DVP-ES2 / EX2) instruction set in the ladder editor — about 180 instructions:** **32-bit D forms** of every instruction that has one (DMOV, DADD, DSUB, DMUL 64-bit, DDIV, DINC, DAND / DOR / DXOR, DCMP, DZCP, DBCD, DROR, DSWAP …), **floating point** (DEADD, DESUB, DEMUL, DEDIV, DESQR, DEXP, DLN, DLOG, DPOW, DSIN / DCOS / DTAN / DASIN / DACOS / DATAN / DSINH / DCOSH / DTANH, DRAD, DDEG, DEBCD, DEBIN, DECMP, DEZCP, DMOVR, FLT, INT, DADDR …), compare contacts in 32-bit (**DLD=** …) and floating point (**FLD=** …), **bit-of-word** instructions (BLD, BLDI, BAND, BANI, BOR, BORI, BOUT, BSET, BRST), NP / PN, SMOV, MMOV, RMOV, GRY, GBIN, SEGD, PRUN, ASCI, HEX, WSUM, RAND, SCLP, handy instructions (SER, ABSD, INCD, TTMR, STMR, RAMP, SORT, TKY, ANS / ANR), the **real-time clock** (TRD, TWR, TCMP, TZCP, TADD, TSUB, HOUR), **high-speed counters, pulse output and positioning** (DHSCS, DHSCR, DHSZ, SPD, PLSY, PWM, PLSR, PWD, GPWM, DRVI, DRVA, PLSV, ZRN, REF, REFF, DELAY), the **matrix** instructions (MAND, MOR, MXOR, MXNR, MINV, MCMP, MBRD, MBWR, MBS, MBR, MBC), checksums (CCD, LRC, CRC) and EI, DI, IRET, NOP, END. New operands: **K1–K8 digit devices** (K4M0, K2Y0 …), **index registers E0–E7 / F0–F7** (D10E0 …) and **floating-point constants** (F1.5). The keypad has a **16 / 32-bit** switch, E / F keys and a decimal point; the tool bar has **MATH** and **LOGIC** buttons and the instruction picker has filter chips (Math, Logic, Compare, Move, Timers, Flow, Pulse, Handy, Comm). Everything is simulated by the CPU and covered by tests.
+- **VFD keypad: every key works.** RUN, STOP/RESET, ▲, ▼, ◀ and ENTER now act on every display page, and a key that cannot act explains why (e.g. "RUN key is not the run command now: it comes from External terminals (Pr.00-21 = 1)"). New **direction page** (Frd / rEv) in the MODE cycle for keypad reverse, ▲▼ on the U page choose what it shows, ENTER on H / A / U opens the parameters, ◀ steps back, and **STOP also stops terminal or RS-485 control** (new Pr.00-32, like the real MS300).
+
 ## Raspberry Pi Lab (new in 2.6)
 
 A virtual Raspberry Pi 5 / Pi 4 and Raspberry Pi Pico / Pico W / Pico 2 / Pico 2 W, without a full operating system:
@@ -68,9 +74,9 @@ Other scripts:
 | --- | --- |
 | `node tests/examples.mjs` | Run every example headless, with functional checks |
 | `node tests/devices.mjs` | Device and library tests |
-| `node tests/plc.mjs` | PLC lab: ladder/IL, CPU, Modbus, VFD, wiring and full lab simulations |
+| `node tests/plc.mjs` | PLC lab: ladder/IL, the DVP instruction set (32-bit, float, clock, pulse …), CPU, Modbus, VFD keypad, wiring and full lab simulations |
 | `node tests/schematic.mjs` | 2D wiring schematic: layout, wire routing through the ducts, window / crossing selection |
-| `node tests/pi.mjs` | Raspberry Pi lab: MicroPython engine, gpiozero, RPi.GPIO, Pico machine, stop / Ctrl+C, the >>> shell |
+| `node tests/pi.mjs` | Raspberry Pi lab: MicroPython engine, gpiozero, RPi.GPIO, Pico machine, stop / Ctrl+C, the >>> shell, Python driving a wired circuit (LED, button, MCP3008, HC-SR04, DHT22, I²C LCD) and example auto-wiring |
 | `tools/micropython/build.sh` | Rebuild `web/vendor/micropython/` (MicroPython WebAssembly, needs the Emscripten SDK) |
 | `node tests/routing.mjs` | 3D cable routing: no cable through a device, the console or the bench, no two cables overlapping, duct runs inside the ducts |
 | `node tools/icons.mjs` | Regenerate launcher icons and the splash logo from the logo SVG |
@@ -88,5 +94,5 @@ Other scripts:
 - `web/src/plc/devices/`: Delta device catalogue (ports, terminals), the automatic 3D layout and the 3D cable router (`routing.js`).
 - `web/src/plc/three/`: three.js scene, procedural device models, cables.
 - `web/src/plc/ui/`: lab screen, 3D panel, 2D wiring schematic (`schematic.js`, switched by `scene-switch.js`), ladder editor, HMI designer, VFD view, monitor.
-- `web/src/pi/`: the Raspberry Pi lab (board art, GPIO simulator, parts, Python process, terminal, Thonny, desktop); `web/src/pi/py/` holds the Python libraries made for it; loaded as `pi.js` on first use.
+- `web/src/pi/`: the Raspberry Pi lab (board art, GPIO simulator, the circuit tab `circuit.js` with the board parts `circuit-parts.js`, the GPIO ↔ circuit bridge `circuit-hw.js` and example auto-wiring `autowire.js`, Python process, terminal, Thonny, desktop); `web/src/pi/py/` holds the Python libraries made for it; loaded as `pi.js` on first use.
 - `web/src/ui/gestures.js`: double-tap zoom and the window / crossing selection box shared by both simulators.

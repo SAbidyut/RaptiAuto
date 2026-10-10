@@ -56,8 +56,8 @@ function bridge(gpio, proc) {
     cpu_temp: () => gpio.cpuTemp(),
     wifi: (state, ssid) => { gpio.wifiState = { state, ssid }; gpio.changed(); },
     uart_write: (id, s) => proc.write(s),
-    i2c_has: (addr) => (gpio.parts.some((p) => p.type === 'lcd' && Number(p.props.addr ?? 0x27) === addr) ? 1 : 0),
-    i2c_write: (addr, hex) => gpio.i2cWrite && gpio.i2cWrite(addr, hex),
+    i2c_has: (addr) => gpio.i2cHas(addr),
+    i2c_write: (addr, hex) => gpio.i2cWrite(addr, hex),
   };
 }
 

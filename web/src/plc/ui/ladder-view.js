@@ -5,7 +5,7 @@ import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
 import {
   INSTR, COLS, emptyRung, newElement, placeContact, placeParallel, placeOutput, toggleLink, addRow, deleteRow, trimRows, insertCell, deleteCell,
-  compileProgram, programIL, elementText, mnemonic, isOutputType,
+  compileProgram, programIL, elementText, mnemonic, isOutputType, is32, isFloatInstr,
 } from '../sim/ladder.js';
 import { parseOperand, addrSortKey, SPECIAL, fmtAddr } from '../sim/address.js';
 import { openKeypad, openInstrPicker } from './keypad.js';
@@ -69,7 +69,9 @@ export class LadderView {
       B('lb-txt', '<b>LD=</b>', 'Compare contact (LD=, LD>, LD< …)', () => this.insertAny('CC')),
       B('lb-txt', '<b>MOV</b>', 'Move (MOV)', () => this.insertOutput('MOV')),
       B('lb-txt', '<b>ADD</b>', 'Addition (ADD)', () => this.insertOutput('ADD')),
-      B('lb-txt', '<b>ƒ API</b>', 'All instructions (compare, math, shift, MC, CJ, CALL, STL …)', () => openInstrPicker({ onPick: (t) => this.insertAny(t) })),
+      B('lb-txt lb-hot', '<b>MATH</b>', 'Math: ADD SUB MUL DIV INC DEC, 32-bit D…, floating point DEADD DEMUL DSIN …', () => openInstrPicker({ filter: 'Math', onPick: (t) => this.insertAny(t) })),
+      B('lb-txt lb-hot', '<b>LOGIC</b>', 'Logic: WAND WOR WXOR, BLD BAND BOR, shift, rotate, matrix …', () => openInstrPicker({ filter: 'Logic', onPick: (t) => this.insertAny(t) })),
+      B('lb-txt', '<b>ƒ API</b>', 'All instructions (compare, math, float, shift, clock, pulse, MC, CJ, CALL, STL …)', () => openInstrPicker({ onPick: (t) => this.insertAny(t) })),
       B('lb-sym', sym('H'), 'Horizontal line', () => this.insertH()),
       B('lb-sym', sym('V'), 'Vertical line (link to the row below)', () => this.toggleV()),
       B('lb-del', icon('eraser', 18), 'Delete', () => this.deleteAt()), sep(),
@@ -706,20 +708,21 @@ export class LadderView {
     // the device comment under the contact, on up to two lines
     const cm = (a) => (comments[a] ? this.wrapText(comments[a], G.fc, cw - 3, { maxLines: 2, breakWords: false }).map((ln, k) => `<text x="${f(m)}" y="${y + 21 + k * (G.fc + 1.5)}" text-anchor="middle" class="lr-cm" style="font-size:${G.fc}px">${esc(ln)}</text>`).join('') : '');
     let s = '';
-    if (el.t === 'CC') {
+    if (el.t === 'CC' || el.t === 'FCC') {
       const bx = x + 3, bw = cw - 6;
       s += w(x, bx, inOn) + w(bx + bw, x + cw, outOn);
       s += `<rect x="${f(bx)}" y="${y - 11}" width="${f(bw)}" height="22" rx="4" class="lr-box${outOn ? ' on' : ''}${err ? ' err' : ''}"/>`;
       s += `<text x="${f(m)}" y="${y + 4.5}" text-anchor="middle" class="lr-cc" style="font-size:${Math.min(14, G.fs + 1.5)}px">${esc(el.op)}</text>`;
       s += `<text x="${f(m)}" y="${y - 15}" text-anchor="middle" class="lr-op" style="font-size:${G.fs * 0.92}px">${esc(fit(el.a[0], G.fs * 0.92))}</text>`;
       s += `<text x="${f(m)}" y="${y + 24}" text-anchor="middle" class="lr-op" style="font-size:${G.fs * 0.92}px">${esc(fit(el.a[1], G.fs * 0.92))}</text>`;
-      if (cpu) { const a = parseOperand(el.a[0]); if (a) s += `<text x="${f(x + cw - 2)}" y="${y - 27}" text-anchor="end" class="lr-val" style="font-size:${G.fc}px">${cpu.getWord(a)}</text>`; }
+      if (el.t === 'FCC' || el.d) s += `<text x="${f(x + 5)}" y="${y + 4}" class="lr-tag" style="font-size:${Math.max(7, G.fc - 0.5)}px">${el.t === 'FCC' ? 'F' : 'D'}</text>`;
+      if (cpu) { const a = parseOperand(el.a[0]); if (a) s += `<text x="${f(x + cw - 2)}" y="${y - 27}" text-anchor="end" class="lr-val" style="font-size:${G.fc}px">${fmtVal(el.t === 'FCC' ? cpu.getFloat(a) : el.d ? cpu.getDWord(a) : cpu.getWord(a))}</text>`; }
       return s;
     }
-    if (el.t === 'INV' || el.t === 'MEP' || el.t === 'MEF') {
+    if (el.t === 'INV' || el.t === 'MEP' || el.t === 'MEF' || el.t === 'NP' || el.t === 'PN') {
       s += w(x, m - 6, inOn) + w(m + 6, x + cw, outOn);
       if (el.t === 'INV') s += `<line x1="${f(m - 7)}" y1="${y + 9}" x2="${f(m + 7)}" y2="${y - 9}" class="lr-sym${err ? ' err' : ''}"/>`;
-      else s += `<path d="M${f(m - 6)} ${y}H${f(m + 6)}M${f(m)} ${y + 9}V${y - 9}${el.t === 'MEP' ? `M${f(m - 4)} ${y - 5}l4-4 4 4` : ''}" class="lr-sym thin"/>${el.t === 'MEF' ? `<path d="M${f(m - 4)} ${y + 5}l4 4 4-4" class="lr-sym thin"/>` : ''}`;
+      else { const up = el.t === 'MEP' || el.t === 'NP'; s += `<path d="M${f(m - 6)} ${y}H${f(m + 6)}M${f(m)} ${y + 9}V${y - 9}${up ? `M${f(m - 4)} ${y - 5}l4-4 4 4` : ''}" class="lr-sym thin"/>${!up ? `<path d="M${f(m - 4)} ${y + 5}l4 4 4-4" class="lr-sym thin"/>` : ''}`; }
       s += `<text x="${f(m)}" y="${y - 15}" text-anchor="middle" class="lr-mn" style="font-size:${G.fs * 0.9}px">${el.t}</text>`;
       return s;
     }
@@ -738,10 +741,17 @@ export class LadderView {
     s += w(x, m - gap, inOn) + w(m + gap, x + cw, outOn);
     const op = parseOperand(el.a[0]);
     let closed = false;
-    if (cpu && op) { const b = cpu.getBit(op); closed = el.t === 'NC' ? !b : el.t === 'NO' ? !!b : !!outOn; }
+    const bitw = el.t === 'BLD' || el.t === 'BLDI';
+    if (cpu && op && bitw) { const n = parseOperand(el.a[1]); const w = el.d ? cpu.getDWord(op) : cpu.getWord(op); const b = n ? (w >>> (n.val & 31)) & 1 : 0; closed = el.t === 'BLD' ? !!b : !b; }
+    else if (cpu && op) { const b = cpu.getBit(op); closed = el.t === 'NC' ? !b : el.t === 'NO' ? !!b : !!outOn; }
     if (closed) s += `<rect x="${f(m - gap)}" y="${y - hh}" width="${f(gap * 2)}" height="${hh * 2}" rx="2" class="lr-fill"/>`;
     s += `<line x1="${f(m - gap)}" y1="${y - hh}" x2="${f(m - gap)}" y2="${y + hh}" class="lr-sym${err ? ' err' : ''}"/><line x1="${f(m + gap)}" y1="${y - hh}" x2="${f(m + gap)}" y2="${y + hh}" class="lr-sym${err ? ' err' : ''}"/>`;
-    if (el.t === 'NC') s += `<line x1="${f(m - gap - 3)}" y1="${y + hh}" x2="${f(m + gap + 3)}" y2="${y - hh}" class="lr-sym"/>`;
+    if (el.t === 'NC' || el.t === 'BLDI') s += `<line x1="${f(m - gap - 3)}" y1="${y + hh}" x2="${f(m + gap + 3)}" y2="${y - hh}" class="lr-sym"/>`;
+    if (bitw) {
+      s += `<text x="${f(m)}" y="${y + 4}" text-anchor="middle" class="lr-tag" style="font-size:${Math.max(7, G.fc - 0.5)}px">b</text>`;
+      s += label(elementText(el), 'lr-op' + (err ? ' err' : ''));
+      return s + cm(el.a[0]);
+    }
     if (el.t === 'P') s += `<path d="M${f(m)} ${y + 6}V${y - 6}M${f(m - 3.5)} ${y - 2.5}l3.5-3.5 3.5 3.5" class="lr-sym thin"/>`;
     if (el.t === 'F') s += `<path d="M${f(m)} ${y - 6}V${y + 6}M${f(m - 3.5)} ${y + 2.5}l3.5 3.5 3.5-3.5" class="lr-sym thin"/>`;
     s += label(el.a[0] || '?', 'lr-op' + (err ? ' err' : ''));
@@ -961,7 +971,8 @@ export class LadderView {
     dialog({
       title: 'Ladder editor',
       body: `<div class="lab-help">
-        <p>Tap a cell to move the <b>cursor</b>, then a toolbar button: <b>⊣⊢</b> NO contact, <b>⊣/⊢</b> NC contact, the stacked ones add a <b>parallel (OR)</b> branch below, <b>( )</b> output coil, <b>(S)/(R)</b> set / reset, <b>TMR</b>, <b>CNT</b> and <b>ƒ API</b> for every other instruction: compare (LD=, LD&amp;, CMP, ZCP), move &amp; convert (MOV, BMOV, FMOV, XCH, BCD, BIN, SWAP), math (ADD … DIV, INC, DEC, NEG, ABS, SQR, MEAN, SCAL), word logic &amp; shifts (WAND, WOR, WXOR, ROR, ROL, SFTR, SFTL, DECO, ENCO, SUM, BON, ZRST, ALT), program flow (MC/MCR, CJ, CALL/SRET, FEND, FOR/NEXT, WDT), step ladder (STL/RET), INV, MEP/MEF, timers TON / TOF, the 32-bit and high-speed counter DCNT, word shift and FIFO (WSFR, WSFL, SFWR, SFRD, RCR, RCL), Modbus (MODRW, MODRD, MODWR) and the Delta drive instructions FWD, REV, STOP, RDST, RSTEF.</p>
+        <p>Tap a cell to move the <b>cursor</b>, then a toolbar button: <b>⊣⊢</b> NO contact, <b>⊣/⊢</b> NC contact, the stacked ones add a <b>parallel (OR)</b> branch below, <b>( )</b> output coil, <b>(S)/(R)</b> set / reset, <b>TMR</b>, <b>CNT</b>, <b>MATH</b>, <b>LOGIC</b> and <b>ƒ API</b> for the whole Delta DVP instruction set (about 180 instructions, grouped like ISPSoft): contacts &amp; edges (LDP, LDF, INV, NP, PN, MEP, MEF), compare contacts (LD= … LD&lt;=, LD&amp; LD| LD^, 32-bit DLD=, floating-point FLD=), word bits (BLD, BLDI, BAND, BOR, BOUT, BSET, BRST), move &amp; convert (MOV, SMOV, CML, BMOV, FMOV, XCH, BCD, BIN, GRY, GBIN, SEGD, ASCI, HEX, PRUN, MMOV, RMOV), math (ADD, SUB, MUL, DIV, INC, DEC, NEG, ABS, SQR, MEAN, SUM, WSUM, RAND, SCAL, SCLP), floating point (DEADD, DESUB, DEMUL, DEDIV, DESQR, DEXP, DLN, DLOG, DPOW, DSIN … DTANH, DRAD, DDEG, FLT, INT, DECMP, DEZCP, DMOVR), word logic, shifts &amp; FIFO, matrix (MAND, MOR, MXOR, MINV, MBRD, MBS …), program flow (MC/MCR, CJ, CALL/SRET, FEND, END, FOR/NEXT, WDT, EI/DI), step ladder (STL/RET), handy instructions (SER, ABSD, INCD, TTMR, STMR, RAMP, SORT, TKY, ANS/ANR), the clock (TRD, TWR, TCMP, TZCP, TADD, TSUB, HOUR), high-speed &amp; pulse (DHSCS, DHSCR, DHSZ, SPD, PLSY, PWM, PLSR, PWD, DRVI, DRVA, PLSV, ZRN), Modbus, the Delta drive instructions and checksums (CCD, LRC, CRC).</p>
+        <p><b>32-bit:</b> tap <b>16-bit</b> in the keypad to get the <b>D…</b> form (DMOV, DADD …): the value uses two registers (D0 and D1). <b>Operands:</b> <code>K4M0</code> = M0–M15 as one number (K1 … K4, up to K8 in 32-bit), <code>F1.5</code> = floating-point constant, <code>E0 … E7 / F0 … F7</code> = index registers, <code>D10E0</code> = D(10 + E0). <code>M1018</code> ON makes DSIN / DCOS / DTAN use degrees.</p>
         <p>The diagram always fits the screen width; networks are stacked and the program grows downward — scroll up and down.</p>
         <p><b>CJ / CALL:</b> give the target network a pointer — long-press its number → <b>Pointer label</b>. Subroutines go after <b>FEND</b> and end with <b>SRET</b>. <b>Step ladder:</b> <code>M1002 → SET S0</code>, each step starts with <b>STL Sn</b> (first cell), <b>SET Sm</b> moves to the next step, <b>RET</b> ends the block.</p>
         <p>Enter the device with the keypad. <b>X / Y are octal</b> on Delta PLCs (X0–X7, X10–X17). Timers T0–T199 count in 100 ms: <code>TMR T0 K50</code> = 5 s.</p>
@@ -979,17 +990,26 @@ function valueOperand(el) {
   const d = INSTR[el.t];
   if (!d || d.kind !== 'box' || d.flow) return -1;
   if (TC.has(el.t)) return 0;
-  for (let i = d.ops.length - 1; i >= 0; i--) if (d.ops[i] === 'wordw' || d.ops[i] === 'dreg') return i;
+  for (let i = d.ops.length - 1; i >= 0; i--) if (d.ops[i] === 'wordw' || d.ops[i] === 'dreg' || d.ops[i] === 'fdst') return i;
   return -1;
+}
+/** A monitor value: integers as they are, floating point with up to 4 decimals. */
+function fmtVal(v) {
+  if (Number.isInteger(v)) return String(v);
+  if (!Number.isFinite(v)) return String(v);
+  const a = Math.abs(v);
+  return a !== 0 && (a >= 1e7 || a < 1e-3) ? v.toExponential(3) : String(Math.round(v * 1e4) / 1e4);
 }
 function hasValue(el) { return valueOperand(el) >= 0; }
 function valueText(el, cpu) {
   const i = valueOperand(el);
   const op = i >= 0 ? parseOperand(el.a[i]) : null;
   if (!op) return '';
-  if (op.dev === 'T') return `${op.text} = ${cpu.TV[op.idx]}`;
-  if (op.dev === 'C') return `${op.text} = ${cpu.CV[op.idx]}`;
-  return `${op.text} = ${cpu.getWord(op)}${INSTR[el.t].cat === 'comm' && cpu.M[1129] ? ' · time-out' : ''}`;
+  if (op.dev === 'T' && !op.ix) return `${op.text} = ${cpu.TV[op.idx]}`;
+  if (op.dev === 'C' && !op.ix) return `${op.text} = ${cpu.CV[op.idx]}`;
+  const d = INSTR[el.t];
+  const v = isFloatInstr(el.t) && d.ops[i] === 'fdst' ? cpu.getFloat(op) : is32(el) || d.ops[i] === 'dreg' && /^(MUL|MMOV|WSUM|PWD)$/.test(el.t) ? cpu.getDWord(op) : cpu.getWord(op);
+  return `${op.text} = ${fmtVal(v)}${d.cat === 'comm' && cpu.M[1129] ? ' · time-out' : ''}`;
 }
 
 export { isOutputType, elementText, fmtAddr };

@@ -344,8 +344,9 @@ export class PanelView {
       case 'toggle': sys.act(ctl.devId, 'toggle'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; this.scene.dirty = true; break;
       case 'vfdKey': {
         if (!this.lab.sys) { toast('Press Simulate to power the drive'); break; }
-        sys.act(ctl.devId, 'vfdKey', ctl.key);
+        const hint = sys.act(ctl.devId, 'vfdKey', ctl.key);
         const m = this.scene.modelOf(ctl.devId); if (m && m.press) m.press(ctl.key);
+        if (hint) toast(hint, 'info', 4200);
         Native.vibrate(8);
         break;
       }

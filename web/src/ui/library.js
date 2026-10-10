@@ -17,14 +17,14 @@ export function thumbSVG(def, props = defaultProps(def)) {
   return s;
 }
 
-export function openLibrary({ onPick, boardsOnly = false, title = 'Add component' }) {
+export function openLibrary({ onPick, boardsOnly = false, noBoards = false, title = 'Add component' }) {
   const content = h('div', { class: 'lib' });
   const search = h('input', { class: 'input lib-search', placeholder: 'Search components (LED, servo, sensor…)', type: 'search', autocomplete: 'off' });
   const searchRow = h('div', { class: 'lib-search-row', html: icon('search', 18) }, search);
   const chips = h('div', { class: 'lib-chips' });
   const grid = h('div', { class: 'lib-grid' });
   let cat = boardsOnly ? 'boards' : 'all';
-  const cats = boardsOnly ? CATEGORIES.filter((c) => c.id === 'boards') : [{ id: 'all', name: 'All', icon: 'grid' }, ...CATEGORIES];
+  const cats = boardsOnly ? CATEGORIES.filter((c) => c.id === 'boards') : [{ id: 'all', name: 'All', icon: 'grid' }, ...CATEGORIES.filter((c) => !noBoards || c.id !== 'boards')];
   for (const c of cats) {
     const chip = h('button', { class: 'chip' + (c.id === cat ? ' active' : ''), html: `${icon(c.icon, 15)}<span>${c.name}</span>`, onclick: () => { cat = c.id; for (const x of chips.children) x.classList.toggle('active', x === chip); draw(); } });
     chips.appendChild(chip);
@@ -37,6 +37,7 @@ export function openLibrary({ onPick, boardsOnly = false, title = 'Add component
     grid.innerHTML = '';
     let defs = allDefs().filter((d) => !d.hidden);
     if (boardsOnly) defs = defs.filter((d) => d.board);
+    else if (noBoards) defs = defs.filter((d) => !d.board);
     else if (cat !== 'all' && !q) defs = defs.filter((d) => d.category === cat);
     if (q) defs = defs.filter((d) => (d.name + ' ' + (d.tags || []).join(' ') + ' ' + (d.description || '') + ' ' + d.category).toLowerCase().includes(q));
     const order = new Map(CATEGORIES.map((c, i) => [c.id, i]));

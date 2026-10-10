@@ -11,6 +11,7 @@ export const VFD_PARAMS = [
   { id: '00-21', name: 'Source of operation command', def: 0, dec: 0, min: 0, max: 2, opts: opts({ 0: 'Digital keypad', 1: 'External terminals (MI1 / MI2)', 2: 'RS-485 communication' }) },
   { id: '00-22', name: 'Stop method', def: 0, dec: 0, min: 0, max: 1, opts: opts({ 0: 'Ramp to stop', 1: 'Coast to stop' }) },
   { id: '00-23', name: 'Motor direction control', def: 0, dec: 0, min: 0, max: 2, opts: opts({ 0: 'Forward and reverse enabled', 1: 'Reverse disabled', 2: 'Forward disabled' }) },
+  { id: '00-32', name: 'Digital keypad STOP function', def: 1, dec: 0, min: 0, max: 1, opts: opts({ 0: 'STOP key disabled (external / RS-485 control)', 1: 'STOP key enabled in every control mode' }) },
   { id: '01-00', name: 'Maximum operation frequency', def: 50, dec: 2, unit: 'Hz', min: 0, max: 599 },
   { id: '01-01', name: 'Motor 1 rated / base frequency', def: 50, dec: 2, unit: 'Hz', min: 0, max: 599 },
   { id: '01-02', name: 'Motor 1 rated voltage', def: 220, dec: 1, unit: 'V', min: 0, max: 255 },
@@ -91,6 +92,8 @@ export class VfdMS300 {
     this.commRun = false;
     this.commDir = 1;
     this.keyRun = false;
+    this.keyDir = 1;
+    this.keyStop = false;
     this.latch3 = false;
     this.f = 0;
     this.dir = 1;
@@ -130,7 +133,7 @@ export class VfdMS300 {
     return null;
   }
 
-  powerOn() { if (!this.powered) { this.powered = true; this.bootT = 1.2; this.keyRun = false; this.commRun = false; this.f = 0; } }
+  powerOn() { if (!this.powered) { this.powered = true; this.bootT = 1.2; this.keyRun = false; this.keyStop = false; this.commRun = false; this.f = 0; } }
   powerOff() { if (this.powered) { this.powered = false; this.f = 0; this.V = 0; this.I = 0; this.dc = 0; this.runCmd = false; this.warning = null; } }
 
   get running() { return this.powered && !this.fault && (Math.abs(this.f) > 0.001 || this.runCmd); }
@@ -172,7 +175,7 @@ export class VfdMS300 {
   command() {
     const src = this.P('00-21');
     let run = false, dir = 1;
-    if (src === 0) { run = this.keyRun; dir = 1; }
+    if (src === 0) { run = this.keyRun; dir = this.keyDir; }
     else if (src === 1) {
       const [mi1, mi2] = this.MI;
       const m = this.P('02-00');
@@ -183,6 +186,9 @@ export class VfdMS300 {
         run = this.latch3; dir = mi2 ? -1 : 1;
       }
     } else { run = this.commRun; dir = this.commDir; }
+    // STOP pressed on the keypad (Pr.00-32 = 1) holds an external / RS-485 run command off
+    // until that command is switched off and on again
+    if (src !== 0 && this.keyStop) { if (!run) this.keyStop = false; run = false; }
     const lock = this.P('00-23');
     if ((lock === 1 && dir < 0) || (lock === 2 && dir > 0)) run = false;
     return { run, dir };
@@ -367,26 +373,48 @@ export class VfdMS300 {
   }
 
   // ------------------------------------------------------------------ keypad
+  /**
+   * A key on the digital keypad. Every key does something on every page; when a key cannot act
+   * (e.g. RUN while the run command comes from the terminals) the answer is a short hint for the
+   * UI, otherwise null.
+   */
   key(k) {
-    if (!this.powered || this.bootT > 0) return;
+    if (!this.powered) return 'The drive has no power — check R/L1 and S/L2';
+    if (this.bootT > 0) return null;
     const kp = this.kp;
     const groups = PARAM_GROUPS;
     const inGroup = () => VFD_PARAMS.filter((p) => p.id.startsWith(groups[kp.group] + '-'));
+    const runSrc = this.P('00-21'), fSrc = this.P('00-20');
+    const srcText = (id) => `${PARAM_BY_ID[id].opts[this.P(id)]} (Pr.${id} = ${this.P(id)})`;
+    const flash = (t, s = 0.7) => { kp.flash = t; kp.flashT = s; };
     switch (k) {
       case 'RUN':
-        if (this.P('00-21') === 0 && !this.fault) this.keyRun = true;
-        break;
+        if (this.fault) return `Fault ${this.fault} — press STOP/RESET first`;
+        if (runSrc !== 0) return `RUN key is not the run command now: it comes from ${srcText('00-21')}. Set Pr.00-21 = 0 to run from the keypad.`;
+        this.keyRun = true;
+        return null;
       case 'STOP':
-        if (this.fault) this.resetFault();
-        else if (this.P('00-21') === 0) this.keyRun = false;
-        break;
+        if (this.fault) {
+          const was = this.fault;
+          this.resetFault();
+          if (this.fault) return `${was} cannot be reset while the EF input is still ON`;
+          flash('rSt', 0.5);
+          return null;
+        }
+        if (runSrc === 0) { this.keyRun = false; return null; }
+        if (this.P('00-32') !== 1) return 'STOP key is disabled (Pr.00-32 = 0)';
+        if (this.runCmd || this.f !== 0) {
+          this.keyStop = true;
+          return `Stopped from the keypad — switch the ${runSrc === 1 ? 'MI terminal' : 'RS-485'} run command OFF and ON again to restart`;
+        }
+        return null;
       case 'MODE': {
-        const order = ['F', 'H', 'A', 'U', 'PrG'];
+        const order = ['F', 'H', 'A', 'U', 'dir', 'PrG'];
         if (kp.mode === 'edit') kp.mode = 'param';
         else if (kp.mode === 'param') kp.mode = 'PrG';
         else kp.mode = order[(order.indexOf(kp.mode) + 1) % order.length];
         kp.pos = kp.mode === 'F' ? 2 : 0;
-        break;
+        return null;
       }
       case 'ENTER':
         if (kp.mode === 'PrG') { kp.mode = 'param'; kp.pidx = 0; }
@@ -394,17 +422,37 @@ export class VfdMS300 {
         else if (kp.mode === 'edit') {
           const p = inGroup()[kp.pidx];
           const err = this.setParam(p.id, kp.edit);
-          kp.flash = err ? 'Err' : 'End'; kp.flashT = 0.8;
+          flash(err ? 'Err' : 'End', 0.8);
           kp.mode = 'param';
-        }
-        break;
+          return err;
+        } else if (kp.mode === 'F') {
+          const why = this.freqKeyBlocked();
+          if (why) return why;
+          flash('End', 0.6); // frequency command stored
+        } else if (kp.mode === 'dir') return this.toggleKeyDir();
+        else { kp.mode = 'PrG'; } // H / A / U page: ENTER opens the parameter setup
+        return null;
       case 'UP': case 'DOWN': {
         const s = k === 'UP' ? 1 : -1;
-        if (kp.mode === 'F') { if (this.P('00-20') === 0) this.fKey = Math.max(0, Math.min(this.P('01-00'), Math.round((this.fKey + s * 10 ** (kp.pos - 2)) * 100) / 100)); }
+        if (kp.mode === 'F' || kp.mode === 'H' || kp.mode === 'A') {
+          if (kp.mode !== 'F') { kp.mode = 'F'; kp.pos = 2; }
+          const why = this.freqKeyBlocked();
+          if (why) return why;
+          const was = this.fKey;
+          this.fKey = Math.max(0, Math.min(this.P('01-00'), Math.round((this.fKey + s * 10 ** (kp.pos - 2)) * 100) / 100));
+          if (this.fKey === was) return s > 0 ? `Already at the maximum frequency (Pr.01-00 = ${this.P('01-00')} Hz)` : 'Already at 0 Hz';
+        } else if (kp.mode === 'U') {
+          // ▲▼ on the U page pick what it shows (Pr.00-04)
+          const keys = Object.keys(PARAM_BY_ID['00-04'].opts).map(Number);
+          const i = keys.indexOf(this.P('00-04'));
+          this.params['00-04'] = keys[(Math.max(0, i) + s + keys.length) % keys.length];
+          flash(['A', '', 'H', 'u', 'E', 'P', 'r'][this.params['00-04']] + '-', 0.45);
+        } else if (kp.mode === 'dir') return this.toggleKeyDir();
         else if (kp.mode === 'PrG') kp.group = (kp.group + s + groups.length) % groups.length;
         else if (kp.mode === 'param') { const n = inGroup().length; kp.pidx = (kp.pidx + s + n) % n; }
         else if (kp.mode === 'edit') {
           const p = inGroup()[kp.pidx];
+          if (p.ro) return `Pr.${p.id} is read-only`;
           if (p.opts) {
             const keys = Object.keys(p.opts).map(Number).sort((a, b) => a - b);
             const i = keys.indexOf(kp.edit);
@@ -415,13 +463,35 @@ export class VfdMS300 {
             if (p.min !== undefined) kp.edit = Math.max(p.min, Math.min(p.max, kp.edit));
           }
         }
-        break;
+        return null;
       }
       case 'LEFT':
-        kp.pos = (kp.pos + 1) % 4;
-        break;
-      default: break;
+        // ◀: next digit while a number is edited; otherwise one level back (escape)
+        if (kp.mode === 'F' || (kp.mode === 'edit' && !inGroup()[kp.pidx].opts)) kp.pos = (kp.pos + 1) % 4;
+        else if (kp.mode === 'edit') kp.mode = 'param';
+        else if (kp.mode === 'param') kp.mode = 'PrG';
+        else { kp.mode = 'F'; kp.pos = 2; }
+        return null;
+      default: return null;
     }
+  }
+
+  /** Why ▲▼ cannot change the keypad frequency now (null = they can). */
+  freqKeyBlocked() {
+    if (this.step) return `Multi-step speed ${this.step} is selected by the MI inputs — it uses Pr.04-0${this.step - 1}`;
+    const fSrc = this.P('00-20');
+    if (fSrc !== 0) return `The frequency command comes from ${PARAM_BY_ID['00-20'].opts[fSrc]} (Pr.00-20 = ${fSrc}). Set Pr.00-20 = 0 to set it with ▲ ▼.`;
+    return null;
+  }
+
+  /** Direction page: ▲ ▼ / ENTER switch the keypad run direction (Frd ↔ rEv). */
+  toggleKeyDir() {
+    if (this.P('00-21') !== 0) return `The direction comes from ${PARAM_BY_ID['00-21'].opts[this.P('00-21')]} (Pr.00-21 = ${this.P('00-21')})`;
+    const next = -this.keyDir;
+    const lock = this.P('00-23');
+    if ((lock === 1 && next < 0) || (lock === 2 && next > 0)) return `${next < 0 ? 'Reverse' : 'Forward'} is disabled (Pr.00-23 = ${lock})`;
+    this.keyDir = next;
+    return null;
   }
 
   /** What the 5-digit LED display shows: {text, leds:{RUN,STOP,FWD,REV,F,H,A,U}, blink}. */
@@ -454,6 +524,7 @@ export class VfdMS300 {
         if (sel === 5) return { text: 'P' + fmt(this.V * this.I * 1.732 * 0.8 / 1000, 2), leds };
         return { text: 'r' + fmt(Math.abs(this.rpm), 0), leds };
       }
+      case 'dir': return { text: this.keyDir < 0 ? 'rEv' : 'Frd', leds };
       case 'PrG': return { text: groups[kp.group] + '-', leds };
       case 'param': { const p = VFD_PARAMS.filter((x) => x.id.startsWith(groups[kp.group] + '-'))[kp.pidx]; return { text: p.id, leds }; }
       case 'edit': {
