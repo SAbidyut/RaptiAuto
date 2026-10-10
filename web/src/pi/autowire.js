@@ -2,7 +2,7 @@
 // examples — { type: 'led', pins: { a: 17 }, props: { color } } … — the way a student would wire
 // it: a resistor in front of every LED, active-low buttons to GND, 5 V modules on 5V, an MCP3008
 // for analog parts on a Raspberry Pi, and a voltage divider on the HC-SR04's 5 V ECHO.
-import { newId, pinsOf } from '../components/registry.js';
+import { newId, pinsOf, toWorld } from '../components/registry.js';
 import { BOARDS } from './boards.js';
 import { CIRCUIT_TYPE } from './circuit-parts.js';
 
@@ -40,9 +40,13 @@ export function autowire(board, specs = []) {
   };
   const V5 = pico ? 'VBUS' : '5V.1';
   // ground and 3V3 from the header pin nearest to the part, so power wires stay short
+  // (on the Pico a pin on the other edge of the board is never "near": its wire would cross the board)
+  const midY = pico ? 40 : 100;
   const near = (ids) => {
     const ax = cur && pinX.get(cur.pin) ? pinX.get(cur.pin).x : 0;
-    return ids.slice().sort((a, b) => Math.abs(pinX.get(a).x - ax) - Math.abs(pinX.get(b).x - ax))[0];
+    const up = !cur || cur.where === 'up';
+    const cost = (id) => Math.abs(pinX.get(id).x - ax) + ((pinX.get(id).y < midY) === up ? 0 : 1000);
+    return ids.slice().sort((a, b) => cost(a) - cost(b))[0];
   };
   const gnds = () => [...pinX.keys()].filter((id) => id.startsWith('GND'));
   const GND = () => near(gnds());
@@ -189,7 +193,38 @@ export function autowire(board, specs = []) {
     }
   }
   layoutSlots(slots, pinX, pico);
+  routeWires(parts, wires, bid, pico);
   return { parts, wires };
+}
+
+/**
+ * Wires to the header get one bend level (pin → straight out from the board → across → into the
+ * part), so they run square like jumpers instead of diagonally over the board and its labels.
+ */
+function routeWires(parts, wires, bid, pico) {
+  const byId = new Map(parts.map((p) => [p.id, p]));
+  const at = (end) => {
+    const part = byId.get(end.part);
+    const pin = part && pinsOf(part).find((q) => q.id === end.pin);
+    return pin ? toWorld(part, pin.x, pin.y) : null;
+  };
+  let k = 0;
+  for (const w of wires) {
+    const onBoard = w.from.part === bid ? w.from : w.to.part === bid ? w.to : null;
+    if (!onBoard) continue;
+    const other = onBoard === w.from ? w.to : w.from;
+    const a = at(onBoard), b = at(other);
+    if (!a || !b || Math.abs(a[0] - b[0]) < 1 || Math.abs(a[1] - b[1]) < 1) continue;
+    // the bend sits between the board and the part, staggered so parallel runs don't overlap
+    const dir = b[1] < a[1] ? -1 : 1;
+    const span = Math.abs(b[1] - a[1]);
+    // clear of the pin names printed next to the header (longer on the Pico)
+    const off = Math.min(span - 8, (pico ? 50 : 24) + (k++ % 6) * 6);
+    if (off < 6) continue;
+    const y = Math.round(a[1] + dir * off);
+    const pts = [[a[0], y], [b[0], y]];
+    w.points = onBoard === w.from ? pts : pts.reverse();
+  }
 }
 
 /** Put the slots in rows above (and for the Pico also below) the board, each over its pin. */

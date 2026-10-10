@@ -19,6 +19,7 @@ import { CIRCUIT_TYPE } from './circuit-parts.js';
 import { PiCircuit } from './circuit.js';
 import { CircuitHw } from './circuit-hw.js';
 import { autowire, defaultCircuit, boardOnly } from './autowire.js';
+import { PI_EXAMPLES, PICO_EXAMPLES } from './examples.js';
 
 const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny']];
 const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny']];
@@ -418,11 +419,42 @@ export class PiScreen {
     const sheet = new Sheet({ title: 'Choose a board', icon: 'chip', content: box, height: '80vh' }).open();
   }
 
-  switchBoard(id) {
+  /** Opened from the Pi Lab page: another board, a new project or an example. */
+  start(opts = {}) {
+    if (opts.board && BOARDS[opts.board] && opts.board !== this.sys.board) this.switchBoard(opts.board, true);
+    if (opts.example) {
+      const ex = (this.isPico ? PICO_EXAMPLES : PI_EXAMPLES).find((e) => e.file === opts.example);
+      if (!ex) return;
+      this.thonny.openExample(ex);
+      if (this.isPico) this.chosenFile = null;
+      this.drawFileChip();
+      this.setTab(ex.circuit || (ex.parts && ex.parts.length) ? 'circuit' : 'thonny');
+    } else if (opts.newProject) this.newProject();
+  }
+
+  /** A new project: the board alone on the canvas and a fresh program file to write. */
+  newProject() {
+    this.stopCircuit();
+    this.saveCircuit();
+    this.circuit.load(boardOnly(this.sys.board));
+    this.saveCircuit();
+    const fs = this.sys.fs, dir = this.isPico ? '' : '/home/pi';
+    let n = 1;
+    while (fs.isFile(`${dir}/project${n}.py`)) n++;
+    const path = `${dir}/project${n}.py`;
+    fs.write(path, this.isPico ? NEW_PICO : NEW_PI);
+    this.chosenFile = path;
+    this.drawFileChip();
+    this.thonny.open(path);
+    this.setTab('circuit');
+    toast(`New project: add parts with ＋, then write project${n}.py in Thonny`, 'ok');
+  }
+
+  switchBoard(id, quiet = false) {
     this.stopCircuit();
     this.saveCircuit();
     this.sys.setBoard(id);
-    toast(`${BOARDS[id].name} ready`, 'ok');
+    if (!quiet) toast(`${BOARDS[id].name} ready`, 'ok');
   }
 
   pinSheet(phys) {
@@ -545,3 +577,29 @@ export class PiScreen {
 }
 
 export { PICO_W_LED };
+
+const NEW_PI = `# My Raspberry Pi project
+# 1. Circuit tab: add parts with +, then wire them to the header pins
+# 2. Write the program here and press Run
+from gpiozero import LED
+from time import sleep
+
+led = LED(17)          # GPIO17 = pin 11
+
+while True:
+    led.toggle()
+    sleep(0.5)
+`;
+
+const NEW_PICO = `# My Raspberry Pi Pico project (MicroPython)
+# 1. Circuit tab: add parts with +, then wire them to the GP pins
+# 2. Write the program here and press Run
+from machine import Pin
+import time
+
+led = Pin(15, Pin.OUT)
+
+while True:
+    led.toggle()
+    time.sleep(0.5)
+`;

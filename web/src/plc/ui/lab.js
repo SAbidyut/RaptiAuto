@@ -175,11 +175,12 @@ export class LabScreen {
   updateSub() {
     const plc = this.plcDevice();
     const plcs = plcDevices(this.project);
-    const parts = [plc ? (plcs.length > 1 ? `${plcName(this.project, plc)} ▾ ${DEVICE_DEFS[plc.type].short}` : DEVICE_DEFS[plc.type].short) : 'No PLC'];
+    if (plcs.length > 1) { this.subEl.textContent = `${plcName(this.project, plc)} ▾`; this.subEl.classList.add('multi-plc'); return; }
+    const parts = [plc ? DEVICE_DEFS[plc.type].short : 'No PLC'];
     if (this.project.devices.some((d) => d.type === 'ms300')) parts.push('MS300');
     if (this.project.devices.some((d) => d.type === 'dop-107bv')) parts.push('DOP-107');
-    this.subEl.textContent = plcs.length > 1 ? parts.join(' · ') : 'Delta ' + parts.join(' · ');
-    this.subEl.classList.toggle('multi-plc', plcs.length > 1);
+    this.subEl.textContent = 'Delta ' + parts.join(' · ');
+    this.subEl.classList.remove('multi-plc');
   }
 
   /** Tap on the top chip: with two PLCs it picks the one to program, otherwise it shows the lab. */
@@ -188,8 +189,8 @@ export class LabScreen {
     if (plcs.length < 2) { this.setTab('panel'); return; }
     popupMenu(this.subEl, plcs.map((d) => ({
       icon: d.id === this.activeId ? 'check' : 'cpu',
-      label: `${plcName(this.project, d)} · ${DEVICE_DEFS[d.type].short}`,
-      hint: d.id === this.activeId ? 'open in Ladder' : 'program this PLC',
+      label: plcName(this.project, d),
+      hint: DEVICE_DEFS[d.type].short,
       action: () => this.selectPlc(d.id),
     })));
   }

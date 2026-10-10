@@ -66,7 +66,8 @@ export class App {
   }
 
   /** Open the Raspberry Pi lab (its bundle with the MicroPython runtime is loaded on first use). */
-  async openPi() {
+  /** opts: { board, newProject: true } or { board, example: 'file.py' } from the Pi Lab page. */
+  async openPi(opts = {}) {
     let mod;
     try { mod = await loadBundle('pi.js', '__raptiPi', 'Starting the Raspberry Pi…'); } catch (e) { toast('Could not load the Raspberry Pi lab', 'error'); return; }
     if (this.home) this.home.unmount();
@@ -75,6 +76,7 @@ export class App {
     if (this.pi) this.pi.unmount();
     this.pi = new mod.PiScreen(this);
     this.pi.mount(this.root);
+    if (opts.board || opts.example || opts.newProject) this.pi.start(opts);
   }
 
   showAbout() {

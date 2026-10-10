@@ -705,3 +705,14 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .code-tab.active { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .4); }
 .code-tab.active b { color: #a5f3fc; }
 .code-tab-edit { flex: none; }
+
+/* PLC / Pi lab pages: Examples | My projects switch, Pi example cards */
+.seg-wrap { padding: 0 14px 12px; }
+.seg-wrap .segmented { display: flex; width: 100%; }
+.seg-wrap .seg { flex: 1; justify-content: center; height: 38px; font-size: 14px; }
+.seg-wrap .seg .chip-n { margin-left: 2px; }
+.small-empty { margin: 0 14px; padding: 22px 16px; }
+.pi-ex-thumb { display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #12224a, #0a1124); }
+.pi-ex-thumb > svg { width: 100%; height: 100%; }
+.pi-cont-thumb > svg, .pi-bi-thumb > svg { width: 100%; height: 100%; }
+.pi-continue { width: 100%; text-align: left; }

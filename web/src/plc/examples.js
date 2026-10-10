@@ -301,7 +301,7 @@ export const LAB_EXAMPLES = [
       base(b);
       b.devices.find((d) => d.id === 'plc').props.name = 'PLC 1 · Master';
       b.dev('plc2', 'dvp-32es2', { name: 'PLC 2 · Slave' }, { run: true });
-      b.w('mcb', 'L', 'plc2', 'L'); b.w('mcb', 'N', 'plc2', 'N'); b.w('mcb', 'PE', 'plc2', 'PE');
+      b.w('plc', 'L', 'plc2', 'L'); b.w('plc', 'N', 'plc2', 'N'); b.w('plc', 'PE', 'plc2', 'PE');
       b.w('plc2', 'S/S', 'psu', '-V1');
       // the RS-485 link: COM2 to COM2 (D+ / D- / SG)
       b.w('plc', 'COM2', 'plc2', 'COM2');
