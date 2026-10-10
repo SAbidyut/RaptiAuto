@@ -122,6 +122,9 @@ export class Shell {
         act('Open / import file', 'upload', () => this.importProject()),
         group('Industrial automation'),
         item('plclab', 'Delta PLC Lab', 'cpu', h('span', { class: 'dr-new-badge' }, '3D')),
+        group('Raspberry Pi'),
+        h('button', { class: 'dr-item', onclick: () => { this.closeDrawer(); this.app.openPi(); } },
+          h('span', { class: 'dr-ic', html: icon('terminal', 20) }), h('span', { class: 'dr-label' }, 'Raspberry Pi Lab'), h('span', { class: 'dr-new-badge' }, 'NEW')),
         group('Library'),
         item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
         item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
@@ -192,6 +195,7 @@ export class Shell {
           h('button', { class: 'btn btn-glass btn-lg', html: `${icon('book', 19)}<span>Examples</span>`, onclick: () => this.go('examples') })))));
 
     el.appendChild(this.labBanner());
+    el.appendChild(this.piBanner());
 
     const tile = (page, label, sub, ic, tone, fn) => h('button', { class: 'qa-tile tone-' + tone, onclick: fn || (() => this.go(page)) },
       h('span', { class: 'qa-ic', html: icon(ic, 22) }), h('b', {}, label), h('small', {}, sub));
@@ -200,6 +204,7 @@ export class Shell {
         tile('projects', 'My Projects', `${listProjects().length} saved`, 'folder', 'cyan'),
         tile('examples', 'Examples', `${EXAMPLES.length} projects`, 'book', 'violet'),
         tile('plclab', 'PLC Lab', 'Delta · 3D', 'cpu', 'blue'),
+        tile(null, 'Raspberry Pi', 'Pi 5 · Pi 4 · Pico', 'terminal', 'pink', () => this.app.openPi()),
         tile('components', 'Components', `${partCount()}+ parts`, 'layers', 'green'),
         tile('guide', 'Guide', 'How to use', 'help', 'amber'),
         tile('about', 'About RAPTI', 'Courses · contact', 'graduation', 'pink'))));
@@ -403,6 +408,18 @@ export class Shell {
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('play', 18)}<span>Open the lab</span>`, onclick: (e) => { e.stopPropagation(); this.openLabExample('vfd-modbus-hmi'); } }),
           h('button', { class: 'btn btn-glass', html: `${icon('cpu', 18)}<span>All labs</span>`, onclick: (e) => { e.stopPropagation(); this.go('plclab'); } }))));
+  }
+
+  // ---------------------------------------------------------------- Raspberry Pi lab
+  piBanner() {
+    return h('section', { class: 'lab-banner pi-banner', onclick: () => this.app.openPi() },
+      h('div', { class: 'lb-art', html: piArt() }),
+      h('div', { class: 'lb-content' },
+        h('div', { class: 'hero-kicker', html: `${icon('sparkles', 15)}<span>NEW · Raspberry Pi</span>` }),
+        h('h2', {}, 'Virtual ', h('span', { class: 'grad' }, 'Raspberry Pi')),
+        h('p', {}, 'Pi 5, Pi 4 and Pico boards with live GPIO, a Pi OS desktop, terminal and Thonny. Real MicroPython runs your Python code.'),
+        h('div', { class: 'hero-actions' },
+          h('button', { class: 'btn btn-primary', html: `${icon('play', 18)}<span>Open the Pi lab</span>`, onclick: (e) => { e.stopPropagation(); this.app.openPi(); } }))));
   }
 
   pageLab(el) {
@@ -674,6 +691,17 @@ function labExampleArt(ex) {
     <path d="M8 178 L40 112 H280 L312 178Z" fill="#c9cdc9"/>
     ${items.map((it, i) => { const x = 160 + (i - (items.length - 1) / 2) * 50; return `<g transform="translate(${x} 146)"><rect x="-20" y="-26" width="40" height="50" rx="4" fill="#252b35"/>${it.t === 'b' ? `<circle r="12" fill="#e6e9ee"/><circle r="9.5" fill="${it.c}"/>` : `<circle r="16" fill="${it.c}" opacity=".35"/><circle r="10" fill="${it.c}"/>`}</g>`; }).join('')}
   </svg>`;
+}
+
+function piArt() {
+  const pins = Array.from({ length: 20 }, (_, i) => `<circle cx="${70 + i * 9}" cy="22" r="2.6" fill="#e9c46a"/><circle cx="${70 + i * 9}" cy="31" r="2.6" fill="#e9c46a"/>`).join('');
+  return `<svg viewBox="0 0 300 200" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+    <defs><linearGradient id="pib" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f8a45"/><stop offset="1" stop-color="#0f6634"/></linearGradient></defs>
+    <g transform="translate(40 30) rotate(-8 110 70)"><rect width="230" height="150" rx="12" fill="url(#pib)" stroke="#0a4d26" stroke-width="2"/>${pins}
+    <rect x="80" y="60" width="44" height="44" rx="4" fill="#20232a"/><rect x="140" y="62" width="36" height="22" rx="3" fill="#1b1d22"/>
+    <rect x="196" y="20" width="44" height="34" rx="3" fill="#cfd5db"/><rect x="196" y="62" width="44" height="34" rx="3" fill="#cfd5db"/><rect x="190" y="104" width="50" height="40" rx="3" fill="#cfd5db"/>
+    <circle cx="16" cy="130" r="4" fill="#ff3b30"/><circle cx="30" cy="130" r="4" fill="#22e55e"/></g>
+    <g transform="translate(232 128) scale(1.6)"><path d="M-6-12c-3-2-7-1-7 2 1 3 4 4 7 4zM6-12c3-2 7-1 7 2-1 3-4 4-7 4z" fill="#3ec43e"/><g fill="#c51a4a"><circle cx="0" cy="-2" r="4.2"/><circle cx="-6.5" cy="2" r="4"/><circle cx="6.5" cy="2" r="4"/><circle cx="-3.6" cy="8" r="4"/><circle cx="3.6" cy="8" r="4"/><circle cx="0" cy="13" r="3.4"/></g></g></svg>`;
 }
 
 function plcArt(m) {

@@ -4,6 +4,18 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## Raspberry Pi Lab (new in 2.6)
+
+A virtual Raspberry Pi 5 / Pi 4 and Raspberry Pi Pico / Pico W / Pico 2 / Pico 2 W, without a full operating system:
+
+- **Real Python engine:** MicroPython 1.29 compiled to WebAssembly with Asyncify (`tools/micropython/`), so `time.sleep()`, `input()` and endless loops hand control back to the app; Stop / Ctrl+C raise `KeyboardInterrupt`, and a program that ignores it is thrown away.
+- **Board:** detailed top view of the chosen board with the live state of every header pin (output HIGH / LOW, PWM, input), the ACT and Pico user LEDs, BOOTSEL; a labelled GPIO strip; tap a pin for its functions and state. Parts to wire: LED, RGB LED, button, switch, buzzer (with sound), relay + lamp, servo, DC motor (L298N), PIR, HC-SR04, potentiometer (Pico ADC or Pi MCP3008), LDR, DHT22 and a NeoPixel strip.
+- **Pi libraries:** `gpiozero` (LED, PWMLED, Button, Buzzer, TonalBuzzer, RGBLED, Motor, Robot, Servo, AngularServo, DistanceSensor, MotionSensor, LightSensor, MCP3008, TrafficLights, LEDBoard, CPUTemperature …), `RPi.GPIO` (BCM / BOARD, events, `wait_for_edge`, software PWM), `neopixel`, `adafruit_dht`, `board`, `signal.pause`. **Pico libraries:** `machine` (Pin with IRQs, PWM, ADC incl. the temperature sensor, Timer, RTC, WDT, `time_pulse_us`), `rp2`, `neopixel`, `dht`, `network` (Pico W, simulated Wi-Fi).
+- **Desktop:** a Raspberry Pi OS Bookworm-style desktop with the raspberry menu, launchers, task bar, clock and windows for Terminal, Thonny, File Manager, Text Editor, Chromium (offline page), Calculator and Raspberry Pi Configuration (the SPI / I2C switches edit `/boot/firmware/config.txt`).
+- **Terminal:** a simulated bash with pipes, `;`, `&&`, redirection and tab completion: `ls cd cat nano grep find tree head tail wc cp mv rm mkdir chmod echo history` …, `pinout`, `pinctrl` / `raspi-gpio`, `vcgencmd`, `neofetch`, `free`, `df`, `top`, `ip`, `ping`, `apt` (offline) and `python3` (files, `-c` and the interactive `>>>` prompt).
+- **Thonny:** tabs, Run / Stop, Examples (15 for the Pi, 14 for the Pico, which also wire their parts), the Shell with a `>>>` REPL that stays alive after a run, errors jump to their line; on a Pico it behaves like Thonny's *MicroPython (Raspberry Pi Pico)* back end (Run sends the editor text, Ctrl+D soft-reboots and runs `main.py`).
+- **Files** live on the phone (an SD card for the Pi, the flash for the Pico). Not simulated: a real Linux kernel, `apt` / `pip` installs, internet, the camera, PIO programs and CPython-only libraries (numpy, OpenCV …).
+
 ## Delta PLC Lab (new in 2.0)
 
 A virtual industrial-automation trainer with Delta equipment, built for touch screens:
@@ -58,6 +70,8 @@ Other scripts:
 | `node tests/devices.mjs` | Device and library tests |
 | `node tests/plc.mjs` | PLC lab: ladder/IL, CPU, Modbus, VFD, wiring and full lab simulations |
 | `node tests/schematic.mjs` | 2D wiring schematic: layout, wire routing through the ducts, window / crossing selection |
+| `node tests/pi.mjs` | Raspberry Pi lab: MicroPython engine, gpiozero, RPi.GPIO, Pico machine, stop / Ctrl+C, the >>> shell |
+| `tools/micropython/build.sh` | Rebuild `web/vendor/micropython/` (MicroPython WebAssembly, needs the Emscripten SDK) |
 | `node tests/routing.mjs` | 3D cable routing: no cable through a device, the console or the bench, no two cables overlapping, duct runs inside the ducts |
 | `node tools/icons.mjs` | Regenerate launcher icons and the splash logo from the logo SVG |
 | `node tools/shot.mjs <dir> home run:<example>:<ms>` | Screenshots in a phone-sized Chromium |
@@ -74,4 +88,5 @@ Other scripts:
 - `web/src/plc/devices/`: Delta device catalogue (ports, terminals), the automatic 3D layout and the 3D cable router (`routing.js`).
 - `web/src/plc/three/`: three.js scene, procedural device models, cables.
 - `web/src/plc/ui/`: lab screen, 3D panel, 2D wiring schematic (`schematic.js`, switched by `scene-switch.js`), ladder editor, HMI designer, VFD view, monitor.
+- `web/src/pi/`: the Raspberry Pi lab (board art, GPIO simulator, parts, Python process, terminal, Thonny, desktop); `web/src/pi/py/` holds the Python libraries made for it; loaded as `pi.js` on first use.
 - `web/src/ui/gestures.js`: double-tap zoom and the window / crossing selection box shared by both simulators.
