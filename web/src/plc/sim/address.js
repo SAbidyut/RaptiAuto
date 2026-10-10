@@ -9,19 +9,56 @@ export const DEVICES = {
   T: { name: 'Timer', bit: true, word: true, max: 255, modbus: 0x0600 },
   C: { name: 'Counter', bit: true, word: true, max: 255, modbus: 0x0E00 },
   D: { name: 'Data register', word: true, max: 9999, modbus: 0x1000 },
+  E: { name: 'Index register (E0–E7; with F as the high word in 32-bit instructions)', word: true, max: 7 },
+  F: { name: 'Index register (F0–F7)', word: true, max: 7 },
   K: { name: 'Decimal constant', konst: true },
   H: { name: 'Hex constant', konst: true },
+  FL: { name: 'Floating-point constant', konst: true },
+  KX: { name: 'Digit of X inputs (K1 = 4 bits)', digits: 'X' },
+  KY: { name: 'Digit of Y outputs (K1 = 4 bits)', digits: 'Y' },
+  KM: { name: 'Digit of M relays (K1 = 4 bits)', digits: 'M' },
+  KS: { name: 'Digit of S relays (K1 = 4 bits)', digits: 'S' },
   N: { name: 'Master control nesting level', max: 7, pointer: true },
   P: { name: 'Pointer (jump / subroutine label)', max: 255, pointer: true },
 };
 
 export const BIT_DEVS = ['X', 'Y', 'M', 'S', 'T', 'C'];
-export const WORD_DEVS = ['D', 'T', 'C'];
+export const WORD_DEVS = ['D', 'T', 'C', 'E', 'F'];
+export const KN_DEVS = ['KX', 'KY', 'KM', 'KS'];
 
-/** Parse "X17", "M1000", "K50", "H2000", "D10" → {dev, idx} or {dev:'K'|'H', val}. Returns null if invalid. */
+/**
+ * Parse an operand → {dev, idx} for devices, {dev:'K'|'H'|'FL', val} for constants, or null.
+ *   X17 M1000 D10 T5 C200 · K50 K-3 H2000 · F1.5 F-2.5E3 (floating point) · E0…E7 F0…F7 (index)
+ *   K4M0 K2Y10 K1X0 (n digits = 4n bits of a bit device) · D10E0 K4M0F1 K10E2 (indexed by E / F)
+ */
 export function parseOperand(text) {
   const s = String(text || '').trim().toUpperCase();
-  const m = /^([XYMSTCDKHNP])(-?[0-9A-F]+)$/.exec(s);
+  // floating-point constant: F with a decimal point or an exponent (F0 … F7 alone are index registers)
+  const fl = /^F(-?(?:\d+\.\d*|\.\d+|\d+)(?:E[+-]?\d+)?)$/.exec(s);
+  if (fl && !/^F[0-7]$/.test(s)) {
+    const val = Number(fl[1]);
+    if (!Number.isFinite(val) || Math.abs(val) > 3.4e38) return null;
+    return { dev: 'FL', val, text: 'F' + fl[1] };
+  }
+  // index suffix (E0 … E7 / F0 … F7) on a device or a decimal constant
+  const ix = /^(.*[0-9])([EF])([0-7])$/.exec(s);
+  if (ix && !/^H/.test(s) && !/^[EF]\d*$/.test(ix[1])) {
+    const base = parseOperand(ix[1]);
+    if (base && (base.idx !== undefined || base.dev === 'K') && base.dev !== 'P' && base.dev !== 'N' && base.dev !== 'E' && base.dev !== 'F') {
+      return { ...base, ix: { dev: ix[2], idx: +ix[3] }, text: base.text + ix[2] + ix[3] };
+    }
+  }
+  // KnX / KnY / KnM / KnS: n digits (4 bits each) of a bit device
+  const kn = /^K([1-8])([XYMS])(\d+)$/.exec(s);
+  if (kn) {
+    const bdev = kn[2], info = DEVICES[bdev];
+    if (info.octal && /[89]/.test(kn[3])) return null;
+    const idx = info.octal ? parseInt(kn[3], 8) : parseInt(kn[3], 10);
+    const n = +kn[1];
+    if (idx + n * 4 - 1 > info.max) return null;
+    return { dev: 'K' + bdev, n, idx, bdev, text: `K${n}${bdev}${info.octal ? idx.toString(8) : idx}` };
+  }
+  const m = /^([XYMSTCDKHNPEF])(-?[0-9A-F]+)$/.exec(s);
   if (!m) return null;
   const dev = m[1];
   const num = m[2];
@@ -51,7 +88,7 @@ export function fmtAddr(dev, idx) {
 }
 
 export const isBitOperand = (op) => !!op && BIT_DEVS.includes(op.dev);
-export const isWordOperand = (op) => !!op && (WORD_DEVS.includes(op.dev) || op.dev === 'K' || op.dev === 'H');
+export const isWordOperand = (op) => !!op && (WORD_DEVS.includes(op.dev) || KN_DEVS.includes(op.dev) || op.dev === 'K' || op.dev === 'H');
 export const isWritableWord = (op) => !!op && WORD_DEVS.includes(op.dev);
 
 /** Delta DVP Modbus address of a device (used by the HMI link and the comm log). */
@@ -65,7 +102,8 @@ export function modbusAddr(dev, idx) {
 export function addrSortKey(text) {
   const op = parseOperand(text);
   if (!op || op.idx === undefined) return 1e9;
-  return 'XYMSTCD'.indexOf(op.dev) * 1e5 + op.idx;
+  const dev = op.bdev || op.dev;
+  return Math.max(0, 'XYMSTCDEF'.indexOf(dev)) * 1e5 + op.idx + (op.ix ? 0.5 : 0);
 }
 
 /** Latched (retentive) ranges of the ES2/EX2 series with default settings. */
@@ -96,8 +134,21 @@ export const SPECIAL = {
   M1012: '100 ms clock pulse',
   M1013: '1 s clock pulse',
   M1014: '1 min clock pulse',
+  M1018: 'Trigonometric instructions use degrees (OFF = radians)',
   M1020: 'Zero flag',
+  M1021: 'Borrow flag',
   M1022: 'Carry flag',
+  M1026: 'RAMP: hold the end value (OFF = repeat)',
+  M1029: 'CH0 (Y0) pulse output / drum / RAMP complete',
+  M1088: 'MBC: count ON bits (OFF = count OFF bits)',
+  M1089: 'Matrix: result is zero / last bit',
+  M1094: 'Matrix: pointer advances after MBRD / MBWR',
+  M1095: 'Matrix: carry / bit read',
+  M1096: 'Matrix: bit to write / shift in',
+  M1097: 'Matrix: shift / rotate right (OFF = left)',
+  M1102: 'CH1 (Y2) pulse output complete',
+  M1161: '8-bit mode for ASCI / HEX / CCD / LRC / CRC (OFF = 16-bit)',
+  M1165: 'SORT descending (OFF = ascending)',
   M1067: 'Operation error',
   M1120: 'Retain COM2 settings',
   M1127: 'COM2 transaction complete',
@@ -107,6 +158,10 @@ export const SPECIAL = {
   D1010: 'Present scan time (0.1 ms)',
   D1011: 'Minimum scan time (0.1 ms)',
   D1012: 'Maximum scan time (0.1 ms)',
+  D1030: 'Y0 output pulses (low word)', D1031: 'Y0 output pulses (high word)',
+  D1313: 'RTC second', D1314: 'RTC minute', D1315: 'RTC hour', D1316: 'RTC day', D1317: 'RTC month', D1318: 'RTC day of the week', D1319: 'RTC year',
+  D1348: 'CH0 (Y0) current position (low word)', D1349: 'CH0 (Y0) current position (high word)',
+  D1350: 'CH1 (Y2) current position (low word)', D1351: 'CH1 (Y2) current position (high word)',
   D1110: 'AI channel 0 (EX2)', D1111: 'AI channel 1 (EX2)', D1112: 'AI channel 2 (EX2)', D1113: 'AI channel 3 (EX2)',
   D1116: 'AO channel 0 (EX2)', D1117: 'AO channel 1 (EX2)',
   D1120: 'COM2 protocol (H86 = 9600,7,E,1 · H87 = 9600,8,E,1)',

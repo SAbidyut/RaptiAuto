@@ -2,7 +2,7 @@
 // (picking, markers, selection, focus, live states). Devices are drawn as terminal-block symbols in
 // rows like the panel (rail 1, rail 2, operator console); every wire is routed orthogonally through
 // the "wire ducts" between the rows and the gaps between devices, each on its own track.
-import { DEVICE_DEFS, devicePorts, deviceProps, busName } from '../devices/defs.js';
+import { DEVICE_DEFS, devicePorts, deviceProps, busName, hasLabel } from '../devices/defs.js';
 import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -15,7 +15,7 @@ const GAP_MIN = 34;     // minimum gap between devices
 const MARGIN = 26;      // band margin left / right
 const CONSOLE_PER_ROW = 8;
 
-const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', motor: '#94a3b8', pc: '#64748b' };
+const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', sensor: '#14b8a6', switchgear: '#f43f5e', motor: '#94a3b8', pc: '#64748b' };
 const BUS_COLOR = { rs232: '#f59e0b', rs485: '#22d3ee', usb: '#a78bfa' };
 const LAMP = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
 const CAP = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#2a2d33', white: '#e9ecef' };
@@ -46,7 +46,7 @@ function edgeOf(def, port) {
   return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
 }
 
-const BODY_H = { plc: 176, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156 };
+const BODY_H = { plc: 176, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112 };
 
 function symbolFor(dev) {
   const def = DEVICE_DEFS[dev.type];
@@ -166,18 +166,24 @@ export function layoutSchematic(project) {
       if (s.t === 'h') chRuns[s.ch].push(s);
       else { const k = s.band + ':' + s.gap; if (!gapRuns.has(k)) gapRuns.set(k, []); gapRuns.get(k).push(s); }
     }
+    // vertical runs first: a horizontal run ends where its vertical run really is (the gap centre
+    // shifted to the track), so two runs in a duct that only touched at the gap centres could
+    // still share a track for a few pixels
+    for (const runs of gapRuns.values()) runs.forEach((s, i) => { s.track = i; s.of = runs.length; });
+    const off = (v) => (v ? -((v.of - 1) * TRACK) / 2 + v.track * TRACK : 0);
+    for (const r of plan) r.segs.forEach((s, i) => { if (s.t === 'h') { s.pv = i > 0 ? r.segs[i - 1] : null; s.nv = r.segs[i + 1] || null; } });
     const needCh = chRuns.map((runs) => {
-      runs.sort((a, b) => Math.min(a.x0, a.x1) - Math.min(b.x0, b.x1));
+      const span = (s) => { const a = s.x0 + off(s.pv), b = s.x1 + off(s.nv); return [Math.min(a, b), Math.max(a, b)]; };
+      runs.sort((a, b) => span(a)[0] - span(b)[0]);
       const ends = [];
       for (const s of runs) {
-        const lo = Math.min(s.x0, s.x1), hi = Math.max(s.x0, s.x1);
+        const [lo, hi] = span(s);
         let t = ends.findIndex((e) => e < lo - TRACK);
         if (t < 0) { t = ends.length; ends.push(hi); } else ends[t] = hi;
         s.track = t;
       }
       return ends.length;
     });
-    for (const runs of gapRuns.values()) runs.forEach((s, i) => { s.track = i; s.of = runs.length; });
     let changed = false;
     const nh = chH.map((h0, c) => Math.max(h0, CH_MIN, 26 + (needCh[c] - 1) * TRACK + 18));
     const nw = gapW.map((arr, bi) => arr.map((w0, g) => { const n = (gapRuns.get(bi + ':' + g) || []).length; return Math.max(w0, n ? 20 + (n - 1) * TRACK + 14 : 0); }));
@@ -272,7 +278,7 @@ function drawDevice(g, sym) {
       el('text', { class: 'sd-tlabel', x: sl.x, y: top ? 18 : h - 11 }, g, p.label);
     }
   }
-  const title = def.category === 'field' && props.label ? props.label : def.short;
+  const title = hasLabel(def) && props.label ? props.label : def.short;
   const controls = [];
   const ctl = (x, y, cw, ch, action, extra = {}) => { controls.push({ x0: x, y0: y, x1: x + cw, y1: y + ch, action, devId: dev.id, ...extra }); };
   const led = (x, y, color, r = 4) => {
@@ -436,6 +442,50 @@ function drawDevice(g, sym) {
       update = (rt) => set(bar, 'transform', `rotate(${rt.dev.state.on ? 40 : -40} ${cx} ${cy})`);
       break;
     }
+    case 'selector3': {
+      const cx = w / 2, cy = 60;
+      el('circle', { cx, cy, r: 21, class: 'sd-bezelr' }, g);
+      const bar = el('rect', { x: cx - 4, y: cy - 18, width: 8, height: 36, rx: 3, class: 'sd-knob' }, g);
+      txt(cx - 30, 36, props.pos0 || 'L', 'sd-mini');
+      txt(cx, 32, '0', 'sd-mini');
+      txt(cx + 30, 36, props.pos1 || 'R', 'sd-mini');
+      txt(cx, h - 12, title, 'sd-label');
+      ctl(cx - 28, cy - 28, 56, 56, 'toggle', { label: title });
+      update = (rt) => set(bar, 'transform', `rotate(${(rt.dev.state.pos || 0) * 40} ${cx} ${cy})`);
+      break;
+    }
+    case 'relay': {
+      const cx = w / 2, cy = h / 2;
+      txt(cx, cy - 18, props.label || 'K1', 'sd-title');
+      txt(cx, cy - 2, '24 V DC', 'sd-sub');
+      const l = led(cx + 22, cy - 22, '#ff3434', 3.6);
+      const st = txt(cx, cy + 22, 'OFF', 'sd-state');
+      ctl(cx - 34, cy - 30, 68, 64, 'press', { label: `${props.label || 'Relay'} (test button)` });
+      update = (rt) => {
+        ledOn(l, !!rt.coil);
+        const s = rt.closed ? '11–14' : '11–12';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (rt.closed ? ' ok' : '')); }
+      };
+      break;
+    }
+    case 'cb': {
+      const cx = w / 2, cy = h / 2;
+      txt(cx, cy - 18, props.label || 'QF1', 'sd-title');
+      txt(cx, cy - 2, `${props.rating || 'C6'} · ${props.poles === '3P' ? '3P' : '1P'}`, 'sd-sub');
+      const st = txt(cx, cy + 22, 'ON', 'sd-state ok');
+      ctl(cx - 34, cy - 30, 68, 64, 'toggle', { label: `${props.label || 'Breaker'} ON / OFF` });
+      update = (rt) => {
+        const on = rt.dev.state.on !== false, s = on ? 'ON' : 'OFF';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (on ? ' ok' : ' err')); }
+      };
+      break;
+    }
+    case 'tb': {
+      const cx = w / 2, cy = h / 2;
+      for (const sl of sym.slots.values()) if (sl.edge === 'top') el('line', { x1: sl.x, y1: 22, x2: sl.x, y2: h - 22, class: 'sd-bridge' }, g);
+      txt(cx, cy + 4, props.label || 'X1', 'sd-title');
+      break;
+    }
     case 'lamp': {
       const cx = w / 2, cy = 58, col = LAMP[props.color] || LAMP.green;
       const glow = el('circle', { cx, cy, r: 30, fill: col, class: 'sd-glow' }, g);
@@ -455,14 +505,86 @@ function drawDevice(g, sym) {
       break;
     }
     case 'prox': {
-      const cy = 58;
+      const cy = 58, look = def.look || 'ind';
       el('rect', { x: 14, y: cy - 11, width: 46, height: 22, rx: 4, class: 'sd-well' }, g);
-      el('rect', { x: 58, y: cy - 9, width: 6, height: 18, rx: 2, fill: '#f97316' }, g);
+      el('rect', { x: 58, y: cy - 9, width: 6, height: 18, rx: 2, fill: look === 'photo' ? '#ef4444' : look === 'cap' ? '#f97316' : '#2563eb' }, g);
       const l = led(24, cy, '#ffb020', 3.4);
-      const target = el('rect', { x: 72, y: cy - 14, width: 16, height: 28, rx: 2, class: 'sd-target' }, g);
+      const beam = look === 'photo' ? el('line', { x1: 64, y1: cy, x2: 96, y2: cy, class: 'sd-beam' }, g) : null;
+      const target = el('rect', { x: 72, y: cy - 14, width: 16, height: 28, rx: 2, class: 'sd-target' + (look === 'cap' ? ' liquid' : look === 'photo' ? ' box' : '') }, g);
+      txt(w / 2, 33, `${look === 'photo' ? 'PHOTO' : look === 'cap' ? 'CAP' : 'IND'} · ${props.output === 'NPN' ? 'NPN' : 'PNP'}`, 'sd-mini');
       txt(w / 2, h - 12, title, 'sd-label');
-      ctl(8, cy - 26, w - 16, 52, 'toggle', { label: 'Metal part in front of the sensor' });
-      update = (rt) => { const here = !!rt.dev.state.target; ledOn(l, rt.powered && here); set(target, 'x', here ? 72 : 84); set(target, 'class', here ? 'sd-target on' : 'sd-target'); };
+      ctl(8, cy - 26, w - 16, 52, 'toggle', { label: look === 'photo' ? 'Box in the light beam' : look === 'cap' ? 'Material in front of the sensor' : 'Metal part in front of the sensor' });
+      update = (rt) => {
+        const here = !!rt.dev.state.target;
+        ledOn(l, rt.powered && here); set(target, 'x', here ? 72 : 84); set(target, 'class', (here ? 'sd-target on' : 'sd-target') + (look === 'cap' ? ' liquid' : look === 'photo' ? ' box' : ''));
+        if (beam) { set(beam, 'x2', here ? 72 : 96); set(beam, 'class', rt.powered ? 'sd-beam on' : 'sd-beam'); }
+      };
+      break;
+    }
+    case 'limit': {
+      const cy = 60, cx = w / 2;
+      txt(cx, 33, '1 NO + 1 NC', 'sd-mini');
+      txt(cx, h - 12, title, 'sd-label');
+      if (def.look === 'float') {
+        el('rect', { x: cx - 22, y: cy - 20, width: 44, height: 40, rx: 4, class: 'sd-well' }, g);
+        const water = el('rect', { x: cx - 20, y: cy + 8, width: 40, height: 10, class: 'sd-water' }, g);
+        const fl = el('rect', { x: cx + 6, y: cy - 6, width: 8, height: 10, rx: 3, fill: '#f2b705' }, g);
+        ctl(cx - 28, cy - 26, 56, 52, 'toggle', { label: 'Raise / lower the level' });
+        update = (rt) => { const on = !!rt.dev.state.on; set(water, 'y', on ? cy - 10 : cy + 8); set(water, 'height', on ? 28 : 10); set(fl, 'y', on ? cy - 18 : cy - 6); };
+      } else {
+        el('rect', { x: cx - 26, y: cy - 6, width: 22, height: 24, rx: 3, class: 'sd-well' }, g);
+        const arm = el('g', {}, g);
+        el('line', { x1: cx - 15, y1: cy - 6, x2: cx + 10, y2: cy - 6, class: 'sd-ptr' }, arm);
+        el('circle', { cx: cx + 12, cy: cy - 6, r: 5, class: 'sd-knobc' }, arm);
+        const cam = el('rect', { x: cx + 20, y: cy - 26, width: 14, height: 10, rx: 2, fill: '#d62828' }, g);
+        ctl(cx - 30, cy - 28, 64, 52, 'toggle', { label: 'Push the lever' });
+        update = (rt) => { const on = !!rt.dev.state.on; set(arm, 'transform', `rotate(${on ? 24 : 0} ${cx - 15} ${cy - 6})`); set(cam, 'x', on ? cx + 6 : cx + 20); };
+      }
+      break;
+    }
+    case 'atx': {
+      const cx = w / 2, cy = 60;
+      el('rect', { x: cx - 30, y: cy - 16, width: 60, height: 32, rx: 5, class: 'sd-lcd' }, g);
+      const val = txt(cx, cy + 6, '', 'sd-value');
+      txt(cx, 33, '0–10 V', 'sd-mini');
+      txt(cx, h - 12, title, 'sd-label');
+      ctl(cx - 32, cy - 22, 64, 44, 'pot', { label: title });
+      update = (rt) => {
+        const k = rt.dev.state.pos ?? 0.5, v = +props.min + k * (props.max - props.min);
+        const s = rt.powered ? `${v.toFixed(Math.abs(props.max - props.min) <= 20 ? 1 : 0)} ${props.unit}` : 'OFF';
+        if (val.textContent !== s) val.textContent = s;
+      };
+      break;
+    }
+    case 'contactor': {
+      const cx = w / 2, cy = h / 2;
+      txt(cx, cy - 20, props.label || 'KM1', 'sd-title');
+      txt(cx, cy - 4, `Coil ${props.coil === '230AC' ? '230 V AC' : '24 V DC'}`, 'sd-sub');
+      const poles = el('g', { class: 'sd-poles' }, g);
+      for (let i = 0; i < 3; i++) el('line', { x1: cx - 24 + i * 16, y1: cy + 6, x2: cx - 16 + i * 16, y2: cy + 18 }, poles);
+      const st = txt(cx, cy + 36, 'OPEN', 'sd-state');
+      ctl(cx - 40, cy - 28, 80, 76, 'press', { label: `${props.label || 'Contactor'} (push in by hand)` });
+      update = (rt) => {
+        const on = !!rt.closed;
+        set(poles, 'class', on ? 'sd-poles on' : 'sd-poles');
+        const s = on ? 'CLOSED' : 'OPEN';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (on ? ' ok' : '')); }
+      };
+      break;
+    }
+    case 'olr': {
+      const cx = w / 2, cy = h / 2;
+      txt(cx, cy - 18, props.label || 'F1', 'sd-title');
+      txt(cx, cy - 2, def.part.split(' · ')[0], 'sd-sub');
+      const btn = el('circle', { cx: cx + 26, cy: cy + 18, r: 9, fill: '#1f5fd6', class: 'sd-cap' }, g);
+      const st = txt(cx - 10, cy + 22, 'OK', 'sd-state ok');
+      ctl(cx - 40, cy - 28, 80, 70, 'toggle', { label: `${props.label || 'Overload relay'}: trip / reset` });
+      update = (rt) => {
+        const t = !!rt.dev.state.tripped;
+        set(btn, 'r', t ? 11 : 9);
+        const s = t ? 'TRIPPED' : 'OK';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state ' + (t ? 'err' : 'ok')); }
+      };
       break;
     }
     case 'pot': {

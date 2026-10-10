@@ -37,7 +37,8 @@ export class VfdView {
     this.pad = h('div', { class: 'vv-pad' },
       h('div', { class: 'vv-brand', html: '<b>▲ DELTA</b><span>MS300</span>' }),
       h('div', { class: 'vv-window' }, this.disp, this.ind), this.leds, keys,
-      h('div', { class: 'vv-model' }, 'VFD7A5MS21ANSAA · 1.5 kW · 230 V'));
+      h('div', { class: 'vv-model' }, 'VFD7A5MS21ANSAA · 1.5 kW · 230 V'),
+      h('div', { class: 'vv-help', html: '<b>MODE</b> F → H → A → U → Frd/rEv → PrG · <b>▲ ▼</b> frequency, direction or value · <b>◀</b> next digit / back · <b>ENTER</b> confirm / parameters · <b>RUN</b> / <b>STOP</b> need Pr.00-21 = 0 (keypad); STOP also stops terminal or RS-485 control (Pr.00-32)' }));
     this.cards = h('div', { class: 'vv-cards' });
     this.chart = document.createElement('canvas');
     this.chart.className = 'vv-chart';
@@ -79,12 +80,16 @@ export class VfdView {
     const rt = this.rt();
     if (!rt) { toast(this.lab.sys ? 'The drive has no power — check R/L1 and S/L2' : 'Press Simulate to power the drive', 'info'); return; }
     if (!rt.vfd.powered) { toast('The drive has no power — check R/L1 and S/L2', 'warn'); return; }
-    this.lab.sys.act(rt.dev.id, 'vfdKey', k);
+    const hint = this.lab.sys.act(rt.dev.id, 'vfdKey', k);
     const m = this.lab.scene && this.lab.scene.modelOf(rt.dev.id);
     if (m && m.press) m.press(k);
     Native.vibrate(8);
+    const b = this.pad.querySelector('.k-' + k.toLowerCase());
+    if (b) { b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 130); }
+    if (hint) toast(hint, 'info', 4200);
     this.drawDisplay();
-    if (k === 'ENTER') this.drawParams();
+    this.drawCards();
+    this.drawParams();
   }
 
   drawDisplay() {

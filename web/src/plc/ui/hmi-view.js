@@ -23,7 +23,18 @@ const FIELDS = {
   goto: [['text', 'Text'], ['screen', 'Go to screen', 'screen']],
   alarm: [['bit', 'Alarm bit', 'bit'], ['text', 'Message']],
   rect: [['title', 'Title'], ['fill', 'Fill', 'color'], ['stroke', 'Border', 'color'], ['radius', 'Corner radius', 'num']],
+  state: [['label', 'Label'], ['word', 'Word device (value → state)', 'word'], ['bit', 'or a bit device (0 / 1)', 'bit'], ['states', 'States  value:text:colour | …']],
+  setval: [['text', 'Text'], ['word', 'Word device', 'word'], ['mode', 'Action', 'sel', { inc: 'Increment +', dec: 'Decrement −', const: 'Set constant' }], ['value', 'Step / constant (raw value)', 'num'], ['min', 'Minimum', 'num'], ['max', 'Maximum', 'num'], ['color', 'Colour', 'sel', Object.fromEntries(HMI_BTN_COLORS.map((c) => [c, c]))]],
+  slider: [['label', 'Label'], ['word', 'Word device', 'word'], ['dec', 'Decimals', 'num'], ['unit', 'Unit'], ['min', 'Minimum', 'num'], ['max', 'Maximum', 'num']],
+  selsw: [['bit', 'Bit device', 'bit'], ['off', 'Left (OFF) text'], ['on', 'Right (ON) text']],
+  tank: [['label', 'Label'], ['word', 'Word device', 'word'], ['dec', 'Decimals', 'num'], ['unit', 'Unit'], ['min', 'Minimum', 'num'], ['max', 'Maximum', 'num'], ['color', 'Liquid colour', 'color']],
+  pipe: [['bit', 'Flow bit', 'bit'], ['color', 'Colour', 'color']],
+  valve: [['bit', 'Open bit', 'bit'], ['text', 'Text']],
+  clock: [['fmt', 'Show', 'sel', { datetime: 'Date + time', time: 'Time', date: 'Date' }], ['size', 'Font size', 'num'], ['color', 'Colour', 'color'], ['align', 'Align', 'sel', { left: 'Left', center: 'Centre', right: 'Right' }]],
+  alarmlist: [['label', 'Title']],
 };
+
+const SHORT = { button: 'BTN', lamp: 'LAMP', num: '123', input: 'IN', meter: 'GAUGE', bar: 'BAR', text: 'TEXT', motor: 'MOTOR', trend: 'TREND', goto: 'SCRN', alarm: 'ALARM', rect: 'PANEL', state: 'STATE', setval: '±', slider: 'SLIDE', selsw: 'SEL', tank: 'TANK', pipe: 'PIPE', valve: 'VALVE', clock: 'CLOCK', alarmlist: 'ALMLOG' };
 
 export class HmiView {
   constructor(lab) {
@@ -58,7 +69,7 @@ export class HmiView {
     this.overlay = h('div', { class: 'hv-overlay' });
     this.offMsg = h('div', { class: 'hv-off hidden' });
     this.canvasWrap.append(this.lab.hmiCanvas, this.designCanvas, this.overlay, this.offMsg);
-    this.frameEl.append(this.canvasWrap, h('div', { class: 'hv-brand', html: '<b>▲ DELTA</b><span>DOP-107BV</span><i class="hv-led"></i>' }));
+    this.frameEl.append(this.canvasWrap, h('div', { class: 'hv-brand', html: '<b>▲ DELTA</b><span>DOP-107BV · 7" TFT</span><em>PWR</em><i class="hv-led"></i><em>COM</em><i class="hv-led com"></i>' }));
     this.stage = h('div', { class: 'hv-stage' }, this.frameEl);
     this.info = h('div', { class: 'hv-info' });
     this.el.append(this.bar, this.stage, this.info);
@@ -68,6 +79,7 @@ export class HmiView {
     const cv = this.lab.hmiCanvas;
     cv.addEventListener('pointerdown', (e) => this.runDown(e));
     cv.addEventListener('pointerup', (e) => this.runUp(e));
+    cv.addEventListener('pointermove', (e) => { const rt = this.rt(); if (rt && !this.designing) { const [x, y] = this.runPos(e); rt.pointerMove(x, y, e.pointerId); } });
     cv.addEventListener('pointercancel', (e) => this.runUp(e));
     // design-mode touch
     this.designCanvas.addEventListener('pointerdown', (e) => this.dDown(e));
@@ -142,7 +154,9 @@ export class HmiView {
     if (sys && sys.hmiRt) st = sys.hmiLinkState.ok ? '<span class="hv-st ok">● online</span>' : sys.hmiRt.hmi.powered ? `<span class="hv-st err">● ${sys.hmiLinkState.reason || 'no response'}</span>` : '<span class="hv-st off">● no power</span>';
     const html = `<span>${port} · Delta DVP · ${port === 'COM1' ? 'RS-232' : 'RS-485'} 9600 7E1 · station ${hd && hd.props && hd.props.station !== undefined ? hd.props.station : 1}</span>${st}`;
     if (html !== this.lastInfo) { this.lastInfo = html; this.info.innerHTML = html; }
-    this.frameEl.querySelector('.hv-led').classList.toggle('on', !!(sys && sys.hmiRt && sys.hmiRt.hmi.powered));
+    const pw = !!(sys && sys.hmiRt && sys.hmiRt.hmi.powered);
+    this.frameEl.querySelector('.hv-led').classList.toggle('on', pw);
+    this.frameEl.querySelector('.hv-led.com').classList.toggle('on', pw && !!sys.hmiLinkState.ok);
   }
 
   frame(dt) {
@@ -265,7 +279,7 @@ export class HmiView {
         this.select(el);
         this.changed();
         this.editProps(el);
-      } }, h('span', { class: 'ip-mn' }, t.name.split(' ')[0].slice(0, 6)), h('div', { class: 'ip-text' }, h('b', {}, t.name), h('small', {}, hint(type)))));
+      } }, h('span', { class: 'ip-mn' }, SHORT[type] || type.slice(0, 5).toUpperCase()), h('div', { class: 'ip-text' }, h('b', {}, t.name), h('small', {}, hint(type)))));
     }
     const sheet = new Sheet({ title: 'Add object', content, icon: 'plus', cls: 'sheet-tall' });
     sheet.open();
@@ -326,7 +340,7 @@ export class HmiView {
         const msg = h('small', { class: 'field-help' });
         const validate = () => {
           const v = inp.value.trim().toUpperCase();
-          if (!v) { msg.textContent = k === 'word2' ? 'Optional' : 'Required'; return v; }
+          if (!v) { msg.textContent = k === 'word2' || el.type === 'state' ? 'Optional' : 'Required'; return v; }
           const o = parseOperand(v);
           const ok = o && (type === 'bit' ? ['X', 'Y', 'M', 'S', 'T', 'C'] : ['D', 'T', 'C']).includes(o.dev);
           msg.textContent = ok ? (this.lab.project.program.comments[o.text] || '✓ valid') : 'Not a valid ' + (type === 'bit' ? 'bit device (X, Y, M, S, T, C)' : 'word device (D, T, C)');
@@ -397,6 +411,9 @@ function hint(type) {
   return {
     button: 'Writes a bit (momentary, toggle, set, reset)', lamp: 'Shows a bit ON / OFF', num: 'Shows a word value', input: 'Operator enters a value (keypad)',
     meter: 'Analog gauge for a word', bar: 'Bar graph for a word', text: 'Static label', motor: 'Animated motor / fan for a bit', trend: 'Live chart of up to 2 words',
-    goto: 'Switches to another screen', alarm: 'Flashing banner while a bit is ON', rect: 'Background panel / group box',
+    goto: 'Switches to another screen', alarm: 'Flashing banner while a bit is ON (logged in the alarm history)', rect: 'Background panel / group box',
+    state: 'Text + colour for each value (STOPPED / RUNNING / FAULT)', setval: 'Adds, subtracts or writes a constant to a word', slider: 'Drag to set a word',
+    selsw: '2-position selector switch for a bit (MAN / AUTO)', tank: 'Tank with liquid level from a word', pipe: 'Pipe with animated flow while a bit is ON',
+    valve: 'Valve symbol: green when the bit is ON', clock: 'HMI real-time clock: date and time', alarmlist: 'Time-stamped alarm log with acknowledge',
   }[type];
 }

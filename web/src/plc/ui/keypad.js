@@ -3,10 +3,11 @@
 import { h, Sheet } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
-import { INSTR, INSTR_GROUPS, CMP_OPS, OPERAND_DEVS, mnemonic } from '../sim/ladder.js';
+import { INSTR, INSTR_GROUPS, INSTR_FILTERS, CMP_OPS, OPERAND_DEVS, mnemonic } from '../sim/ladder.js';
 import { parseOperand, DEVICES, SPECIAL } from '../sim/address.js';
 
-const DEV_KEYS = ['X', 'Y', 'M', 'S', 'T', 'C', 'D', 'K', 'H'];
+const DEV_KEYS = ['X', 'Y', 'M', 'S', 'T', 'C', 'D', 'K', 'H', 'E', 'F'];
+const INDEXABLE = /^(?:[XYMSTCD]\d+|K-?\d+|K\d[XYMS]\d+)$/;
 const PTR_KEYS = ['N', 'P']; // shown only for MC / MCR (N) and CJ / CALL (P)
 
 /**
@@ -15,13 +16,15 @@ const PTR_KEYS = ['N', 'P']; // shown only for MC / MCR (N) and CJ / CALL (P)
 export function openKeypad({ el, program, recent = [], onDone, title }) {
   const d = INSTR[el.t];
   const vals = d.ops.map((_, i) => (el.a && el.a[i]) || '');
-  let op = el.op || '>';
+  let op = el.op || (d.cmpOps ? d.cmpOps[3] : '>');
   let pulse = !!el.p;
+  let dbl = !!el.d;
+  const mn = () => mnemonic({ ...el, op, p: pulse, d: dbl });
   let field = 0;
   let fresh = true; // first key press replaces the default value
   const content = h('div', { class: 'kp' });
   const head = h('div', { class: 'kp-head' },
-    h('span', { class: 'kp-mn' }, mnemonic({ ...el, p: pulse })),
+    h('span', { class: 'kp-mn' }, mn()),
     h('span', { class: 'kp-name' }, d.name));
   const fieldsRow = h('div', { class: 'kp-fields' });
   const err = h('div', { class: 'kp-err' });
@@ -32,11 +35,23 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
   const quick = h('div', { class: 'kp-quick' });
   const opRow = d.cmp ? h('div', { class: 'kp-ops' }) : null;
   const pulseRow = d.pulse ? h('button', { class: 'kp-pulse', onclick: () => { pulse = !pulse; draw(); } }) : null;
+  const dblRow = d.dbl ? h('button', { class: 'kp-pulse kp-dbl', onclick: () => { dbl = !dbl; draw(); } }) : null;
+  const optRow = pulseRow || dblRow ? h('div', { class: 'kp-opts' }, pulseRow, dblRow) : null;
 
   const cls = () => d.ops[field];
   const allowed = () => OPERAND_DEVS[cls()] || [];
-  const isOct = () => /^[XY]/.test(vals[field] || '');
+  const isOct = () => /^(?:K\d)?[XY]\d*$/.test(vals[field] || '');
   const isHex = () => /^H/.test(vals[field] || '');
+  const isFloat = () => /^F/.test(vals[field] || '') && (allowed().includes('FL'));
+  const keyOn = (k) => {
+    const al = allowed(), v = vals[field] || '';
+    if (al.includes(k)) return true;
+    if (k === 'K') return al.some((x) => x.length === 2 && x[0] === 'K');
+    if ('XYMS'.includes(k) && /^K[1-8]$/.test(v)) return al.includes('K' + k);
+    if (k === 'F' && al.includes('FL')) return true;
+    if ((k === 'E' || k === 'F') && !fresh && INDEXABLE.test(v)) return true;
+    return false;
+  };
 
   function commentKey() {
     const o = parseOperand(vals[field]);
@@ -44,7 +59,7 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
   }
 
   function draw() {
-    head.firstChild.textContent = mnemonic({ ...el, p: pulse });
+    head.firstChild.textContent = mn();
     fieldsRow.innerHTML = '';
     d.ops.forEach((c, i) => {
       const o = parseOperand(vals[i]);
@@ -55,23 +70,25 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     });
     if (opRow) {
       opRow.innerHTML = '';
-      for (const o of CMP_OPS) opRow.appendChild(h('button', { class: 'kp-op' + (o === op ? ' active' : ''), onclick: () => { op = o; draw(); } }, o));
+      for (const o of d.cmpOps || CMP_OPS) opRow.appendChild(h('button', { class: 'kp-op' + (o === op ? ' active' : ''), onclick: () => { op = o; draw(); } }, o));
     }
-    if (pulseRow) { pulseRow.className = 'kp-pulse' + (pulse ? ' active' : ''); pulseRow.innerHTML = `${icon(pulse ? 'check' : 'bolt', 15)}<span>${pulse ? 'Pulse (P): runs once on the rising edge' : 'Continuous: runs every scan while ON — tap for P (pulse)'}</span>`; }
+    if (pulseRow) { pulseRow.className = 'kp-pulse' + (pulse ? ' active' : ''); pulseRow.innerHTML = `${icon(pulse ? 'check' : 'bolt', 15)}<span>${pulse ? 'Pulse (P): runs once on the rising edge' : 'Continuous: every scan while ON — tap for P (pulse)'}</span>`; }
+    if (dblRow) { dblRow.className = 'kp-pulse kp-dbl' + (dbl ? ' active' : ''); dblRow.innerHTML = `${icon(dbl ? 'check' : 'layers', 15)}<span>${dbl ? '32-bit (D…): two registers, ±2 147 483 647' : '16-bit — tap for the 32-bit (D…) form'}</span>`; }
     devRow.innerHTML = '';
     const al = allowed();
     const devKeys = al.some((k) => PTR_KEYS.includes(k)) ? PTR_KEYS.filter((k) => al.includes(k)) : DEV_KEYS;
     devRow.classList.toggle('few', devKeys.length < DEV_KEYS.length);
+    const cur = vals[field] || '';
+    const curDev = (parseOperand(cur) || {}).bdev || cur.replace(/^K\d(?=[XYMS])/, '')[0];
     for (const k of devKeys) {
-      const on = al.includes(k);
-      devRow.appendChild(h('button', { class: 'kp-key dev' + ((vals[field] || '')[0] === k ? ' active' : ''), disabled: !on, onclick: () => setDev(k) }, k));
+      devRow.appendChild(h('button', { class: 'kp-key dev' + (curDev === k ? ' active' : ''), disabled: !keyOn(k), onclick: () => setDev(k) }, k));
     }
     digits.innerHTML = '';
-    const keys = isHex() ? ['7', '8', '9', 'A', '4', '5', '6', 'B', '1', '2', '3', 'C', '0', 'D', 'E', 'F'] : ['7', '8', '9', '4', '5', '6', '1', '2', '3', '±', '0', '⌫'];
+    const keys = isHex() ? ['7', '8', '9', 'A', '4', '5', '6', 'B', '1', '2', '3', 'C', '0', 'D', 'E', 'F'] : ['7', '8', '9', '⌫', '4', '5', '6', '±', '1', '2', '3', '.', '0'];
     digits.classList.toggle('hex', isHex());
     for (const k of keys) {
-      const dis = (isOct() && (k === '8' || k === '9')) || (k === '±' && !/^K/.test(vals[field] || ''));
-      digits.appendChild(h('button', { class: 'kp-key' + (k === '⌫' ? ' back' : ''), disabled: dis, onclick: () => press(k) }, k));
+      const dis = (isOct() && (k === '8' || k === '9')) || (k === '±' && !/^(?:K-?\d*|F-?[\d.]*)$/.test(cur)) || (k === '.' && (!isFloat() || cur.includes('.')));
+      digits.appendChild(h('button', { class: 'kp-key' + (k === '⌫' ? ' back' : '') + (k === '0' && !isHex() ? ' wide' : ''), disabled: dis, onclick: () => press(k) }, k));
     }
     if (isHex()) digits.appendChild(h('button', { class: 'kp-key back wide', onclick: () => press('⌫') }, '⌫'));
     // validation / info
@@ -84,7 +101,8 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     else if (o && o.dev === 'N') info.textContent = `Nesting level ${o.text} (N0 outermost … N7)`;
     else if (o) {
       const sp = SPECIAL[o.text];
-      info.textContent = sp ? `${o.text}: ${sp}` : o.dev === 'K' ? `Decimal constant ${o.val}` : o.dev === 'H' ? `Hex constant = ${o.raw ?? o.val}` : `${DEVICES[o.dev].name}${o.dev === 'T' ? timerHint(o.idx) : ''}`;
+      const ix = o.ix ? ` · indexed: the device number + ${o.ix.dev}${o.ix.idx}` : '';
+      info.textContent = (sp ? `${o.text}: ${sp}` : o.dev === 'K' ? `Decimal constant ${o.val}` : o.dev === 'H' ? `Hex constant = ${o.raw ?? o.val}` : o.dev === 'FL' ? `Floating-point constant ${o.val}` : o.n ? `${o.text} = ${o.n * 4} bits of ${o.bdev} as one number` : o.dev === 'F' && al.includes('FL') ? `Index register ${o.text} — a floating-point constant needs a decimal point (F${o.idx}.0)` : `${DEVICES[o.dev].name}${o.dev === 'T' ? timerHint(o.idx) : ''}`) + ix;
     }
     const ck = commentKey();
     comment.disabled = !ck;
@@ -98,7 +116,10 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
 
   function setDev(k) {
     Native.vibrate(4);
-    vals[field] = k;
+    const v = vals[field] || '';
+    if (/^K[1-8]$/.test(v) && 'XYMS'.includes(k)) vals[field] = v + k; // K4 + M → K4M…
+    else if ((k === 'E' || k === 'F') && !fresh && INDEXABLE.test(v) && !(k === 'F' && v === 'F')) vals[field] = v + k; // D10 + E → D10E…
+    else vals[field] = k;
     fresh = false;
     draw();
   }
@@ -107,12 +128,15 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     Native.vibrate(4);
     let v = vals[field] || '';
     if (k === '⌫') { v = v.length > 1 ? v.slice(0, -1) : v.slice(0, 1); fresh = false; }
-    else if (k === '±') v = v.startsWith('K-') ? 'K' + v.slice(2) : 'K-' + v.slice(1);
+    else if (k === '±') v = /^[KF]-/.test(v) ? v[0] + v.slice(2) : v[0] + '-' + v.slice(1);
+    else if (k === '.') { if (!v.includes('.')) v += /\d$/.test(v) ? '.' : '0.'; fresh = false; }
     else {
       if (fresh && v.length > 1) v = v[0] || '';
       fresh = false;
-      if (!v) v = allowed()[0];
-      if (v.replace(/^[A-Z]-?/, '').length < 5) v += k;
+      if (!v) v = allowed()[0] === 'FL' ? 'F' : allowed()[0];
+      const konst = /^[KHF]-?[\d.]*$/.test(v);
+      const tail = (/\d[\d.]*$/.exec(v) || [''])[0];
+      if (tail.length < (konst ? 11 : 5)) v += k;
       v = v.replace(/^([XYMSTCD])0+(?=\d)/, '$1');
     }
     vals[field] = v;
@@ -133,11 +157,12 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     const out = { t: el.t, a: vals.slice() };
     if (d.cmp) out.op = op;
     if (d.pulse && pulse) out.p = true;
+    if (d.dbl && dbl) out.d = true;
     sheet.close();
     onDone(out);
   }
 
-  content.append(...[head, opRow, pulseRow, fieldsRow, err, info, devRow, digits, quick, comment, h('div', { class: 'kp-actions' }, nextBtn, okBtn)].filter(Boolean));
+  content.append(...[head, opRow, optRow, fieldsRow, err, info, devRow, digits, quick, comment, h('div', { class: 'kp-actions' }, nextBtn, okBtn)].filter(Boolean));
   // physical keyboard
   const onKey = (e) => {
     const k = e.key.toUpperCase();
@@ -146,7 +171,9 @@ export function openKeypad({ el, program, recent = [], onDone, title }) {
     if (e.key === 'Tab') { e.preventDefault(); field = (field + 1) % Math.max(1, d.ops.length); fresh = true; draw(); return; }
     if (e.key === 'Backspace') { e.preventDefault(); press('⌫'); return; }
     if (/^[0-9]$/.test(k) || (isHex() && /^[A-F]$/.test(k))) { press(k); return; }
-    if ((DEV_KEYS.includes(k) || PTR_KEYS.includes(k)) && allowed().includes(k)) setDev(k);
+    if (k === '.' && isFloat()) { press('.'); return; }
+    if (k === '-') { press('±'); return; }
+    if ((DEV_KEYS.includes(k) || PTR_KEYS.includes(k)) && keyOn(k)) setDev(k);
   };
   const sheet = new Sheet({ title: title || 'Instruction', content, icon: 'ladder', cls: 'kp-sheet', onClose: () => window.removeEventListener('keydown', onKey) });
   window.addEventListener('keydown', onKey);
@@ -163,33 +190,50 @@ function timerHint(n) {
   return ' · 100 ms base (K10 = 1 s)';
 }
 
-/** Instruction picker: every instruction by group, with a search field. */
-export function openInstrPicker({ onPick }) {
+/** Instruction picker: every instruction by group, with filter chips and a search field. */
+export function openInstrPicker({ onPick, filter = 'All' }) {
   const content = h('div', { class: 'instr-picker' });
-  const search = h('input', { class: 'input ip-search', type: 'search', placeholder: 'Search: MOV, timer, shift, jump …', autocomplete: 'off' });
+  const search = h('input', { class: 'input ip-search', type: 'search', placeholder: 'Search: DADD, float, sin, shift, clock, PID …', autocomplete: 'off' });
+  const chips = h('div', { class: 'ip-chips' });
   const list = h('div', { class: 'ip-list' });
+  let cur = INSTR_FILTERS.find((x) => x[0] === filter) || INSTR_FILTERS[0];
   const shown = (t) => t !== 'H' && t !== 'NO' && t !== 'NC' && t !== 'OUT';
-  const label = (t) => (t === 'CC' ? 'LD>' : t);
+  const label = (t) => (t === 'CC' ? 'LD>' : t === 'FCC' ? 'FLD>' : t);
+  const drawChips = () => {
+    chips.innerHTML = '';
+    for (const f of INSTR_FILTERS) chips.appendChild(h('button', { class: 'chip' + (f === cur ? ' active' : ''), onclick: () => { cur = f; drawChips(); draw(); list.scrollTop = 0; } }, f[0]));
+  };
   const draw = () => {
     const q = search.value.trim().toLowerCase();
     list.innerHTML = '';
+    let count = 0;
     for (const [cat, title] of INSTR_GROUPS) {
-      const ts = Object.keys(INSTR).filter((t) => INSTR[t].cat === cat && shown(t) && (!q || t.toLowerCase().includes(q) || INSTR[t].name.toLowerCase().includes(q) || title.toLowerCase().includes(q)));
+      if (cur[1] && !cur[1].includes(cat)) continue;
+      const ts = Object.keys(INSTR).filter((t) => {
+        const d = INSTR[t];
+        if (d.cat !== cat || !shown(t)) return false;
+        if (!q) return true;
+        const names = [t, label(t), d.dbl ? d.dname || 'D' + t : '', d.name, title].join(' ').toLowerCase();
+        return names.includes(q);
+      });
       if (!ts.length) continue;
       list.appendChild(h('div', { class: 'lib-cat' }, title));
       for (const t of ts) {
         const d = INSTR[t];
-        const sub = [d.api !== undefined ? `API ${d.api}` : 'Basic', d.labels.length ? d.labels.join(', ') : d.kind === 'contact' ? 'Contact' : 'No operand', d.pulse ? 'P = pulse' : ''].filter(Boolean).join(' · ');
+        count++;
+        const sub = [d.api !== undefined ? `API ${d.api}` : 'Basic', d.labels.length ? d.labels.join(', ') : d.kind === 'contact' ? 'Contact' : 'No operand', d.dbl ? `D = 32-bit (${d.dname || 'D' + t})` : '', d.pulse ? 'P = pulse' : ''].filter(Boolean).join(' · ');
         list.appendChild(h('button', { class: 'ip-row ip-' + d.kind + (d.flow ? ' ip-flow' : ''), onclick: () => { sheet.close(); onPick(t); } },
           h('span', { class: 'ip-mn' }, label(t)),
           h('div', { class: 'ip-text' }, h('b', {}, d.name), h('small', {}, sub))));
       }
     }
-    if (!list.children.length) list.appendChild(h('p', { class: 'muted center' }, 'No instruction matches'));
+    if (!count) list.appendChild(h('p', { class: 'muted center' }, 'No instruction matches'));
   };
   search.addEventListener('input', draw);
-  content.append(search, list);
+  content.append(search, chips, list);
+  drawChips();
   draw();
-  const sheet = new Sheet({ title: 'Instructions', content, icon: 'ladder', cls: 'sheet-tall' });
+  const total = Object.keys(INSTR).filter(shown).length;
+  const sheet = new Sheet({ title: `Instructions · ${total}`, content, icon: 'ladder', cls: 'sheet-tall' });
   sheet.open();
 }

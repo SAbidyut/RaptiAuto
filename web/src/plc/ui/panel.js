@@ -18,6 +18,10 @@ const BUNDLES = [
   [['U/T1', 'V/T2', 'W/T3', 'PE'], ['U', 'V', 'W', 'PE']],
   [['L', 'N', 'PE'], ['L', 'N', 'PE']],
   [['L', 'N', 'PE'], ['R/L1', 'S/L2', 'PE']],
+  // drive → contactor / overload relay → motor: the three phases go together
+  [['U/T1', 'V/T2', 'W/T3'], ['L1', 'L2', 'L3']],
+  [['T1', 'T2', 'T3'], ['L1', 'L2', 'L3']],
+  [['T1', 'T2', 'T3'], ['U', 'V', 'W']],
 ];
 
 export class PanelView {
@@ -340,8 +344,9 @@ export class PanelView {
       case 'toggle': sys.act(ctl.devId, 'toggle'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; this.scene.dirty = true; break;
       case 'vfdKey': {
         if (!this.lab.sys) { toast('Press Simulate to power the drive'); break; }
-        sys.act(ctl.devId, 'vfdKey', ctl.key);
+        const hint = sys.act(ctl.devId, 'vfdKey', ctl.key);
         const m = this.scene.modelOf(ctl.devId); if (m && m.press) m.press(ctl.key);
+        if (hint) toast(hint, 'info', 4200);
         Native.vibrate(8);
         break;
       }
@@ -714,6 +719,15 @@ export class PanelView {
     } else if (def.sim === 'vfd') tip = 'Drive added. Wire MCB L / N → R/L1 · S/L2 and U/T1 V/T2 W/T3 → motor. For Modbus, plug RS-485 (RJ45) into PLC COM2.';
     else if (def.sim === 'motor') tip = 'Motor added. Tap U/T1 on the drive, then U on the motor — V and W are connected for you.';
     else if (def.sim === 'psu') tip = 'Power supply added. Tap L on the MCB, then L on the supply — N and ⏚ follow automatically.';
+    else if (def.sim === 'contactor') tip = 'Contactor added. Coil: PLC Y → A1, A2 → 0 V (C0 to +24 V). Main contacts: drive U/T1 → 1/L1 (V and W follow), 2/T1 → motor U. 13–14 can report back to a PLC input.';
+    else if (def.sim === 'olr') tip = 'Overload relay added. Put it between the contactor and the motor (2/T1 → 1/L1 …) and wire the NC 95–96 in series with the stop circuit or to a PLC input.';
+    else if (def.sim === 'prox') tip = `${def.short} added. BN → +24 V, BU → 0 V, BK → a PLC input (X). PNP needs S/S at 0 V, NPN needs S/S at +24 V.`;
+    else if (def.sim === 'limit') tip = `${def.short} added. Wire it like a push button: +24 V → 13, 14 → a PLC input (or 21–22 for the NC contact).`;
+    else if (def.sim === 'selector3') tip = `${def.short} added. +24 V → 13 and 23; 14 → the FWD input (e.g. X0), 24 → the REV input (X1). The middle position opens both.`;
+    else if (def.sim === 'relay') tip = 'Relay added. Coil: PLC Y → A1 (+), A2 → 0 V. Contact: 11 is common, 14 closes (NO) and 12 opens (NC) when the coil is ON — switch a 230 V load or a VFD input with it.';
+    else if (def.sim === 'cb') tip = `${def.short} added. Feed the top terminal(s), take the protected supply from the bottom. 3-pole: drive / supply → 1 3 5, 2 4 6 → contactor or motor.`;
+    else if (def.sim === 'tb') tip = 'Terminal block added. Top terminal n and bottom terminal n are joined — land field wires (sensors, buttons, motor) on one side and the panel wiring on the other.';
+    else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP-20EX2: V0+, with AIG to 0 V). Tap it to set the value.`;
     this.lab.commitHardware('Add ' + def.short);
     this.select({ kind: 'dev', id: dev.id });
     setTimeout(() => this.scene.focus(dev.id), 60);
@@ -876,11 +890,20 @@ export class PanelView {
     if (!dev) return;
     const val = h('b', {}, '');
     const range = h('input', { class: 'range', type: 'range', min: 0, max: 100, value: Math.round((dev.state.pos ?? 0.5) * 100) });
-    const upd = () => { const v = +range.value / 100; this.scene.system.act(devId, 'pos', v); val.textContent = `${range.value}%  ·  ${(v * 10).toFixed(1)} V`; this.scene.dirty = true; };
+    const pr = deviceProps(dev);
+    const atx = DEVICE_DEFS[dev.type].sim === 'atx';
+    const upd = () => {
+      const v = +range.value / 100;
+      this.scene.system.act(devId, 'pos', v);
+      // transmitters show the measured value in their unit as well as the signal
+      const m = +pr.min + v * (pr.max - pr.min);
+      val.textContent = atx ? `${m.toFixed(Math.abs(pr.max - pr.min) <= 20 ? 1 : 0)} ${pr.unit}  ·  ${(v * 10).toFixed(1)} V` : `${range.value}%  ·  ${(v * 10).toFixed(1)} V`;
+      this.scene.dirty = true;
+    };
     range.addEventListener('input', upd);
     range.addEventListener('change', () => this.lab.save());
     this.potCard = h('div', { class: 'pot-card' },
-      h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'Potentiometer'}`), val), range,
+      h('div', { class: 'ctl-head' }, h('label', {}, `${pr.label || 'Potentiometer'}`), val), range,
       h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
     this.el.appendChild(this.potCard);
     upd();

@@ -10,7 +10,7 @@ import { drawSegDisplay } from './sevenseg.js';
 
 const LAMP_COLORS = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
 const CAP_COLORS = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#1b1d22', white: '#e9ecef' };
-const SOCK_BY_PORT = { '13': '#d62828', '11': '#d62828', '14': '#1b1d22', '12': '#1b1d22', X1: '#d62828', X2: '#1b1d22', '+': '#d62828', '-': '#1b1d22', BN: '#7a4a24', BU: '#2563eb', BK: '#1b1d22', '1': '#d62828', '2': '#f2b705', '3': '#1b1d22' };
+const SOCK_BY_PORT = { '13': '#d62828', '11': '#d62828', '14': '#1b1d22', '12': '#1b1d22', X1: '#d62828', X2: '#1b1d22', '+': '#d62828', '-': '#1b1d22', BN: '#7a4a24', BU: '#2563eb', BK: '#1b1d22', '21': '#d62828', '22': '#1b1d22', '23': '#d62828', '24': '#1b1d22', '1': '#d62828', '2': '#f2b705', '3': '#1b1d22' };
 
 function control(mesh, devId, action, extra = {}) {
   mesh.userData.control = { devId, action, ...extra };
@@ -490,9 +490,11 @@ function buildEstop(dev) {
 
 function buildSelector(dev) {
   const pr = deviceProps(dev);
+  const three = dev.type === 'selector3';
   const { group, B } = plate(dev, pr.label || 'MODE', (g, W) => {
     txt(g, pr.pos0 || '0', W / 2 - 15, 20, { size: 3.2, weight: 800, color: '#cbd5e1' });
     txt(g, pr.pos1 || '1', W / 2 + 15, 20, { size: 3.2, weight: 800, color: '#cbd5e1' });
+    if (three) txt(g, '0', W / 2, 16, { size: 3.2, weight: 800, color: '#cbd5e1' });
   });
   B.add(cyl(14, 14.5, 4, 32), MAT.chrome, M4(0, 50, 7, Math.PI / 2));
   B.add(cyl(12, 12, 4.4, 28), MAT.blackPlastic, M4(0, 50, 7.6, Math.PI / 2));
@@ -510,7 +512,13 @@ function buildSelector(dev) {
   group.add(hit);
   return {
     group, controls: [hit],
-    update(rt) { const a = rt.dev.state.on ? -Math.PI / 4 : Math.PI / 4; if (knob.rotation.z === a) return false; knob.rotation.z = a; return true; },
+    update(rt) {
+      const s = rt.dev.state;
+      const a = three ? -(s.pos || 0) * Math.PI / 4 : s.on ? -Math.PI / 4 : Math.PI / 4;
+      if (knob.rotation.z === a) return false;
+      knob.rotation.z = a;
+      return true;
+    },
   };
 }
 
@@ -574,22 +582,49 @@ function buildBuzzer(dev) {
 
 function buildProx(dev) {
   const pr = deviceProps(dev);
-  const { group, B } = plate(dev, pr.label || 'SENSOR', (g, W) => txt(g, 'PNP · NO', W / 2, 13, { size: 2.6, weight: 700, color: '#64748b' }));
-  // M18 sensor lying along x, aimed at +x
-  B.add(cyl(9, 9, 44, 24), mat('proxBody', { color: 0xb7a46a, metalness: 0.85, roughness: 0.32 }), M4(-6, 50, 12, 0, 0, Math.PI / 2));
-  B.add(cyl(9.3, 9.3, 3, 6), MAT.steel, M4(-14, 50, 12, 0, 0, Math.PI / 2));
-  B.add(cyl(9.3, 9.3, 3, 6), MAT.steel, M4(4, 50, 12, 0, 0, Math.PI / 2));
-  B.add(cyl(8.6, 8.6, 3, 24), mat('proxFace', { color: 0x2563eb, roughness: 0.5 }), M4(17.5, 50, 12, 0, 0, Math.PI / 2));
-  B.add(box(4, 22, 4), MAT.darkPlastic, M4(-20, 38, 8));
-  B.build(group);
+  const look = DEVICE_DEFS[dev.type].look || 'ind';
+  const out = pr.output === 'NPN' ? 'NPN' : 'PNP';
+  const { group, B } = plate(dev, pr.label || 'SENSOR', (g, W) => txt(g, `${out} · NO`, W / 2, 13, { size: 2.6, weight: 700, color: '#64748b' }));
+  let target, ghost, beam = null;
+  if (look === 'photo') {
+    // rectangular photoelectric sensor aimed at +x, a cardboard box comes into its beam
+    B.add(rbox(24, 30, 18, 2.5), mat('photoBody', { color: 0xf2b705, roughness: 0.45 }), M4(-12, 50, 12));
+    B.add(rbox(4, 20, 14, 1.5), MAT.blackPlastic, M4(1.5, 50, 12));
+    B.add(cyl(4.2, 4.2, 1.2, 20), mat('photoLens', { color: 0x3a0d10, roughness: 0.1, metalness: 0.3 }), M4(4, 55, 12, 0, 0, Math.PI / 2));
+    B.add(cyl(4.2, 4.2, 1.2, 20), mat('photoLens2', { color: 0x10141c, roughness: 0.1, metalness: 0.3 }), M4(4, 45, 12, 0, 0, Math.PI / 2));
+    B.add(box(4, 18, 4), MAT.darkPlastic, M4(-20, 32, 8));
+    B.build(group);
+    target = new THREE.Mesh(rbox(12, 24, 16, 1), mat('cardboard', { color: 0xb07a43, roughness: 0.85 }));
+    ghost = mat('targetGhostBox', { color: 0xb07a43, transparent: true, opacity: 0.25 });
+    beam = new THREE.Mesh(box(1, 1.6, 1.6), new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0, depthWrite: false }));
+    beam.position.set(14, 55, 12);
+    group.add(beam);
+  } else {
+    // M18 sensor lying along x, aimed at +x
+    const body = look === 'cap' ? mat('capBody', { color: 0x30343b, roughness: 0.5 }) : mat('proxBody', { color: 0xb7a46a, metalness: 0.85, roughness: 0.32 });
+    B.add(cyl(9, 9, 44, 24), body, M4(-6, 50, 12, 0, 0, Math.PI / 2));
+    B.add(cyl(9.3, 9.3, 3, 6), MAT.steel, M4(-14, 50, 12, 0, 0, Math.PI / 2));
+    B.add(cyl(9.3, 9.3, 3, 6), MAT.steel, M4(4, 50, 12, 0, 0, Math.PI / 2));
+    B.add(cyl(8.6, 8.6, 3, 24), look === 'cap' ? mat('capFace', { color: 0xf97316, roughness: 0.5 }) : mat('proxFace', { color: 0x2563eb, roughness: 0.5 }), M4(17.5, 50, 12, 0, 0, Math.PI / 2));
+    B.add(box(4, 22, 4), MAT.darkPlastic, M4(-20, 38, 8));
+    B.build(group);
+    if (look === 'cap') {
+      target = new THREE.Mesh(rbox(12, 22, 14, 1.5), mat('liquid', { color: 0x38bdf8, roughness: 0.15, transparent: true, opacity: 0.85 }));
+      ghost = mat('liquidGhost', { color: 0x38bdf8, transparent: true, opacity: 0.2 });
+    } else {
+      target = new THREE.Mesh(rbox(12, 22, 14, 1.5), MAT.steel);
+      ghost = mat('targetGhost', { color: 0x8892a0, transparent: true, opacity: 0.3 });
+    }
+  }
+  const solid = target.material;
   const led = ledMat('#ffb020');
   const lm = new THREE.Mesh(cyl(2.2, 2.2, 2, 12), led);
-  lm.rotation.z = Math.PI / 2; lm.position.set(-29, 50, 12);
+  if (look === 'photo') { lm.rotation.x = Math.PI / 2; lm.position.set(-16, 60, 21.4); } else { lm.rotation.z = Math.PI / 2; lm.position.set(-29, 50, 12); }
   group.add(lm);
-  const target = new THREE.Mesh(rbox(12, 22, 14, 1.5), MAT.steel);
   target.position.set(27, 50, 12);
   group.add(target);
-  const hit = control(new THREE.Mesh(box(64, 40, 26), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: 'Metal part in front of the sensor' });
+  const what = look === 'photo' ? 'Box in the light beam' : look === 'cap' ? 'Material / liquid in front of the sensor' : 'Metal part in front of the sensor';
+  const hit = control(new THREE.Mesh(box(64, 40, 26), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: what });
   hit.position.set(0, 50, 12);
   group.add(hit);
   return {
@@ -598,10 +633,121 @@ function buildProx(dev) {
       let ch = setLed(led, rt.powered && rt.dev.state.target, 2.4);
       const here = !!rt.dev.state.target;
       const x = here ? 27 : 40;
-      if (target.position.x !== x) { target.position.x = x; target.material = here ? MAT.steel : mat('targetGhost', { color: 0x8892a0, transparent: true, opacity: 0.3 }); ch = true; }
+      if (target.position.x !== x) { target.position.x = x; target.material = here ? solid : ghost; ch = true; }
+      if (beam) {
+        const op = rt.powered ? 0.55 : 0, len = here ? 14 : 26;
+        if (beam.material.opacity !== op || beam.scale.x !== len) { beam.material.opacity = op; beam.scale.x = len; beam.position.x = 4 + len / 2; ch = true; }
+      }
       return ch;
     },
   };
+}
+
+/** Limit switch (roller lever) or float level switch: a passive NO 13–14 + NC 21–22 contact. */
+function buildLimit(dev) {
+  const pr = deviceProps(dev);
+  const look = DEVICE_DEFS[dev.type].look;
+  const { group, B } = plate(dev, pr.label || 'LS1', (g, W) => txt(g, '1 NO + 1 NC', W / 2, 13, { size: 2.6, weight: 700, color: '#64748b' }));
+  let update;
+  if (look === 'float') {
+    // a little tank with a float: the level rises to the float when actuated
+    const glass = new THREE.Mesh(rbox(34, 34, 16, 2), new THREE.MeshStandardMaterial({ color: 0xcfe8ff, transparent: true, opacity: 0.22, roughness: 0.1, depthWrite: false }));
+    glass.position.set(0, 50, 12);
+    group.add(glass);
+    B.add(box(36, 2, 18), MAT.alu, M4(0, 32, 12));
+    B.add(cyl(0.8, 0.8, 10, 8), MAT.darkPlastic, M4(8, 62, 12));
+    B.build(group);
+    const water = new THREE.Mesh(box(32, 1, 14), mat('water', { color: 0x2f8de4, transparent: true, opacity: 0.7, roughness: 0.1 }));
+    group.add(water);
+    const float = new THREE.Mesh(cyl(4, 4, 7, 16), mat('floatBody', { color: 0xf2b705, roughness: 0.4 }));
+    group.add(float);
+    update = (rt) => {
+      const on = !!(rt.dev.state && rt.dev.state.on), lv = on ? 26 : 9;
+      if (water.scale.y === lv) return false;
+      water.scale.y = lv; water.position.set(0, 33 + lv / 2, 12);
+      float.position.set(8, on ? 33 + lv + 1 : 52, 12);
+      return true;
+    };
+    update({ dev });
+  } else {
+    // die-cast limit switch body with a roller lever; a cam pushes the lever down
+    B.add(rbox(24, 30, 18, 2), mat('lsBody', { color: 0xa9b1bb, metalness: 0.6, roughness: 0.4 }), M4(-12, 46, 12));
+    B.add(rbox(14, 10, 16, 2), MAT.blackPlastic, M4(-12, 66, 12));
+    B.add(cyl(3, 3, 6, 16), MAT.steel, M4(-12, 68, 21, Math.PI / 2));
+    B.build(group);
+    const lever = new THREE.Group();
+    lever.position.set(-12, 68, 22);
+    const arm = new THREE.Mesh(box(22, 3, 3), MAT.steel);
+    arm.position.set(11, 0, 0);
+    const roller = new THREE.Mesh(cyl(4, 4, 5, 18), MAT.blackPlastic);
+    roller.rotation.x = Math.PI / 2; roller.position.set(22, 0, 0);
+    lever.add(arm, roller);
+    group.add(lever);
+    const cam = new THREE.Mesh(rbox(14, 8, 12, 2), mat('cam', { color: 0xd62828, roughness: 0.45 }));
+    cam.position.set(20, 78, 22);
+    group.add(cam);
+    update = (rt) => {
+      const on = !!rt.dev.state.on, a = on ? -0.42 : 0;
+      if (lever.rotation.z === a) return false;
+      lever.rotation.z = a; cam.position.x = on ? 10 : 26;
+      return true;
+    };
+  }
+  const hit = control(new THREE.Mesh(box(64, 50, 30), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: look === 'float' ? 'Raise / lower the level' : 'Push the lever' });
+  hit.position.set(0, 52, 14);
+  group.add(hit);
+  return { group, controls: [hit], update };
+}
+
+/** 0–10 V transmitter (temperature or pressure): drag its value on the card that a tap opens. */
+function buildAtx(dev) {
+  const pr = deviceProps(dev);
+  const look = DEVICE_DEFS[dev.type].look;
+  const { group, B } = plate(dev, pr.label || 'SENSOR', (g, W) => txt(g, `${pr.min}–${pr.max} ${pr.unit} → 0–10 V`, W / 2, 13, { size: 2.5, weight: 700, color: '#64748b' }));
+  let update;
+  if (look === 'press') {
+    // dial gauge with a needle
+    B.add(cyl(16, 16, 8, 32), MAT.chrome, M4(0, 52, 8, Math.PI / 2));
+    B.add(cyl(6, 6, 10, 6), MAT.brass, M4(0, 32, 8));
+    B.build(group);
+    const face = decal(30, 30, (g) => {
+      g.fillStyle = '#f8fafc'; g.beginPath(); g.arc(15, 15, 14.6, 0, 7); g.fill();
+      g.strokeStyle = '#111827'; g.lineWidth = 0.4;
+      for (let i = 0; i <= 10; i++) {
+        const a = (-135 + i * 27) * Math.PI / 180 - Math.PI / 2;
+        g.beginPath(); g.moveTo(15 + Math.cos(a) * 11, 15 + Math.sin(a) * 11); g.lineTo(15 + Math.cos(a) * (i % 5 ? 12.4 : 13.4), 15 + Math.sin(a) * (i % 5 ? 12.4 : 13.4)); g.stroke();
+      }
+      txt(g, pr.unit, 15, 21, { size: 3, weight: 700, color: '#334155' });
+    }, { ppm: 14 });
+    face.position.set(0, 52, 12.1);
+    group.add(face);
+    const needle = new THREE.Group();
+    const nd = new THREE.Mesh(box(0.9, 11, 0.5), mat('needle', { color: 0xd62828 }));
+    nd.position.y = 5;
+    needle.add(nd);
+    needle.position.set(0, 52, 12.6);
+    group.add(needle);
+    update = (rt) => { const a = -((rt.dev.state.pos ?? 0.5) - 0.5) * 1.5 * Math.PI; if (needle.rotation.z === a) return false; needle.rotation.z = a; return true; };
+  } else {
+    // transmitter head on a PT100 probe, with a bar "thermometer" next to it
+    B.add(cyl(11, 11, 12, 28), mat('txHead', { color: 0x1d4f9c, roughness: 0.4 }), M4(-10, 60, 10, Math.PI / 2));
+    B.add(cyl(2, 2, 26, 12), MAT.steel, M4(-10, 40, 8));
+    B.add(rbox(8, 44, 4, 2), MAT.blackPlastic, M4(16, 50, 7));
+    B.build(group);
+    const bar = new THREE.Mesh(box(4, 1, 2), new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0.6 }));
+    group.add(bar);
+    update = (rt) => {
+      const k = Math.max(0.02, Math.min(1, rt.dev.state.pos ?? 0.5)), hgt = 40 * k;
+      if (bar.scale.y === hgt) return false;
+      bar.scale.y = hgt; bar.position.set(16, 30 + hgt / 2, 9.4);
+      return true;
+    };
+    update({ dev });
+  }
+  const hit = control(new THREE.Mesh(box(64, 50, 26), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'pot', { label: pr.label });
+  hit.position.set(0, 50, 12);
+  group.add(hit);
+  return { group, controls: [hit], update };
 }
 
 function buildPot(dev) {
@@ -633,6 +779,184 @@ function buildPot(dev) {
     group, controls: [hit],
     update(rt) { const a = -((rt.dev.state.pos ?? 0.5) - 0.5) * 1.5 * Math.PI; if (knob.rotation.z === a) return false; knob.rotation.z = a; return true; },
   };
+}
+
+// ====================================================================== contactor + overload relay
+function buildContactor(dev) {
+  const pr = deviceProps(dev);
+  const group = new THREE.Group();
+  const B = new Builder();
+  const grey = mat('kmBody', { color: 0xe5e7e3, roughness: 0.5 });
+  B.add(rbox(45, 82, 66, 3), grey, M4(0, 41, 33));
+  B.add(rbox(43, 16, 12, 1.5), MAT.termBlock, M4(0, 74, 74.5));
+  B.add(rbox(43, 16, 12, 1.5), MAT.termBlock, M4(0, 8, 74.5));
+  B.add(rbox(37, 44, 16, 3), mat('kmFront', { color: 0xd3d6d2, roughness: 0.5 }), M4(0, 41, 72));
+  B.add(box(30, 10, 14), MAT.darkPlastic, M4(0, -2, 20));
+  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2);
+  B.build(group);
+  const coil = pr.coil === '230AC' ? '230 V AC' : '24 V DC';
+  const front = decal(36, 42, (g, W) => {
+    txt(g, pr.label || 'KM1', W / 2, 5, { size: 5, weight: 800, color: '#111827', font: FONT_D });
+    txt(g, '9 A · AC-3 4 kW', W / 2, 24, { size: 2.6, weight: 700, color: '#374151' });
+    txt(g, `Coil ${coil}`, W / 2, 29, { size: 2.6, weight: 800, color: pr.coil === '230AC' ? '#b91c1c' : '#1d4f9c' });
+    txt(g, '1NO + 1NC', W / 2, 34, { size: 2.4, weight: 700, color: '#4b5563' });
+    g.strokeStyle = '#374151'; g.lineWidth = 0.4;
+    for (let i = 0; i < 3; i++) { const x = 9 + i * 9; g.beginPath(); g.moveTo(x, 37); g.lineTo(x + 3, 40); g.stroke(); }
+  }, { ppm: 12 });
+  front.position.set(0, 41, 80.1);
+  group.add(front);
+  const top = labelStrip(43, 4, devicePorts(dev).filter((p) => p.pos[1] > 40).map((p) => ({ x: p.pos[0], label: p.label.replace(/^\d\//, ''), size: 2 })), { color: '#111827' });
+  top.position.set(0, 64.2, 80.2); group.add(top);
+  const bot = labelStrip(43, 4, devicePorts(dev).filter((p) => p.pos[1] <= 40).map((p) => ({ x: p.pos[0], label: p.label.replace(/^\d\//, ''), size: 2 })), { color: '#111827' });
+  bot.position.set(0, 17.8, 80.2); group.add(bot);
+  // armature indicator in a window below the label: green O = open, red I = pulled in
+  const win = new THREE.Mesh(rbox(14, 9, 1.2, 0.8), MAT.blackPlastic);
+  win.position.set(0, 47, 80.6);
+  group.add(win);
+  const flag = new THREE.Mesh(box(8, 3.6, 0.8), mat('kmFlagOff', { color: 0x2f9e44, roughness: 0.4 }));
+  flag.position.set(0, 45.4, 81.4);
+  group.add(flag);
+  const hit = control(new THREE.Mesh(box(40, 48, 14), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'press', { label: `${pr.label || 'Contactor'} (push in by hand)` });
+  hit.position.set(0, 41, 82);
+  group.add(hit);
+  return {
+    group, controls: [hit],
+    update(rt) {
+      const on = !!rt.closed, y = on ? 48.6 : 45.4;
+      if (flag.position.y === y) return false;
+      flag.position.y = y;
+      flag.material = on ? mat('kmFlagOn', { color: 0xd62828, roughness: 0.4 }) : mat('kmFlagOff', { color: 0x2f9e44, roughness: 0.4 });
+      return true;
+    },
+  };
+}
+
+function buildOlr(dev) {
+  const pr = deviceProps(dev);
+  const group = new THREE.Group();
+  const B = new Builder();
+  B.add(rbox(45, 66, 66, 3), mat('olrBody', { color: 0xe5e7e3, roughness: 0.5 }), M4(0, 33, 33));
+  B.add(rbox(43, 16, 12, 1.5), MAT.termBlock, M4(0, 58, 74.5));
+  B.add(rbox(43, 16, 12, 1.5), MAT.termBlock, M4(0, 8, 74.5));
+  B.add(rbox(37, 28, 14, 3), mat('olrFront', { color: 0xd3d6d2, roughness: 0.5 }), M4(0, 33, 71));
+  B.add(cyl(5.5, 5.5, 3, 24), MAT.blackPlastic, M4(-9, 33, 79, Math.PI / 2));
+  B.add(box(30, 10, 14), MAT.darkPlastic, M4(0, -2, 20));
+  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2);
+  B.build(group);
+  const front = decal(36, 26, (g, W) => {
+    txt(g, pr.label || 'F1', W / 2, 4, { size: 4, weight: 800, color: '#111827', font: FONT_D });
+    txt(g, '2.5–4 A', 9, 22.5, { size: 2.4, weight: 700, color: '#374151' });
+    txt(g, 'RESET', 27, 22.5, { size: 2.4, weight: 800, color: '#1d4f9c' });
+  }, { ppm: 12 });
+  front.position.set(0, 33, 78.1);
+  group.add(front);
+  const btn = new THREE.Mesh(cyl(4.5, 4.5, 4, 20), mat('olrReset', { color: 0x1f5fd6, roughness: 0.35 }));
+  btn.rotation.x = Math.PI / 2; btn.position.set(9, 33, 80);
+  group.add(btn);
+  const flag = new THREE.Mesh(box(4, 4, 1), mat('olrFlagOk', { color: 0x2f9e44 }));
+  flag.position.set(-9, 33, 80.8);
+  group.add(flag);
+  const hit = control(new THREE.Mesh(box(40, 32, 14), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: `${pr.label || 'Overload relay'}: trip / reset` });
+  hit.position.set(0, 33, 80);
+  group.add(hit);
+  return {
+    group, controls: [hit],
+    update(rt) {
+      const t = !!rt.dev.state.tripped, z = t ? 82 : 80;
+      if (btn.position.z === z) return false;
+      btn.position.z = z;
+      flag.material = t ? mat('olrFlagTrip', { color: 0xf59e0b }) : mat('olrFlagOk', { color: 0x2f9e44 });
+      return true;
+    },
+  };
+}
+
+function buildRelay(dev) {
+  const pr = deviceProps(dev);
+  const group = new THREE.Group();
+  const B = new Builder();
+  B.add(rbox(28, 80, 40, 2), MAT.termBlock, M4(0, 40, 20));
+  B.add(box(30, 10, 14), MAT.darkPlastic, M4(0, -2, 20));
+  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 1.8);
+  B.build(group);
+  // the plug-in relay: a clear cover over the coil and contacts
+  const cover = new THREE.Mesh(rbox(24, 40, 34, 2), new THREE.MeshStandardMaterial({ color: 0xcfd8e3, roughness: 0.1, transparent: true, opacity: 0.55 }));
+  cover.position.set(0, 40, 57);
+  group.add(cover);
+  const core = new THREE.Mesh(cyl(6, 6, 18, 16), mat('relayCoil', { color: 0xb45309, roughness: 0.5, metalness: 0.4 }));
+  core.position.set(0, 36, 52);
+  group.add(core);
+  const front = decal(24, 40, (g, W) => {
+    txt(g, pr.label || 'K1', W / 2, 5, { size: 4.2, weight: 800, color: '#111827', font: FONT_D });
+    txt(g, '24 V DC', W / 2, 33, { size: 2.4, weight: 800, color: '#1d4f9c' });
+    txt(g, '1 CO 10 A', W / 2, 37, { size: 2.2, weight: 700, color: '#374151' });
+  }, { ppm: 12 });
+  front.position.set(0, 40, 74.2);
+  group.add(front);
+  const led = new THREE.Mesh(cyl(1.8, 1.8, 1.5, 12), ledMat('#ff3434'));
+  led.rotation.x = Math.PI / 2; led.position.set(7, 52, 74.5);
+  group.add(led);
+  const hit = control(new THREE.Mesh(box(26, 40, 12), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'press', { label: `${pr.label || 'Relay'} (test button)` });
+  hit.position.set(0, 40, 76);
+  group.add(hit);
+  return { group, controls: [hit], update(rt) { return setLed(led.material, !!rt.coil); } };
+}
+
+function buildCb(dev) {
+  const pr = deviceProps(dev);
+  const n = pr.poles === '3P' ? 3 : 1, W = n === 3 ? 54 : 18;
+  const group = new THREE.Group();
+  const B = new Builder();
+  B.add(rbox(W, 90, 64, 2.5), MAT.white, M4(0, 45, 32));
+  B.add(rbox(W - 4, 44, 8, 2), MAT.white, M4(0, 45, 67));
+  B.add(box(Math.min(30, W - 4), 10, 14), MAT.darkPlastic, M4(0, -2, 20));
+  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.1);
+  B.build(group);
+  const front = decal(W - 4, 86, (g, w) => {
+    txt(g, pr.rating || 'C6', w / 2, 9, { size: 4.4, weight: 800, color: '#111827', font: FONT_D });
+    txt(g, pr.label || 'QF1', w / 2, 15, { size: 2.8, weight: 800, color: '#1d4f9c' });
+    txt(g, n === 3 ? '400 V~' : '230 V~', w / 2, 76, { size: 2.4, weight: 700, color: '#4b5563' });
+  }, { ppm: 12 });
+  front.position.set(0, 45, 64.06);
+  group.add(front);
+  const ind = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(8, W - 8), 4), offsetMat(new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 })));
+  ind.position.set(0, 60.5, 71.1);
+  group.add(ind);
+  const lever = new THREE.Group();
+  lever.position.set(0, 45, 71);
+  const lv = new THREE.Mesh(rbox(Math.min(W - 6, 44), 18, 7, 1.6), mat('mcbLever', { color: 0x1f3f8f, roughness: 0.45 }));
+  lv.position.set(0, 7, 3);
+  lever.add(lv);
+  group.add(lever);
+  const hit = control(new THREE.Mesh(box(W, 44, 16), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: `${pr.label || 'Breaker'} ON / OFF` });
+  hit.position.set(0, 45, 74);
+  group.add(hit);
+  return {
+    group, controls: [hit],
+    update(rt) {
+      const on = rt.dev.state.on !== false, a = on ? -0.55 : 0.75;
+      if (lever.rotation.x === a) return false;
+      lever.rotation.x = a;
+      ind.material.color.set(on ? 0xd62828 : 0x2f9e44);
+      return true;
+    },
+  };
+}
+
+function buildTb(dev) {
+  const pr = deviceProps(dev);
+  const group = new THREE.Group();
+  const B = new Builder();
+  const grey = mat('tbGrey', { color: 0x9aa3ad, roughness: 0.55 });
+  for (let i = 0; i < 6; i++) B.add(rbox(9.4, 56, 44, 1), i === 5 ? mat('tbBlue', { color: 0x2563eb, roughness: 0.55 }) : grey, M4(-25 + i * 10, 28, 22));
+  B.add(box(62, 4, 30), MAT.darkPlastic, M4(0, -2, 15));
+  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 1.8);
+  B.build(group);
+  const marks = labelStrip(60, 5, [1, 2, 3, 4, 5, 6].map((k) => ({ x: -25 + (k - 1) * 10, label: String(k), size: 2.6 })), { color: '#111827', bg: '#f8fafc' });
+  marks.position.set(0, 28, 44.2); group.add(marks);
+  const tag = labelStrip(20, 5, [{ x: 0, label: pr.label || 'X1', size: 3 }], { color: '#111827', bg: '#fde047' });
+  tag.position.set(-20, 36, 44.3); group.add(tag);
+  return { group, controls: [], update() { return false; } };
 }
 
 // ====================================================================== motor
@@ -859,7 +1183,7 @@ function buildLaptop(dev, ctx) {
   return { group, controls: [screen], update() { return false; } };
 }
 
-const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, pot: buildPot, motor: buildMotor, laptop: buildLaptop };
+const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop };
 
 export function buildModel(dev, ctx) {
   const def = DEVICE_DEFS[dev.type];

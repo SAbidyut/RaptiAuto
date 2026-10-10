@@ -1,6 +1,6 @@
 // Draws the DOP HMI screen (800 × 480) to a canvas: boot screen, objects, comm error box,
 // on-screen keypad. Used for the 3D touch screen texture and the HMI tab.
-import { HMI_W, HMI_H } from '../sim/hmi.js';
+import { HMI_W, HMI_H, parseStates } from '../sim/hmi.js';
 
 const F = "'Inter', system-ui, sans-serif";
 const FM = "'JetBrains Mono', ui-monospace, monospace";
@@ -41,6 +41,8 @@ export function renderHmi(canvas, rt, screen, { design = false } = {}) {
   if (!design && rt) {
     if (!rt.commOk) commError(g, W, rt, t);
     if (rt.keypad) keypad(g, rt);
+    if (rt.sysMenu) sysMenu(g, rt);
+    if (rt.bright < 1) { g.fillStyle = `rgba(0,0,0,${(1 - rt.bright).toFixed(2)})`; g.fillRect(0, 0, W, H); }
   }
   g.restore();
 }
@@ -71,6 +73,39 @@ function commError(g, W, rt, t) {
   text(g, 'Communication Error', x + 16, y + 19, 18, '#fff', { align: 'left', weight: 800 });
   text(g, 'PLC No Response', x + w / 2, y + 66, 24, '#111827', { weight: 800 });
   text(g, 'Check the cable, PLC power and the COM settings', x + w / 2, y + 96, 14, '#475569', { weight: 600 });
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+function clockText(d, fmt) {
+  const date = `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  return fmt === 'time' ? time : fmt === 'date' ? date : `${date}  ${time}`;
+}
+
+function sysMenu(g, rt) {
+  const L = rt.sysMenuLayout();
+  const m = rt.sysMenu;
+  g.fillStyle = 'rgba(2,6,14,.6)'; g.fillRect(0, 0, HMI_W, HMI_H);
+  g.fillStyle = '#e5e9f0'; rr(g, L.x, L.y, L.w, L.h, 12); g.fill();
+  g.fillStyle = '#334155'; rr(g, L.x, L.y, L.w, 42, 12); g.fill(); g.fillRect(L.x, L.y + 28, L.w, 14);
+  text(g, 'System Setting', L.x + 16, L.y + 22, 18, '#fff', { align: 'left', weight: 800 });
+  text(g, 'DOP-107BV', L.x + L.w - 16, L.y + 22, 13, '#cbd5e1', { align: 'right', weight: 700 });
+  const rows = [
+    ['Firmware', 'V2.00.12'], ['Resolution', '800 × 480'], ['COM1', '9600 7E1'], ['Date', clockText(new Date(), 'date')],
+    ['Time', clockText(new Date(), 'time')], ['Alarms', `${rt.alarmLog.filter((a) => a.off === null).length} active · ${rt.alarmLog.length} logged`], ['Backlight', `${Math.round(rt.bright * 100)} %`],
+  ];
+  rows.forEach(([k, v], i) => {
+    text(g, k, L.x + 20, L.y + 72 + i * 36, 14, '#64748b', { align: 'left', weight: 700 });
+    text(g, v, L.x + 120, L.y + 72 + i * 36, 15, '#0f172a', { align: 'left', weight: 700, font: FM });
+  });
+  for (const b of L.keys) {
+    const flash = m.flash === b.k && rt.time - m.flashT < 0.12;
+    g.fillStyle = flash ? '#93c5fd' : b.k === 'exit' ? '#2563eb' : '#ffffff';
+    rr(g, b.x, b.y, b.w, b.h, 8); g.fill();
+    g.strokeStyle = 'rgba(15,23,42,.2)'; g.lineWidth = 1.5; g.stroke();
+    text(g, b.label, b.x + b.w / 2, b.y + b.h / 2 + 1, 16, b.k === 'exit' ? '#fff' : '#0f172a', { weight: 800 });
+  }
+  text(g, 'Hold the top-left corner to open this menu', L.x + 20, L.y + L.h - 40, 12, '#64748b', { align: 'left', weight: 600 });
 }
 
 function keypad(g, rt) {
@@ -244,6 +279,135 @@ function drawEl(g, el, val, rt, t, design) {
           g.stroke();
         }
       }
+      break;
+    }
+    case 'state': {
+      const v = el.word ? val(el.word, true) : el.bit ? (val(el.bit, false) ? 1 : 0) : null;
+      const states = parseStates(el.states);
+      const st = states.find((x) => x.v === v) || { text: v === null ? '----' : `? ${v}`, color: '#334155' };
+      const top = el.label ? 18 : 0;
+      if (el.label) text(g, el.label, x + 4, y + 8, 12, '#7dd3fc', { align: 'left', weight: 800 });
+      g.fillStyle = st.color; rr(g, x, y + top, w, h - top, 8); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 1.5; g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.12)'; rr(g, x + 3, y + top + 3, w - 6, (h - top) * 0.4, 6); g.fill();
+      text(g, st.text, x + w / 2, y + top + (h - top) / 2 + 1, Math.min(22, (h - top) * 0.5), '#fff', { weight: 800, font: FD });
+      break;
+    }
+    case 'setval': {
+      const [c1, c2] = BTN[el.color] || BTN.blue;
+      const py = pressed ? 3 : 0;
+      if (!pressed) { g.fillStyle = 'rgba(0,0,0,.35)'; rr(g, x, y + 4, w, h, 10); g.fill(); }
+      const gr = g.createLinearGradient(0, y, 0, y + h);
+      gr.addColorStop(0, pressed ? c2 : c1); gr.addColorStop(1, c2);
+      g.fillStyle = gr; rr(g, x, y + py, w, h - 2, 10); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 1.5; g.stroke();
+      text(g, el.text || (el.mode === 'dec' ? '−' : el.mode === 'inc' ? '+' : 'SET'), x + w / 2, y + py + h / 2, Math.min(30, h * 0.48), '#fff', { weight: 800, font: FD });
+      break;
+    }
+    case 'slider': {
+      const v = scaled(val(el.word, true), el.dec);
+      const min = el.min ?? 0, max = el.max ?? 100;
+      const k = v === null ? 0 : Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
+      const x0 = x + 18, x1 = x + w - 18, ty = y + h - 22;
+      text(g, el.label || '', x + 4, y + 10, 13, '#7dd3fc', { align: 'left', weight: 800 });
+      text(g, `${v === null ? '----' : v.toFixed(el.dec || 0)}${el.unit ? ' ' + el.unit : ''}`, x + w - 4, y + 10, 15, '#f8fafc', { align: 'right', font: FM, weight: 600 });
+      g.fillStyle = '#050b18'; rr(g, x0 - 6, ty - 7, x1 - x0 + 12, 14, 7); g.fill();
+      g.fillStyle = '#22d3ee'; rr(g, x0 - 6, ty - 7, (x1 - x0) * k + 12, 14, 7); g.fill();
+      for (let i = 0; i <= 10; i++) { g.fillStyle = '#334155'; g.fillRect(x0 + (x1 - x0) * i / 10 - 1, ty + 10, 2, i % 5 ? 5 : 9); }
+      const kx = x0 + (x1 - x0) * k;
+      g.fillStyle = 'rgba(0,0,0,.4)'; g.beginPath(); g.arc(kx, ty + 3, 15, 0, Math.PI * 2); g.fill();
+      const kg = g.createLinearGradient(0, ty - 14, 0, ty + 14); kg.addColorStop(0, '#f8fafc'); kg.addColorStop(1, '#94a3b8');
+      g.fillStyle = kg; g.beginPath(); g.arc(kx, ty, 14, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#0e7490'; g.lineWidth = 3; g.stroke();
+      break;
+    }
+    case 'selsw': {
+      const on = !!val(el.bit, false);
+      const cx = x + w / 2, r = Math.min(w, h - 26) / 2 - 6, cy = y + 24 + r;
+      text(g, el.off || 'OFF', cx - r * 0.75, y + 10, 13, on ? '#64748b' : '#f8fafc', { weight: 800 });
+      text(g, el.on || 'ON', cx + r * 0.75, y + 10, 13, on ? '#4ade80' : '#64748b', { weight: 800 });
+      g.fillStyle = '#0b1222'; g.beginPath(); g.arc(cx, cy, r + 4, 0, Math.PI * 2); g.fill();
+      const gr = g.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 2, cx, cy, r);
+      gr.addColorStop(0, '#475569'); gr.addColorStop(1, '#111827');
+      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+      g.save(); g.translate(cx, cy); g.rotate(on ? Math.PI / 4 : -Math.PI / 4);
+      g.fillStyle = '#e2e8f0'; rr(g, -r * 0.22, -r * 0.9, r * 0.44, r * 1.8, r * 0.2); g.fill();
+      g.fillStyle = on ? '#22c55e' : '#64748b'; g.fillRect(-2, -r * 0.82, 4, r * 0.5);
+      g.restore();
+      break;
+    }
+    case 'tank': {
+      const v = scaled(val(el.word, true), el.dec);
+      const min = el.min ?? 0, max = el.max ?? 100;
+      const k = v === null ? 0 : Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
+      const tx = x + 8, tw = w - 16, ty = y + 20, th = h - 46, rad = Math.min(18, tw / 4);
+      text(g, el.label || '', x + w / 2, y + 8, 12, '#7dd3fc', { weight: 800 });
+      g.fillStyle = '#0b1222'; rr(g, tx, ty, tw, th, rad); g.fill();
+      g.save(); rr(g, tx, ty, tw, th, rad); g.clip();
+      const lh = th * k, wave = 2.5 * Math.sin(t * 3);
+      const gr = g.createLinearGradient(0, ty + th - lh, 0, ty + th);
+      gr.addColorStop(0, el.color || '#38bdf8'); gr.addColorStop(1, '#1e3a8a');
+      g.fillStyle = gr;
+      g.beginPath(); g.moveTo(tx, ty + th - lh + wave); g.quadraticCurveTo(tx + tw / 2, ty + th - lh - wave, tx + tw, ty + th - lh + wave); g.lineTo(tx + tw, ty + th); g.lineTo(tx, ty + th); g.closePath(); g.fill();
+      g.restore();
+      g.strokeStyle = '#94a3b8'; g.lineWidth = 3; rr(g, tx, ty, tw, th, rad); g.stroke();
+      for (let i = 1; i < 4; i++) { g.fillStyle = '#64748b'; g.fillRect(tx + tw - 14, ty + th * i / 4, 10, 2); }
+      text(g, `${v === null ? '--' : v.toFixed(el.dec || 0)}${el.unit ? ' ' + el.unit : ''}`, x + w / 2, y + h - 12, 16, '#f8fafc', { font: FM, weight: 600 });
+      break;
+    }
+    case 'pipe': {
+      const on = !!val(el.bit, false);
+      const vert = h > w, th = vert ? w : h;
+      g.fillStyle = '#475569'; rr(g, x, y, w, h, th / 2); g.fill();
+      g.fillStyle = on ? el.color || '#38bdf8' : '#1e293b'; rr(g, x + 4, y + 4, w - 8, h - 8, (th - 8) / 2); g.fill();
+      if (on) {
+        g.save(); rr(g, x + 4, y + 4, w - 8, h - 8, (th - 8) / 2); g.clip();
+        g.fillStyle = 'rgba(255,255,255,.55)';
+        const off = (t * 60) % 30;
+        if (vert) for (let yy = y - 30 + off; yy < y + h; yy += 30) g.fillRect(x + th / 2 - 2, yy, 4, 12);
+        else for (let xx = x - 30 + off; xx < x + w; xx += 30) g.fillRect(xx, y + th / 2 - 2, 12, 4);
+        g.restore();
+      }
+      break;
+    }
+    case 'valve': {
+      const on = !!val(el.bit, false);
+      const cx = x + w / 2, cy = y + (h - (el.text ? 16 : 0)) / 2 + 6, s2 = Math.min(w / 2, (h - 16) / 2) - 4;
+      g.fillStyle = on ? '#22c55e' : '#475569'; g.strokeStyle = '#0b1222'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(cx - s2, cy - s2 * 0.6); g.lineTo(cx + s2, cy + s2 * 0.6); g.lineTo(cx + s2, cy - s2 * 0.6); g.lineTo(cx - s2, cy + s2 * 0.6); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#94a3b8'; g.fillRect(cx - 2, cy - s2 * 0.95, 4, s2 * 0.95);
+      g.fillStyle = on ? '#4ade80' : '#64748b'; rr(g, cx - s2 * 0.45, cy - s2 * 1.15, s2 * 0.9, 8, 3); g.fill();
+      if (el.text) text(g, el.text, cx, y + h - 7, 12, '#cbd5e1', { weight: 800 });
+      break;
+    }
+    case 'clock': {
+      const d = new Date();
+      const ax = el.align === 'left' ? x : el.align === 'center' ? x + w / 2 : x + w;
+      text(g, clockText(d, el.fmt), ax, y + h / 2 + 1, el.size || 20, el.color || '#e2e8f0', { align: el.align || 'right', font: FM, weight: 600 });
+      break;
+    }
+    case 'alarmlist': {
+      text(g, el.label || 'ALARM HISTORY', x + 8, y + 10, 12, '#7dd3fc', { align: 'left', weight: 800 });
+      g.fillStyle = '#050b18'; rr(g, x, y + 20, w, h - 20, 8); g.fill();
+      g.strokeStyle = '#1f3a63'; g.lineWidth = 1.5; g.stroke();
+      const cols = [x + 10, x + 100, x + 190];
+      g.fillStyle = '#10224a'; g.fillRect(x + 1, y + 21, w - 2, 24);
+      text(g, 'TIME', cols[0], y + 33, 11, '#94a3b8', { align: 'left', weight: 800 });
+      text(g, 'STATE', cols[1], y + 33, 11, '#94a3b8', { align: 'left', weight: 800 });
+      text(g, 'MESSAGE', cols[2], y + 33, 11, '#94a3b8', { align: 'left', weight: 800 });
+      const list = design ? [{ text: 'Motor overload', t: Date.now(), off: null, ack: false }, { text: 'COM2 time-out', t: Date.now() - 60000, off: Date.now() - 30000, ack: true }] : (rt && rt.alarmLog) || [];
+      const rowH = 26, n = Math.floor((h - 50) / rowH);
+      list.slice(0, n).forEach((a, i) => {
+        const yy = y + 48 + i * rowH;
+        const active = a.off === null;
+        if (i % 2) { g.fillStyle = 'rgba(148,163,184,.06)'; g.fillRect(x + 1, yy, w - 2, rowH); }
+        const col = active ? (a.ack ? '#f59e0b' : '#ef4444') : '#64748b';
+        text(g, clockText(new Date(a.t), 'time'), cols[0], yy + rowH / 2, 13, '#cbd5e1', { align: 'left', font: FM, weight: 500 });
+        text(g, active ? (a.ack ? 'ACK' : 'ACTIVE') : 'CLEARED', cols[1], yy + rowH / 2, 12, col, { align: 'left', weight: 800 });
+        text(g, a.text, cols[2], yy + rowH / 2, 14, active ? '#f8fafc' : '#94a3b8', { align: 'left', weight: 700 });
+      });
+      if (!list.length) text(g, 'No alarms', x + w / 2, y + 20 + (h - 20) / 2 + 10, 14, '#475569', { weight: 700 });
+      else text(g, 'Tap the list to acknowledge', x + w - 8, y + 10, 11, '#64748b', { align: 'right', weight: 600 });
       break;
     }
     case 'alarm': {

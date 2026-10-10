@@ -7,7 +7,7 @@ import { buildModel, disposeModel } from './models.js';
 import { buildCable, buildPlainCable, disposeCable, setCableFlow, setCableHighlight } from './cables.js';
 import { layoutDevices, toWorld, dirToWorld } from '../devices/layout.js';
 import { routeLab } from '../devices/routing.js';
-import { DEVICE_DEFS, devicePorts, deviceProps } from '../devices/defs.js';
+import { DEVICE_DEFS, devicePorts, deviceProps, hasLabel } from '../devices/defs.js';
 import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
 
 // the camera stays this far (mm) in front of any surface: zooming, orbiting or panning never
@@ -54,6 +54,9 @@ export class LabScene {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.shadowMap.autoUpdate = false;
     renderer.domElement.className = 'lab-3d';
+    // three.js sets an inline display: block, which beat the stylesheet rule that hides the canvas in
+    // 2D: the stopped 3D picture stayed on screen and the lab looked stuck until it was reopened
+    renderer.domElement.style.removeProperty('display');
     host.appendChild(renderer.domElement);
     // a lost GPU context (driver reset, too many tabs, laptop GPU switch) must not freeze the lab:
     // stop drawing, tell the lab (it shows the 2D schematic) and redraw everything once it is back
@@ -595,7 +598,7 @@ export class LabScene {
       this.scene.add(this.selBox);
       const def = DEVICE_DEFS[e.dev.type];
       const props = deviceProps(e.dev);
-      this.selLabel = labelSprite(def.category === 'field' && props.label ? `${def.short} · ${props.label}` : def.name, { scale: 0.4 });
+      this.selLabel = labelSprite(hasLabel(def) && props.label ? `${def.short} · ${props.label}` : def.name, { scale: 0.4 });
       const c = box.getCenter(new THREE.Vector3());
       this.selLabel.position.set(c.x, box.max.y + 22, c.z);
       this.scene.add(this.selLabel);

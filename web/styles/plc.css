@@ -45,6 +45,11 @@
 .lab.tab-ladder:not(.split), .lab.tab-hmi:not(.split) { --dock-b: 44px; } /* above the ladder / HMI footer */
 .lab.fs .lab-fs-bar { display: flex; flex-direction: row; gap: 4px; position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 16px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b)); z-index: 20; padding: 5px; border-radius: 20px; overflow-x: auto; scrollbar-width: none; }
 .lab.fs .lab-fs-bar::-webkit-scrollbar { display: none; }
+/* the ☰ handle sat at the top right, over the ladder / HMI / VFD tool bars (e.g. Monitor): in the lab
+   it waits at the bottom right, and while the menus are shown the ✕ at the end of the dock hides them */
+.lab.fs .fs-handle.fs-handle { top: auto; bottom: calc(var(--dock-b) + var(--safe-b) + 6px); }
+.lab.fs:not(.fs-clean) .fs-handle.fs-handle { display: none; }
+.lab.fs .lab-fs-bar .fs-hide { color: var(--accent); }
 .lab.fs .lab-fs-bar .fs-btn { flex-shrink: 0; }
 .lab.fs .lab-status { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 24px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b) + 62px); height: 34px; border-radius: 99px; z-index: 20; }
 .lab.fs .lab-fs-bar.fs-bar, .lab.fs .lab-status.sim-status { background: rgba(10, 16, 32, .42) !important; border: 1px solid rgba(148, 163, 184, .24) !important; backdrop-filter: blur(18px) saturate(160%) !important; -webkit-backdrop-filter: blur(18px) saturate(160%) !important; box-shadow: 0 14px 36px -16px rgba(0, 0, 0, .7) !important; }
@@ -252,9 +257,14 @@
 .kp-err { min-height: 0; color: #fca5a5; font-size: 12.5px; }
 .kp-err:empty, .kp-info:empty { display: none; }
 .kp-info { color: #94a3b8; font-size: 12.5px; }
-.kp-devs { display: grid; grid-template-columns: repeat(9, 1fr); gap: 5px; }
+.kp-devs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.kp-opts { display: flex; flex-direction: column; gap: 6px; }
+.kp-dbl.active { border-color: rgba(167, 139, 250, .55); color: #ddd6fe; background: rgba(167, 139, 250, .1); }
+.ip-chips { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 4px; scrollbar-width: none; flex: none; }
+.ip-chips::-webkit-scrollbar { display: none; }
+.ip-chips .chip { flex: none; }
 .kp-devs.few { grid-template-columns: repeat(4, 1fr); }
-.kp-digits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.kp-digits { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .kp-digits.hex { grid-template-columns: repeat(4, 1fr); }
 .kp-key { height: 48px; border-radius: 12px; background: #18233f; border: 1px solid rgba(148, 163, 184, .16); font-family: var(--mono); font-size: 19px; font-weight: 700; }
 .kp-key:active { background: #2a3d6a; transform: scale(.95); }
@@ -311,8 +321,14 @@
 .hv-tools { display: flex; align-items: center; gap: 4px; }
 .hv-tools .btn:disabled, .hv-tools .icon-btn:disabled { opacity: .35; }
 .hv-stage { flex: 1; position: relative; display: grid; place-items: center; overflow: hidden; padding: 12px; background: radial-gradient(90% 70% at 50% 30%, #17264b, #0a1020 75%); }
-.hv-device { position: relative; padding: 12px 12px 28px; border-radius: 18px; background: linear-gradient(160deg, #24272e, #15171b); box-shadow: 0 24px 60px -18px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 255, 255, .08); }
-.hv-screen { position: relative; border-radius: 4px; overflow: hidden; background: #020305; box-shadow: inset 0 0 0 2px #0b0c0f; }
+/* DOP-107BV front: black plastic bezel, recessed glass, logo and LEDs on the lower edge */
+.hv-device { position: relative; padding: 14px 14px 30px; border-radius: 14px; background: linear-gradient(165deg, #2b2e35 0%, #1a1c21 45%, #111317 100%); box-shadow: 0 24px 60px -18px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 -2px 0 rgba(0, 0, 0, .5), 0 0 0 1px #050608; }
+.hv-device::before { content: ''; position: absolute; inset: 7px 7px 24px; border-radius: 8px; background: #08090b; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .8), 0 1px 0 rgba(255, 255, 255, .06); pointer-events: none; }
+.hv-screen { position: relative; border-radius: 3px; overflow: hidden; background: #020305; box-shadow: inset 0 0 0 2px #0b0c0f; }
+.hv-screen::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(125deg, rgba(255, 255, 255, .07) 0%, rgba(255, 255, 255, 0) 38%); }
+.hv-brand em { font-style: normal; font-size: 9px; font-weight: 700; color: #6b7685; letter-spacing: .4px; }
+.hv-led.com.on { background: #ffb020; box-shadow: 0 0 8px #ffb020; animation: hv-blink .5s steps(2) infinite; }
+@keyframes hv-blink { 50% { opacity: .35; } }
 .hmi-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .hv-brand { position: absolute; left: 16px; right: 16px; bottom: 6px; display: flex; align-items: center; gap: 10px; font-size: 11px; color: #9aa6b8; }
 .hv-brand b { font-family: var(--display); color: #e8eef9; letter-spacing: .5px; }
@@ -365,7 +381,9 @@
 .vv-leds span.on i { background: #36ff6a; box-shadow: 0 0 8px #36ff6a; }
 .vv-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .vv-key { height: 48px; border-radius: 12px; background: linear-gradient(180deg, #59606c, #464c57); color: #f8fafc; font-weight: 800; font-size: 13px; box-shadow: 0 3px 0 #2a2e35, inset 0 1px 0 rgba(255, 255, 255, .12); touch-action: manipulation; }
-.vv-key:active { transform: translateY(2px); box-shadow: 0 1px 0 #2a2e35; }
+.vv-key:active, .vv-key.down { transform: translateY(2px); box-shadow: 0 1px 0 #2a2e35; filter: brightness(1.15); }
+.vv-help { margin-top: 10px; font-size: 11.5px; line-height: 1.45; color: #94a3b8; }
+.vv-help b { color: #cbd5e1; }
 .vv-key.k-up, .vv-key.k-down, .vv-key.k-left { font-size: 18px; }
 .vv-key.k-down { grid-column: 2; }
 .vv-key.k-run { grid-column: 1 / span 1; background: linear-gradient(180deg, #22a052, #15803d); }
@@ -496,7 +514,9 @@
 .panel-view.loading-3d .lab-view-seg .seg[data-view="3d"] { animation: lab-loading .8s ease-in-out infinite alternate; }
 @keyframes lab-loading { from { opacity: 1; } to { opacity: .45; } }
 .panel-view .lab-chips { left: calc(134px + var(--safe-l)); padding-left: 0; }
-.lab-3d-host.view-2d .lab-3d, .lab-3d-host.view-3d .schem { display: none; }
+/* !important: three.js puts an inline display: block on its canvas, which would keep the (frozen)
+   3D picture over the 2D schematic */
+.lab-3d-host.view-2d .lab-3d, .lab-3d-host.view-3d .schem { display: none !important; }
 .panel-view.select-tool .lab-3d-host { cursor: crosshair; }
 
 /* ---------------------------------------------------------------- 2D wiring schematic */
@@ -537,6 +557,15 @@
 @keyframes sdWave { 0% { opacity: .9; r: 22px; } 100% { opacity: 0; r: 34px; } }
 .sd-target { fill: #8892a0; opacity: .35; transition: x .15s; }
 .sd-target.on { opacity: 1; fill: #cbd5e1; }
+.sd-target.liquid { fill: #38bdf8; }
+.sd-target.box { fill: #b07a43; }
+.sd-beam { stroke: #ef4444; stroke-width: 2; stroke-dasharray: 3 3; opacity: 0; }
+.sd-beam.on { opacity: .8; }
+.sd-water { fill: #2f8de4; opacity: .75; transition: y .2s, height .2s; }
+.sd-value { font-family: var(--mono); font-size: 13px; font-weight: 700; fill: #4ade80; }
+.sd-bridge { stroke: #64748b; stroke-width: 2; stroke-dasharray: 3 3; }
+.sd-poles line { stroke: #94a3b8; stroke-width: 2.5; stroke-linecap: round; transition: transform .1s; }
+.sd-poles.on line { stroke: #f43f5e; transform: translateY(-4px); }
 .sd-knobc { fill: #111827; stroke: #64748b; stroke-width: 1.5; }
 .sd-ptr { stroke: #fff; stroke-width: 2.5; stroke-linecap: round; }
 .sd-lcd { fill: #1a0505; stroke: #3f1d1d; }
@@ -604,3 +633,5 @@
 .lab.fs .pane-vfd { padding-top: var(--safe-t); }
 .lab.fs .pane-vfd .vv-body { padding-right: calc(52px + var(--safe-r)); }
 .lab.fs .lab-pane:not(.pane-panel) { padding-right: var(--safe-r); padding-bottom: var(--safe-b); }
+.lr-tag { fill: #c4b5fd; font-family: var(--mono); font-weight: 800; }
+.lad-bar .lb-hot b { color: #fbbf24; }

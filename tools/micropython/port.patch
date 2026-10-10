@@ -1,0 +1,101 @@
+diff --git a/ports/webassembly/api.js b/ports/webassembly/api.js
+index 0718d13..2e30de0 100644
+--- a/ports/webassembly/api.js
++++ b/ports/webassembly/api.js
+@@ -40,7 +40,7 @@ export async function loadMicroPython(options) {
+             { pystack: 2 * 1024, heapsize: 1024 * 1024, linebuffer: true },
+             options,
+         );
+-    let Module = {};
++    let Module = Object.assign({}, options.module || {});
+     Module.locateFile = (path, scriptDirectory) =>
+         url || scriptDirectory + path;
+     Module._textDecoder = new TextDecoder();
+diff --git a/ports/webassembly/library.js b/ports/webassembly/library.js
+index 6fcd9f2..c2ea72d 100644
+--- a/ports/webassembly/library.js
++++ b/ports/webassembly/library.js
+@@ -64,7 +64,7 @@ mergeInto(LibraryManager.library, {
+         }
+     },
+ 
+-    mp_js_time_ms: () => Date.now(),
++    mp_js_time_ms: () => (typeof performance !== "undefined" && performance.timeOrigin ? performance.timeOrigin + performance.now() : Date.now()),
+ 
+     // Node prior to v19 did not expose "crypto" as a global, so make sure it exists.
+     mp_js_random_u32__postset:
+diff --git a/ports/webassembly/modtime.c b/ports/webassembly/modtime.c
+index b6c0cda..46ac6ca 100644
+--- a/ports/webassembly/modtime.c
++++ b/ports/webassembly/modtime.c
+@@ -27,13 +27,16 @@
+ #include "py/obj.h"
+ #include "shared/timeutils/timeutils.h"
+ #include "library.h"
++#include <emscripten.h>
++
++EM_JS(double, mp_js_tz_offset_s, (void), { return -new Date().getTimezoneOffset() * 60; });
+ 
+ // Get the localtime.
+ static void mp_time_localtime_get(timeutils_struct_time_t *tm) {
+-    timeutils_seconds_since_epoch_to_struct_time(mp_hal_time_ms() / 1000, tm);
++    timeutils_seconds_since_epoch_to_struct_time(mp_hal_time_ms() / 1000 + (int64_t)mp_js_tz_offset_s(), tm);
+ }
+ 
+ // Returns the number of seconds, as a float, since the Epoch.
+ static mp_obj_t mp_time_time_get(void) {
+-    return mp_obj_new_float((mp_float_t)mp_hal_time_ms() / 1000);
++    return mp_obj_new_float((mp_float_t)(mp_js_time_ms() / 1000.0));
+ }
+diff --git a/ports/webassembly/mpconfigport.h b/ports/webassembly/mpconfigport.h
+index b4aad22..5f9e395 100644
+--- a/ports/webassembly/mpconfigport.h
++++ b/ports/webassembly/mpconfigport.h
+@@ -98,8 +98,12 @@
+ 
+ typedef long mp_off_t;
+ 
++#ifndef MICROPY_HW_BOARD_NAME
+ #define MICROPY_HW_BOARD_NAME "JS"
++#endif
++#ifndef MICROPY_HW_MCU_NAME
+ #define MICROPY_HW_MCU_NAME "Emscripten"
++#endif
+ 
+ #define MP_STATE_PORT MP_STATE_VM
+ 
+diff --git a/ports/webassembly/mphalport.c b/ports/webassembly/mphalport.c
+index 3935068..d49fe62 100644
+--- a/ports/webassembly/mphalport.c
++++ b/ports/webassembly/mphalport.c
+@@ -27,6 +27,7 @@
+ #include <unistd.h>
+ #include "py/mphal.h"
+ #include "library.h"
++#include <emscripten.h>
+ 
+ static void stderr_print_strn(void *env, const char *str, size_t len) {
+     (void)env;
+@@ -39,6 +40,7 @@ mp_uint_t mp_hal_stdout_tx_strn(const char *str, size_t len) {
+     return write(1, str, len);
+ }
+ 
++#ifndef MICROPY_HW_MCU_NAME_RAPTI
+ void mp_hal_delay_ms(mp_uint_t ms) {
+     uint32_t start = mp_hal_ticks_ms();
+     while (mp_hal_ticks_ms() - start < ms) {
+@@ -50,9 +52,14 @@ void mp_hal_delay_us(mp_uint_t us) {
+     while (mp_hal_ticks_us() - start < us) {
+     }
+ }
++#endif
+ 
+ mp_uint_t mp_hal_ticks_us(void) {
++    #ifdef MICROPY_HW_MCU_NAME_RAPTI
++    return (mp_uint_t)(uint64_t)(emscripten_get_now() * 1000.0);
++    #else
+     return mp_js_ticks_ms() * 1000;
++    #endif
+ }
+ 
+ mp_uint_t mp_hal_ticks_ms(void) {

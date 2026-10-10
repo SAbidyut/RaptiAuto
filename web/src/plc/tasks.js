@@ -32,6 +32,13 @@ export const LAB_TASKS = {
     { text: 'Change Pr.04-00 (step 1) to 20 Hz in the VFD tab or with the keypad', check: (c) => !!(c.vfd && c.vfd.params['04-00'] === 20) },
     { text: 'Make it trip: set Pr.01-12 to 0.10 s and start — fault ocA', hint: 'Then press STOP/RESET and set the time back', check: (c) => !!(c.vfd && c.vfd.fault === 'ocA') },
   ],
+  'contactor-starter': [
+    { text: 'Press START — KM1 pulls in, the RUN lamp lights and the conveyor motor turns', check: (c) => !!(c.rt('km1') && c.rt('km1').closed && c.motor && Math.abs(c.motor.rpm) > 300) },
+    { text: 'Tap the photo sensor (a box reaches the belt end) — the drive stops, KM1 stays in', check: (c) => !!(c.dev('photo') && c.dev('photo').state.target && c.rt('km1') && c.rt('km1').closed && c.vfd && hz(c) === 0) },
+    { text: 'Test-trip the overload relay F1 — KM1 drops out and the OVERLOAD lamp lights', check: (c) => { const ok = !!(c.dev('f1') && c.dev('f1').state.tripped && c.rt('km1') && !c.rt('km1').closed && c.rt('lfault') && c.rt('lfault').on); if (ok) c.memo.tripped = true; return ok; } },
+    { text: 'Reset F1 and start again', check: (c) => !!(c.memo.tripped && c.dev('f1') && !c.dev('f1').state.tripped && c.rt('km1') && c.rt('km1').closed) },
+    { text: 'Hold KM1 in by hand (Operate mode) with the PLC stopped — watch X3 in Monitor', hint: 'Shows why the PLC checks the auxiliary contact 13–14', check: (c) => !!(c.rt('km1') && c.rt('km1').pressed && c.cpu && c.cpu.X[3]) },
+  ],
   'vfd-modbus-hmi': [
     { text: 'Start the motor from the HMI touch screen (or the START button)', check: (c) => Math.abs(hz(c)) > 1 },
     { text: 'Set the speed to 45 Hz on the HMI keypad', check: (c) => near(Math.abs(hz(c)), 45) },

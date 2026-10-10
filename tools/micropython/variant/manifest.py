@@ -1,0 +1,13 @@
+include("$(PORT_DIR)/variants/manifest.py")
+
+require("abc")
+require("base64")
+require("collections-defaultdict")
+require("copy")
+require("datetime")
+require("functools")
+require("itertools")
+require("operator")
+require("os-path")
+require("string")
+require("logging")

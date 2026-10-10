@@ -1,10 +1,11 @@
 // Bundles the web app into build/www (served from the APK's assets).
 //   app.js  — the app (Arduino simulator, menus, PLC lab catalogue)
 //   lab.js  — the 3D Delta PLC lab (three.js), loaded the first time a lab is opened
+//   pi.js   — the Raspberry Pi lab (MicroPython WebAssembly + micropython.wasm), loaded on first use
 // Modules used by both are bundled once into app.js and handed to lab.js through
 // window.__raptiMods, so shared state (back stack, toasts, native bridge …) stays single.
 import { build } from 'esbuild';
-import { mkdirSync, copyFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, copyFileSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,13 +37,35 @@ const useShared = {
       let abs = resolve(dirname(args.importer), args.path);
       if (!/\.m?js$/.test(abs)) abs += '.js';
       const k = key(abs);
-      if (sharedSet.has(k) && !k.endsWith('lab-entry.js')) return { path: k, namespace: 'shared' };
+      if (sharedSet.has(k) && !k.endsWith('-entry.js') && !k.endsWith('pi/entry.js')) return { path: k, namespace: 'shared' };
       return null;
     });
     b.onLoad({ filter: /.*/, namespace: 'shared' }, (args) => ({ contents: `module.exports = window.__raptiMods[${JSON.stringify(args.path)}];`, loader: 'js' }));
   },
 };
 await build({ ...common, entryPoints: [join(here, 'src', 'plc', 'lab-entry.js')], outfile: join(out, 'lab.js'), plugins: [useShared] });
+
+// the MicroPython loader ends with a Node.js command-line runner (top-level await): not for the app
+const noCli = {
+  name: 'micropython-no-cli',
+  setup(b) {
+    b.onLoad({ filter: /micropython\.mjs$/ }, (args) => {
+      const src = readFileSync(args.path, 'utf8');
+      const i = src.indexOf('// Check if Node is running');
+      const j = src.indexOf('runCLI();', i);
+      if (i < 0 || j < 0) throw new Error('micropython.mjs: CLI block not found');
+      const end = src.indexOf('\n}\n', j) + 3;
+      return { contents: src.slice(0, i) + src.slice(end), loader: 'js' };
+    });
+  },
+};
+
+// 4. Raspberry Pi bundle: Python libraries as text; the Emscripten loader's Node.js branch stays unused
+await build({
+  ...common, entryPoints: [join(here, 'src', 'pi', 'entry.js')], outfile: join(out, 'pi.js'), plugins: [noCli, useShared],
+  loader: { '.py': 'text' }, external: ['node:*', 'fs', 'path', 'url', 'crypto', 'module'], logOverride: { 'empty-import-meta': 'silent' },
+});
+copyFileSync(join(here, 'vendor', 'micropython', 'micropython.wasm'), join(out, 'micropython.wasm'));
 
 await build({
   entryPoints: [join(here, 'styles', 'app.css')],

@@ -17,7 +17,24 @@ export const HMI_TYPES = {
   goto: { name: 'Screen button', w: 150, h: 56, props: { text: 'NEXT', screen: 1 } },
   alarm: { name: 'Alarm banner', w: 520, h: 44, props: { bit: 'M100', text: 'ALARM: motor overload' } },
   rect: { name: 'Panel / frame', w: 300, h: 180, props: { fill: '#13223f', stroke: '#2b4470', radius: 14, title: '' } },
+  state: { name: 'Multi-state indicator', w: 200, h: 56, props: { word: 'D0', bit: '', label: 'Status', states: '0:STOPPED:#475569|1:RUNNING:#22c55e|2:FAULT:#ef4444' } },
+  setval: { name: 'Set value / ± button', w: 110, h: 60, props: { word: 'D0', mode: 'inc', value: 1, min: 0, max: 100, text: '+', color: 'blue' } },
+  slider: { name: 'Slider', w: 300, h: 70, props: { word: 'D0', min: 0, max: 100, dec: 0, label: 'Set point', unit: '' } },
+  selsw: { name: 'Selector switch', w: 120, h: 120, props: { bit: 'M0', off: 'MAN', on: 'AUTO' } },
+  tank: { name: 'Tank / level', w: 140, h: 190, props: { word: 'D0', min: 0, max: 100, dec: 0, label: 'TANK', unit: '%', color: '#38bdf8' } },
+  pipe: { name: 'Pipe (flow)', w: 260, h: 26, props: { bit: 'Y0', color: '#38bdf8' } },
+  valve: { name: 'Valve', w: 80, h: 70, props: { bit: 'Y0', text: 'V1' } },
+  clock: { name: 'Date / time', w: 230, h: 40, props: { fmt: 'datetime', size: 20, color: '#e2e8f0' } },
+  alarmlist: { name: 'Alarm history', w: 520, h: 220, props: { label: 'ALARM HISTORY' } },
 };
+
+/** Objects that only show something: a touch passes through them. */
+const PASSIVE = new Set(['rect', 'text', 'clock', 'pipe', 'tank', 'valve', 'state', 'num', 'meter', 'bar', 'trend', 'lamp', 'motor', 'alarm']);
+
+/** "0:STOPPED:#475569|1:RUNNING:#22c55e" → [{v, text, color}] */
+export function parseStates(s) {
+  return String(s || '').split('|').map((p) => p.split(':')).filter((p) => p[0] !== '' && Number.isFinite(+p[0])).map(([v, text = '', color = '#475569']) => ({ v: +v, text, color }));
+}
 
 let eid = 0;
 export const hmiId = () => 'e' + Date.now().toString(36) + (eid++).toString(36);
@@ -65,14 +82,30 @@ export class HmiRuntime {
     this.commOk = false;
     this.pollT = 0;
     this.dirty = true;
+    this.alarmLog = []; // alarm history: {text, bit, t, off, ack}
+    this.alarmOn = new Map();
+    this.slide = null;
+    this.corner = null; // long press in the top-left corner opens the system menu
+    this.sysMenu = null;
+    this.bright = 1;
   }
+
+  /** Does the screen need a repaint every frame (animations, clock, blinking)? */
+  animated() {
+    if (!this.powered) return false;
+    if (this.bootT > 0 || !this.commOk || this.keypad || this.sysMenu) return true;
+    return this.current.elements.some((e) => e.type === 'motor' || e.type === 'trend' || e.type === 'alarm' || e.type === 'clock' || e.type === 'pipe' || e.type === 'alarmlist');
+  }
+
+  /** Every alarm object of every screen (the alarm system watches them all the time). */
+  alarmEls() { return this.project.screens.flatMap((s) => s.elements.filter((e) => e.type === 'alarm' && e.bit && parseOperand(e.bit))); }
 
   setProject(p) { this.project = normalizeHmi(p); if (this.screen >= this.project.screens.length) this.screen = 0; this.dirty = true; }
 
   get current() { return this.project.screens[this.screen] || this.project.screens[0]; }
 
-  powerOn() { if (!this.powered) { this.powered = true; this.bootT = 1.6; this.screen = this.project.start || 0; this.keypad = null; this.dirty = true; } }
-  powerOff() { if (this.powered) { this.powered = false; this.cache.clear(); this.pressed.clear(); this.keypad = null; this.dirty = true; } }
+  powerOn() { if (!this.powered) { this.powered = true; this.bootT = 1.6; this.screen = this.project.start || 0; this.keypad = null; this.sysMenu = null; this.dirty = true; } }
+  powerOff() { if (this.powered) { this.powered = false; this.cache.clear(); this.pressed.clear(); this.keypad = null; this.sysMenu = null; this.slide = null; this.alarmOn.clear(); this.dirty = true; } }
 
   value(addr, word = false) {
     if (!addr) return null;
@@ -85,6 +118,7 @@ export class HmiRuntime {
     this.time += dt;
     if (this.bootT > 0) { this.bootT -= dt; this.dirty = true; return null; }
     if (!this.powered) return null;
+    if (this.corner && !this.sysMenu && this.time - this.corner.t > 1.2) { this.sysMenu = { page: 'main' }; this.corner = null; this.dirty = true; }
     const ok = this.link.ok();
     if (ok !== this.commOk) { this.commOk = ok; this.dirty = true; }
     this.pollT -= dt;
@@ -93,9 +127,18 @@ export class HmiRuntime {
     if (!ok) return null;
     const tags = new Map();
     for (const el of this.current.elements) for (const t of elementTags(el)) tags.set(tagKey(t.a, t.w), t);
+    const alarms = this.alarmEls();
+    for (const el of alarms) tags.set(tagKey(el.bit, false), { a: el.bit.toUpperCase(), w: false });
     for (const [k, t] of tags) {
       const v = this.link.read(parseOperand(t.a), t.w);
       if (this.cache.get(k) !== v) { this.cache.set(k, v); this.dirty = true; }
+    }
+    // alarm history: a new entry when an alarm bit turns ON, stamped again when it clears
+    for (const el of alarms) {
+      const on = !!this.value(el.bit, false), was = !!this.alarmOn.get(el.id);
+      if (on && !was) { this.alarmLog.unshift({ text: el.text || el.bit, bit: el.bit, t: Date.now(), off: null, ack: false }); this.alarmLog.length = Math.min(this.alarmLog.length, 50); }
+      if (!on && was) { const a = this.alarmLog.find((x) => x.bit === el.bit && x.off === null); if (a) a.off = Date.now(); }
+      this.alarmOn.set(el.id, on);
     }
     // trends sample
     for (const el of this.current.elements) {
@@ -122,7 +165,7 @@ export class HmiRuntime {
     const els = this.current.elements;
     for (let i = els.length - 1; i >= 0; i--) {
       const e = els[i];
-      if (e.type === 'rect' || e.type === 'text') continue;
+      if (PASSIVE.has(e.type)) continue;
       if (x >= e.x && x <= e.x + e.w && y >= e.y && y <= e.y + e.h) return e;
     }
     return null;
@@ -131,9 +174,10 @@ export class HmiRuntime {
   // ------------------------------------------------------------------ touch
   pointerDown(x, y, pid = 0) {
     if (!this.powered || this.bootT > 0) return;
+    if (this.sysMenu) { this.sysMenuTouch(x, y); return; }
     if (this.keypad) { this.keypadTouch(x, y); return; }
     const el = this.hit(x, y);
-    if (!el) return;
+    if (!el) { if (x < 60 && y < 60) this.corner = { t: this.time, pid }; return; }
     this.pressed.set(el.id, pid);
     this.dirty = true;
     if (el.type === 'button') {
@@ -147,10 +191,59 @@ export class HmiRuntime {
     } else if (el.type === 'goto') {
       const s = Math.max(0, Math.min(this.project.screens.length - 1, (el.screen | 0)));
       this.screen = s;
+    } else if (el.type === 'setval') {
+      const cur = this.value(el.word, true) || 0, step = Number(el.value) || 0;
+      const lo = Number(el.min ?? -32768), hi = Number(el.max ?? 32767);
+      const v = el.mode === 'const' ? step : el.mode === 'dec' ? cur - step : cur + step;
+      this.write(el.word, Math.round(Math.max(lo, Math.min(hi, v))), true);
+    } else if (el.type === 'slider') {
+      this.slide = { el, pid };
+      this.slideTo(x);
+    } else if (el.type === 'selsw') {
+      this.write(el.bit, this.value(el.bit, false) ? 0 : 1);
+    } else if (el.type === 'alarmlist') {
+      for (const a of this.alarmLog) a.ack = true;
     }
   }
 
+  /** Slider track inside the element (screen x). */
+  sliderTrack(el) { return { x0: el.x + 18, x1: el.x + el.w - 18 }; }
+
+  slideTo(x) {
+    const el = this.slide.el, { x0, x1 } = this.sliderTrack(el);
+    const k = Math.max(0, Math.min(1, (x - x0) / (x1 - x0 || 1)));
+    const min = Number(el.min ?? 0), max = Number(el.max ?? 100);
+    const v = Math.round((min + (max - min) * k) * 10 ** (el.dec || 0));
+    if (v !== this.value(el.word, true)) this.write(el.word, v, true);
+  }
+
+  pointerMove(x, y, pid = 0) {
+    if (this.slide && this.slide.pid === pid) this.slideTo(x);
+    if (this.corner && this.corner.pid === pid && (x > 80 || y > 80)) this.corner = null;
+  }
+
+  // ------------------------------------------------------------------ system menu (DOP "System Setting")
+  sysMenuLayout() {
+    const W = 560, H = 360, x = (HMI_W - W) / 2, y = (HMI_H - H) / 2;
+    const b = (k, label, bx, by, bw = 120, bh = 50) => ({ k, label, x: x + bx, y: y + by, w: bw, h: bh });
+    return { x, y, w: W, h: H, keys: [b('dim', '☀ −', 300, 64), b('bright', '☀ +', 430, 64), b('clear', 'CLEAR ALARMS', 300, 128, 250), b('exit', 'EXIT', W - 150, H - 66, 130)] };
+  }
+
+  sysMenuTouch(x, y) {
+    const L = this.sysMenuLayout();
+    const key = L.keys.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    this.dirty = true;
+    if (!key) { if (x < L.x || x > L.x + L.w || y < L.y || y > L.y + L.h) this.sysMenu = null; return; }
+    this.sysMenu.flash = key.k; this.sysMenu.flashT = this.time;
+    if (key.k === 'dim') this.bright = Math.max(0.3, Math.round((this.bright - 0.1) * 10) / 10);
+    if (key.k === 'bright') this.bright = Math.min(1, Math.round((this.bright + 0.1) * 10) / 10);
+    if (key.k === 'clear') this.alarmLog.length = 0;
+    if (key.k === 'exit') this.sysMenu = null;
+  }
+
   pointerUp(x, y, pid = 0) {
+    if (this.slide && (this.slide.pid === pid || pid === '*')) this.slide = null;
+    if (this.corner && (this.corner.pid === pid || pid === '*')) this.corner = null;
     for (const [id, p] of [...this.pressed]) {
       if (p !== pid && pid !== '*') continue;
       this.pressed.delete(id);

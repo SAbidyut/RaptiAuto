@@ -425,6 +425,107 @@ const scenarios = {
     console.log('2D pan after switching:', v0, '→', v1, v0 !== v1 ? 'OK' : 'STUCK');
     await page.screenshot({ path: join(outDir, 'labswitch-2d.png') });
   },
+  async labinstr(page) {
+    // the instruction picker (MATH filter), the keypad of a 32-bit / float instruction and a ladder with the new forms
+    await page.evaluate(() => window.__rapti.home.openLabExample('blank')); await sleep(1800);
+    await page.evaluate(() => window.__rapti.lab.setTab('ladder')); await sleep(700);
+    await page.click('.lb-hot >> nth=0'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labinstr-math.png') });
+    await page.click('.ip-row >> text=DEADD'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labinstr-keypad-float.png') });
+    await page.click('.kp-actions .btn-primary'); await sleep(400);
+    await page.evaluate(() => {
+      const v = window.__rapti.lab.views.ladder;
+      const net = (rows) => { const r = v.prog.rungs[v.prog.rungs.length - 1]; return r; };
+      void net;
+    });
+    await page.click('.lb-hot >> nth=1'); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'labinstr-logic.png') });
+    await page.click('.ip-row >> text=BLD'); await sleep(600);
+    await page.screenshot({ path: join(outDir, 'labinstr-keypad-bld.png') });
+    await page.click('.kp-actions .btn-primary'); await sleep(400);
+    await page.click('.lb-txt >> text=MOV'); await sleep(600);
+    await page.click('.kp-dbl'); await sleep(200);
+    await page.click('.kp-key:text-is("K")'); await sleep(100);
+    for (const k of ['4']) await page.click(`.kp-key:text-is("${k}")`);
+    await page.click('.kp-key.dev:text-is("M")'); await sleep(100);
+    await page.click('.kp-key:text-is("0")'); await sleep(150);
+    await page.screenshot({ path: join(outDir, 'labinstr-keypad-dmov.png') });
+    await page.click('.kp-actions .btn-primary'); await sleep(600);
+    await page.screenshot({ path: join(outDir, 'labinstr-ladder.png') });
+    const il = await page.evaluate(() => { const v = window.__rapti.lab.views.ladder; const c = v.compile(); return JSON.stringify({ ok: c.ok, errors: c.errors.map((e) => e.msg), il: c.il.map((r) => r.lines.map((l) => l.text)) }); });
+    console.log('labinstr', il);
+  },
+  async labvfdkeys(page) {
+    await scenarios.labopen(page, 'vfd-terminals');
+    await page.click('.lab .run-btn'); await sleep(2500);
+    await page.evaluate(() => window.__rapti.lab.setTab('vfd')); await sleep(800);
+    for (const k of ['up', 'run', 'mode', 'mode', 'mode', 'mode', 'up']) { await page.click('.vv-key.k-' + k); await sleep(250); }
+    await sleep(600);
+    await page.screenshot({ path: join(outDir, 'labvfdkeys.png') });
+    const st = await page.evaluate(() => { const v = window.__rapti.lab.views.vfd; const rt = v.rt(); return JSON.stringify({ mode: rt.vfd.kp.mode, disp: rt.vfd.display().text, toast: (document.querySelector('.toast') || {}).textContent }); });
+    console.log('vfd keys', st);
+  },
+  async picircuit(page, board = 'pi5') {
+    // the Raspberry Pi Lab's Circuit tab: default circuit, Run blink.py, full screen, an example wired
+    await page.evaluate((b) => { try { localStorage.setItem('rapti.pi.board', b); } catch (e) { /* ignore */ } }, board);
+    await page.evaluate(() => window.__rapti.openPi()); await sleep(2500);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}.png`) });
+    await page.click('.pi-runbtn'); await sleep(3500);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}-run.png`) });
+    const st = await page.evaluate(() => { const p = window.__rapti.pi; const e = p.circuit.engine; return JSON.stringify({ engine: !!e, hw: !!p.sys.gpio.hw, running: p.programRunning(), pins: e ? [...e.pins.values()].filter((s) => s.mode === 1).map((s) => s.id + '=' + s.out) : [], out: p.mini.el.textContent.slice(0, 120) }); });
+    console.log('pi run', st);
+    await page.evaluate(() => window.__rapti.pi.setFullscreen(true)); await sleep(900);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}-fs.png`) });
+    await page.evaluate(() => window.__rapti.pi.setChrome(false)); await sleep(500);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}-fsclean.png`) });
+    await page.evaluate(() => { const p = window.__rapti.pi; p.setChrome(true); p.setFullscreen(false); }); await sleep(500);
+    await page.click('.pi-runbtn'); await sleep(800);
+    // open an example from Thonny: its parts get wired on the canvas
+    await page.evaluate(() => { const p = window.__rapti.pi; const parts = p.isPico ? [{ type: 'led', pins: { a: 15 } }, { type: 'pot', pins: { a: 26 } }, { type: 'servo', pins: { sig: 16 } }] : [{ type: 'ultrasonic', pins: { trig: 23, echo: 24 } }, { type: 'buzzer', pins: { a: 22 } }, { type: 'led', pins: { a: 17 } }, { type: 'pot', pins: {}, props: { ch: 0 } }, { type: 'servo', pins: { sig: 12 } }]; p.wireExample({ parts }); p.setTab('circuit'); });
+    await sleep(1200);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}-example.png`) });
+    await page.evaluate(() => window.__rapti.pi.setTab('board')); await sleep(700);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}-pinout.png`) });
+    await page.evaluate(() => window.__rapti.pi.circuit.addComponent()); await sleep(800);
+    await page.screenshot({ path: join(outDir, `picircuit-${board}-library.png`) });
+  },
+  async pifs(page) {
+    await page.evaluate(() => window.__rapti.openPi()); await sleep(2500);
+    await page.evaluate(() => { const p = window.__rapti.pi; p.setFullscreen(true); p.setChrome(true); }); await sleep(700);
+    await page.screenshot({ path: join(outDir, 'pifs-circuit-menus.png') });
+    await page.evaluate(() => window.__rapti.pi.setTab('thonny')); await sleep(1500);
+    await page.screenshot({ path: join(outDir, 'pifs-thonny-menus.png') });
+    await page.evaluate(() => window.__rapti.pi.setChrome(false)); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'pifs-thonny-clean.png') });
+    await page.evaluate(() => { const p = window.__rapti.pi; p.setChrome(true); p.setTab('circuit'); }); await sleep(500);
+    await page.click('.pi-fsbar .fs-run'); await sleep(2500);
+    await page.evaluate(() => window.__rapti.pi.toggleOutput(true)); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'pifs-run-output.png') });
+  },
+  async piwire(page) {
+    // wire by hand: clear the circuit, add an LED from the library, tap GPIO17 then the LED's anode
+    await page.evaluate(() => window.__rapti.openPi()); await sleep(2500);
+    await page.evaluate(async () => { const p = window.__rapti.pi; const { boardOnly } = window.__piTest || {}; void boardOnly; p.circuit.load({ parts: [p.circuit.boardPart()], wires: [] }); });
+    await sleep(500);
+    await page.click('.pi-circuit .fab-main'); await sleep(800);
+    await page.fill('.lib-search', 'LED'); await sleep(300);
+    await page.click('.lib-card >> text=LED >> nth=0'); await sleep(700);
+    const pts = await page.evaluate(() => {
+      const c = window.__rapti.pi.circuit; const cv = c.canvas;
+      const board = c.boardPart(); const led = c.project.parts.find((p) => p.type === 'led');
+      const reg = window.__raptiMods['src/components/registry.js'];
+      const w1 = reg.pinWorld(board, 'GPIO17'), w2 = reg.pinWorld(led, 'A');
+      const s1 = cv.worldToScreen(w1[0], w1[1]), s2 = cv.worldToScreen(w2[0], w2[1]);
+      return { s1, s2 };
+    });
+    await page.mouse.click(pts.s1[0], pts.s1[1]); await sleep(400);
+    await page.screenshot({ path: join(outDir, 'piwire-start.png') });
+    await page.mouse.click(pts.s2[0], pts.s2[1]); await sleep(500);
+    await page.screenshot({ path: join(outDir, 'piwire-done.png') });
+    const wires = await page.evaluate(() => JSON.stringify(window.__rapti.pi.circuit.project.wires.map((w) => `${w.from.pin}-${w.to.pin}`)));
+    console.log('hand wires', wires);
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);
