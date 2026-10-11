@@ -6,6 +6,7 @@ import { Solver, VSource, Diode } from './circuit/solver.js';
 import { SketchRunner } from './lang/runtime.js';
 import { makeCore } from './lang/core.js';
 import { makeLibraries } from './libs/index.js';
+import { Stress, pinCurrentStress, pinVoltageStress, supplyStress, burnMessage } from './damage.js';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -66,6 +67,8 @@ export class SimEngine {
     this.solver.clear();
     this.parts.clear();
     this.netPins = nets;
+    this.rated = [];                 // parts with a supply rating (def.ratings), watched for over-voltage
+    this.partElements = new Map();   // part id → its solver elements (switched off when the part burns)
 
     // board runtime first (it owns ground reference)
     this.boards = [this];
@@ -85,6 +88,7 @@ export class SimEngine {
         rt.def = def;
         rt.ctx = ctx;
         this.parts.set(part.id, rt);
+        if (def.ratings) { rt.supplyStress = new Stress(0.05); this.rated.push(rt); }
       }
     }
     this.solver.setNodeCount(this.nodeCount + this.extraNodes);
@@ -122,7 +126,12 @@ export class SimEngine {
       props,
       node: (pinId) => engine.nodeOf(part.id, pinId),
       newNode: () => engine.newNode(),
-      add: (el) => engine.solver.add(el),
+      add: (el) => {
+        const list = engine.partElements.get(part.id);
+        if (list) list.push(el); else engine.partElements.set(part.id, [el]);
+        return engine.solver.add(el);
+      },
+      burn: (msg, key, partial) => engine.burn(engine.parts.get(part.id), msg, key, partial),
       v: (node) => engine.vAvg(node),
       vDiff: (a, b) => engine.vAvg(a) - engine.vAvg(b),
       now: () => engine.time(),
@@ -151,7 +160,7 @@ export class SimEngine {
       const node = this.nodeOf(bp.id, pinId);
       const vs = new VSource(node, gnd, 0, b.rout || 25);
       vs.on = false;
-      const st = { num: +num, id: pinId, node, mode: 0, out: 0, pwm: null, tone: null, vs, lastRead: 0, servoUs: null, pullup: false };
+      const st = { num: +num, id: pinId, node, mode: 0, out: 0, pwm: null, tone: null, vs, lastRead: 0, servoUs: null, pullup: false, stress: new Stress(0.05), dead: false };
       if (node >= 0) this.solver.add(vs);
       this.pins.set(+num, st);
     }
@@ -473,7 +482,93 @@ export class SimEngine {
     this.ensureSolved();
     const dt = t - this.lastIntegrate;
     for (const p of this.accumParts) p.accumulate(dt);
+    this.wear(dt);
     this.lastIntegrate = t;
+  }
+
+  /** What the circuit has done to the parts in the last dt µs: supplies, pins (see damage.js). */
+  wear(dt) {
+    if (this.rated && this.rated.length) {
+      for (const rt of this.rated) {
+        if (rt.burnt) continue;
+        const r = rt.def.ratings;
+        const v = this.supplyVoltage(rt.part, r.vcc || 'VCC', r.gnd || 'GND');
+        if (rt.supplyStress.add(supplyStress(v, r.max), dt) >= 1) {
+          const why = v < 0 ? `the supply was connected the wrong way round (${v.toFixed(1)} V)` : `${v.toFixed(1)} V is far above its ${r.max} V limit`;
+          this.burn(rt, burnMessage(rt.def.name, why, v < 0 ? 'Check which pin is VCC and which is GND' : `Power it from ${r.max <= 5.5 ? '5 V or 3.3 V' : 'a lower voltage'}`), 'burn:' + rt.part.id);
+        }
+      }
+    }
+    for (const b of this.boards || [this]) b.wearPins(dt);
+  }
+
+  /** Pin currents and voltages: too much current, or a voltage outside the supply, kills the pin. */
+  wearPins(dt) {
+    if (!this.pins || !this.board) return;
+    const vcc = this.board.vcc, lim = this.board.pinBurnI || this.board.pinMaxI || 0.04;
+    for (const st of this.pins.values()) {
+      if (st.dead || st.node < 0) continue;
+      let rate = 0, why = '';
+      if (st.vs.on && st.mode === 1) {
+        const i = Math.abs(st.vs.iAvg ?? st.vs.i);
+        rate = pinCurrentStress(i, lim);
+        if (rate) why = `it supplied ${(i * 1000).toFixed(0)} mA (limit ${Math.round(lim * 1000)} mA) — use a resistor or a transistor/driver`;
+      }
+      const v = this.vAvg(st.node) - this.vAvg(this.gnd);
+      const over = v > vcc + 0.4 ? v - vcc - 0.4 : v < -0.6 ? -0.6 - v : 0;
+      const rv = pinVoltageStress(over);
+      if (rv > rate) { rate = rv; why = `${v.toFixed(1)} V is outside its ${vcc} V supply — ${vcc < 4 ? 'this is a 3.3 V pin: use a voltage divider (e.g. 1 kΩ + 2 kΩ) or a level shifter on 5 V signals' : 'check what is wired to it'}`; }
+      if (st.stress.add(rate, dt) >= 1) this.burnPin(st, why);
+    }
+  }
+
+  burnPin(st, why) {
+    if (st.dead) return;
+    st.dead = true;
+    st.vs.on = false;
+    st.mode = 0; st.pwm = null; st.tone = null; st.pullup = false; st.servoUs = null; st.out = 0;
+    this.dirty = true;
+    const rt = this.boardRt, part = this.boardPart;
+    if (rt && part) {
+      const pin = pinsOf(part).find((q) => q.id === st.id);
+      rt.visual.burnAt = [...(rt.visual.burnAt || []), pin ? [pin.x, pin.y] : [0, 0]];
+      rt.visual.burntPins = [...(rt.visual.burntPins || []), st.id];
+    }
+    this.warn(burnMessage(`${this.board.name} pin ${st.id}`, why), part && part.id, 'burnpin' + st.num);
+    if (this.opts.onBurn) this.opts.onBurn(part && part.id, `${st.id} burned out`);
+  }
+
+  /**
+   * A part burns (once): its circuit elements go dead, its runtime stops answering, the canvas shows a
+   * flash, a scorch mark and a few seconds of smoke. rt.onBurn() lets a part do more (an LED opens).
+   */
+  burn(rt, msg, key, partial = false) {
+    if (!rt || rt.burnt) return;
+    if (partial) {
+      // one segment / channel of a part burnt (the rest still works): the part shows the flash + smoke once
+      const first = !(rt.visual && rt.visual.burnt);
+      if (rt.visual) rt.visual.burnt = true;
+      if (first) rt.burntAt = this.time();
+      this.dirty = true;
+      this.warn(msg, rt.part.id, 'burn:' + rt.part.id + ':' + (key || ''));
+      if (this.opts.onBurn) this.opts.onBurn(rt.part.id, msg);
+      return;
+    }
+    rt.burnt = true;
+    rt.burntAt = this.time();
+    if (rt.visual) rt.visual.burnt = true;
+    for (const el of this.partElements.get(rt.part.id) || []) {
+      if (el.dead) continue;
+      el.dead = true;
+      el.stamp = () => {};
+      el.update = () => false;
+      el.measure = function () { this.i = 0; this.iAvg = 0; };
+    }
+    if (typeof rt.powered === 'function') rt.powered = () => false;
+    if (rt.onBurn) rt.onBurn();
+    this.dirty = true;
+    this.warn(msg, rt.part.id, 'burn:' + rt.part.id);
+    if (this.opts.onBurn) this.opts.onBurn(rt.part.id, msg);
   }
 
   outputChanged(st) {
@@ -514,6 +609,7 @@ export class SimEngine {
       this.warn(`Pin ${p} does not exist on ${this.board.name}`, null, 'nopin' + p);
       return null;
     }
+    if (st.dead) return null; // burnt out: the pin no longer answers
     return st;
   }
 
@@ -714,6 +810,13 @@ export class SimEngine {
     for (const sp of this.supplies || []) {
       const i = Math.abs(sp.vs.iAvg ?? sp.vs.i);
       sp.current = i;
+      // something else drives this pin much higher than the board does (a 9 V battery on 5V, 5 V on 3V3):
+      // the regulator or the chip is gone
+      const ext = this.vAvg(sp.node) - this.vAvg(this.gnd);
+      if (!sp.diode && ext > sp.v * 1.25 + 0.4 && (sp.vs.iAvg ?? sp.vs.i) < -0.05) {
+        this.fatal(`${this.board.name} burned out: ${ext.toFixed(1)} V was forced onto its ${sp.pin} pin, which the board supplies itself at ${sp.v} V. Never connect another supply to this pin.`);
+        return;
+      }
       if (sp.maxI && i > sp.maxI) {
         if (i > sp.maxI * 4) {
           this.fatal(`Short circuit on the ${sp.pin} pin! ${(i).toFixed(1)} A flowing — the board's protection shut it down. Check that ${sp.pin} is not wired directly to GND.`);

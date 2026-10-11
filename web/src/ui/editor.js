@@ -710,6 +710,7 @@ export class Editor {
       onWarning: (msg) => this.addWarning(msg),
       onError: (err) => this.runtimeError(err),
       onSound: (id, freq, vol) => this.audio.set(id, freq, this.settings.sound === false ? 0 : vol),
+      onBurn: () => { Native.vibrate(40); if (this.settings.sound !== false) this.audio.pop(); },
       onEeprom: () => this.save(),
     });
     const res = engine.start();

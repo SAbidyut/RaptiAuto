@@ -72,6 +72,24 @@ export class AudioEngine {
     src.start();
   }
 
+  /** A short crackle: something burnt out. */
+  pop() {
+    if (!this.enabled) return;
+    const c = this.ensure();
+    if (!c) return;
+    const len = Math.floor(c.sampleRate * 0.22);
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3) * (i < len * 0.1 ? 1 : (Math.random() < 0.08 ? 1 : 0.15));
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const g = c.createGain();
+    g.gain.value = 0.9;
+    src.connect(g);
+    g.connect(this.master);
+    src.start();
+  }
+
   close() {
     this.stopAll();
     if (this.ctx) { setTimeout(() => { try { this.ctx.close(); } catch (e) { /* ignore */ } }, 200); }

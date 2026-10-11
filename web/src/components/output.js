@@ -3,8 +3,22 @@ import { register } from './registry.js';
 import { rect, circle, text, line, path, lead, pad } from './draw.js';
 import { Resistor, Diode } from '../sim/circuit/solver.js';
 import { ledBrightness, LED_COLORS, mix } from './basic.js';
+import { Stress, ledStress, burnMessage } from '../sim/damage.js';
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+/** Every LED of an array (segments, bar) wears out on its own: a segment without a resistor burns, the rest keep working. */
+function wearLeds(ctx, rt, ds, stress, dt, name) {
+  ds.forEach((d, i) => {
+    const cur = Math.max(0, d.iAvg ?? d.i);
+    rt.acc[i] += cur * dt;
+    if (d.open) return;
+    if (stress[i].add(ledStress(cur), dt) >= 1) {
+      d.open = true;
+      ctx.burn(burnMessage(name(i), `${(cur * 1000).toFixed(0)} mA is far above its 20 mA limit`, 'Use a 220 Ω resistor on every segment / LED pin'), 'burn' + i, true);
+    }
+  });
+}
 
 // ------------------------------------------------------------------ buzzer
 register({
@@ -100,18 +114,19 @@ register({
       const com = ctx.node('COM.1');
       const segs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'DP'];
       const ds = segs.map((sg) => ctx.add(anode ? new Diode(com, ctx.node(sg), col.vf, 12) : new Diode(ctx.node(sg), com, col.vf, 12)));
+      const stress = ds.map(() => new Stress(0.03));
       return {
         visual: { b: segs.map(() => 0) },
         acc: segs.map(() => 0),
-        accumulate(dt) { ds.forEach((d, i) => { this.acc[i] += Math.max(0, d.iAvg ?? d.i) * dt; }); },
+        accumulate(dt) { wearLeds(ctx, this, ds, stress, dt, (i) => `7-segment display segment ${segs[i]}`); },
         endFrame(fd) {
-          this.visual.b = ds.map((d, i) => ledBrightness(fd > 0 ? this.acc[i] / fd : Math.max(0, d.iAvg ?? d.i)));
+          this.visual.b = ds.map((d, i) => (d.open ? 0 : ledBrightness(fd > 0 ? this.acc[i] / fd : Math.max(0, d.iAvg ?? d.i))));
           this.acc.fill(0);
-          if (ds.some((d) => (d.iAvg ?? d.i) > 0.06)) ctx.warn('7-segment display: segment current too high — use a 220 Ω resistor on every segment pin.', 'segover');
         },
       };
     },
   },
+  burnAt: [18, -30],
   update(el, v, p) {
     const col = LED_COLORS[p.color] || LED_COLORS.red;
     if (!el._segs) el._segs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'DP'].map((k) => el.querySelector('.seg-' + k));
@@ -142,14 +157,16 @@ register({
     create(ctx) {
       const col = LED_COLORS[ctx.props.color] || LED_COLORS.red;
       const ds = Array.from({ length: 10 }, (_, i) => ctx.add(new Diode(ctx.node('A' + (i + 1)), ctx.node('C' + (i + 1)), col.vf, 12)));
+      const stress = ds.map(() => new Stress(0.03));
       return {
         visual: { b: ds.map(() => 0) },
         acc: ds.map(() => 0),
-        accumulate(dt) { ds.forEach((d, i) => { this.acc[i] += Math.max(0, d.iAvg ?? d.i) * dt; }); },
-        endFrame(fd) { this.visual.b = ds.map((d, i) => ledBrightness(fd > 0 ? this.acc[i] / fd : Math.max(0, d.iAvg ?? d.i))); this.acc.fill(0); },
+        accumulate(dt) { wearLeds(ctx, this, ds, stress, dt, (i) => `LED bar segment ${i + 1}`); },
+        endFrame(fd) { this.visual.b = ds.map((d, i) => (d.open ? 0 : ledBrightness(fd > 0 ? this.acc[i] / fd : Math.max(0, d.iAvg ?? d.i)))); this.acc.fill(0); },
       };
     },
   },
+  burnAt: [45, -30],
   update(el, v, p) {
     const col = LED_COLORS[p.color] || LED_COLORS.red;
     if (!el._bars) el._bars = Array.from({ length: 10 }, (_, i) => el.querySelector('.bar-' + i));

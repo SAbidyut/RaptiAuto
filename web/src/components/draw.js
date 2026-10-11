@@ -138,5 +138,6 @@ export const SHARED_DEFS = `
 <filter id="glowBig" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="7"/></filter>
 <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/></filter>
 <filter id="smoke" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>
+<radialGradient id="scorch"><stop offset="0" stop-color="#000" stop-opacity=".78"/><stop offset=".55" stop-color="#1c120a" stop-opacity=".5"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
 <pattern id="bbHoles" x="-5" y="-5" width="10" height="10" patternUnits="userSpaceOnUse"><rect x="3.2" y="3.2" width="3.6" height="3.6" rx="0.6" fill="#2b2d31"/></pattern>
 `;

@@ -285,7 +285,7 @@ export function burnDemo() {
   const l2 = plug('led', 'A', bb, 'c18', { color: 'green' });
   return {
     id: 'burn-demo', name: 'Why Resistors Matter', category: 'basics', level: 'beginner',
-    description: 'Two LEDs: one with a resistor, one without. Run it and watch what happens to the unprotected LED!',
+    description: 'Two LEDs: one with a resistor, one without. Run it: the unprotected LED glares, smokes and burns out after a few seconds, the other one lives on.',
     parts: [bb, u, l1, r, l2],
     wires: [
       W(u, 'D12', bb, 'a8', C.orange, [[134, -12], [400, -12]]),
@@ -295,8 +295,9 @@ export function burnDemo() {
       W(u, 'GND.1', bb, rail(bb, 'tn', 27), C.black, [[114, -36], [590, -36]]),
     ],
     code: `// Why resistors matter
-// LED on pin 12 has NO resistor  -> too much current -> it burns out!
-// LED on pin 11 has a 220 ohm resistor -> safe ~12 mA
+// LED on pin 12 has NO resistor  -> ~90 mA instead of 20 mA -> glares, then burns out in a few seconds
+// LED on pin 11 has a 220 ohm resistor -> safe ~12 mA, lasts for ever
+// (Stop and Run again: a new LED is fitted every time.)
 
 void setup() {
   pinMode(12, OUTPUT);
