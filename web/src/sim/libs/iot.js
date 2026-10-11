@@ -391,6 +391,7 @@ export class WiFiClientLib extends NetStream {
     return 0;
   }
   status() { return this.connected() ? 4 : 0; }
+  truthy() { return this.connected() ? 1 : 0; }
   flush() {}
   stop() {
     if (this.mode === 'srv' && !this.stopped) this._finishServer();

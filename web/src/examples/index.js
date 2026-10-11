@@ -6,6 +6,9 @@ import * as displays from './displays.js';
 import * as motors from './motors.js';
 import * as projects from './projects.js';
 import * as multi from './multi.js';
+import * as iot from './iot.js';
+import * as iotCloud from './iot-cloud.js';
+import * as iotMore from './iot-more.js';
 
 export const EXAMPLE_CATEGORIES = [
   { id: 'basics', name: 'Basics' },
@@ -27,6 +30,10 @@ const builders = [
   displays.neopixelRing, displays.r4Matrix, displays.weatherStation, projects.rtcClock, projects.keypadLock,
   motors.servoSweep, motors.servoKnob, motors.stepper28byj, motors.stepperA4988, motors.relayLamp, motors.l298nMotor,
   multi.i2cMasterSlave, multi.uartMasterSlave,
+  iot.iotHello, iot.iotWebLed, iot.iotDhtWeb, iot.iotRestApi, iot.iotAccessPoint, iot.iotWifiScanner, iot.iotBluetoothLed,
+  iot.iotEsp8266Relay, iot.iotR4Web,
+  iotCloud.iotMqttLight, iotCloud.iotMqttDht, iotCloud.iotThingspeak, iotCloud.iotBlynk, iotCloud.iotTelegramPir, iotCloud.iotNtpClock, iotCloud.iotCryptoLcd, iotCloud.iotIftttDoor,
+  iotMore.iotGasMqtt, iotMore.iotSoilPlant, iotMore.iotParkingWeb, iotMore.iotNeopixelWeb, iotMore.iotTwoBoardsMqtt, iotMore.iotWifiMulti, iotMore.iotIpLocation, iotMore.iotPrefsCounter,
 ];
 
 export const EXAMPLES = [];

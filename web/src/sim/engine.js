@@ -2,7 +2,7 @@
 // and the parts' behavioural models. Runs in virtual time, driven by animation frames.
 import { getDef, partProps, pinsOf } from '../components/registry.js';
 import { buildNetlist, pinKey } from './netlist.js';
-import { Solver, VSource, Diode } from './circuit/solver.js';
+import { Solver, VSource, Diode, Resistor } from './circuit/solver.js';
 import { SketchRunner } from './lang/runtime.js';
 import { makeCore } from './lang/core.js';
 import { makeLibraries, libMacros, checkIncludes } from './libs/index.js';
@@ -766,13 +766,34 @@ export class SimEngine {
     const st = this.pin(p);
     if (!st || st.node < 0) return null;
     this.processEvents();
-    for (const pr of this.parts.values()) {
-      if (pr.pulseOn) {
-        const r = pr.pulseOn(st.node, level, timeout);
-        if (r) return r;
+    // the signal may reach the pin through a resistor / voltage divider (a 5 V HC-SR04 ECHO on a 3.3 V board)
+    for (const n of [st.node, ...[...this.resistiveNeighbours(st.node)].filter((x) => x !== st.node)]) {
+      for (const pr of this.parts.values()) {
+        if (pr.pulseOn) {
+          const r = pr.pulseOn(n, level, timeout);
+          if (r) return r;
+        }
       }
     }
     return null;
+  }
+
+  /** The node and the nodes at most two resistors away from it (ground excluded): what a divider on a signal pin connects. */
+  resistiveNeighbours(node) {
+    const out = new Set([node]);
+    let frontier = [node];
+    for (let depth = 0; depth < 2 && frontier.length; depth++) {
+      const next = [];
+      for (const el of this.solver.elements) {
+        if (!(el instanceof Resistor)) continue;
+        for (const f of frontier) {
+          const other = el.a === f ? el.b : el.b === f ? el.a : -1;
+          if (other >= 0 && !out.has(other)) { out.add(other); next.push(other); }
+        }
+      }
+      frontier = next;
+    }
+    return out;
   }
 
   attachInterrupt(p, fn, mode) {

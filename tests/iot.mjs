@@ -248,6 +248,53 @@ void loop(){ if (SerialBT.available()) { String s = SerialBT.readStringUntil('\\
   check('ESP.restart() reboots the sketch', /boot 1\r\n[\s\S]*boot 1\r\n/.test(r.serial.replace(/boot 2/g, 'boot 1')) && (r.serial.match(/boot /g) || []).length >= 2, r.serial);
 }
 
+console.log('ArduinoJson');
+{
+  const r = await runIot(String.raw`
+#include <ArduinoJson.h>
+void setup() {
+  Serial.begin(115200);
+  StaticJsonDocument<512> doc;
+  String payload = "{\"name\":\"Dhaka\",\"main\":{\"temp\":31.5,\"humidity\":70},\"weather\":[{\"main\":\"Clouds\"},{\"main\":\"Rain\"}],\"ok\":true,\"n\":3}";
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) { Serial.println(error.c_str()); return; }
+  const char* name = doc["name"];
+  float t = doc["main"]["temp"];
+  int missing = doc["nothing"] | -1;
+  String w = doc["weather"][1]["main"];
+  bool ok = doc["ok"];
+  Serial.println(name); Serial.println(t); Serial.println(missing); Serial.println(w); Serial.println(ok);
+  Serial.println(doc["weather"].size());
+  Serial.println(doc["n"].as<int>() + 1);
+  Serial.println(doc["main"]["temp"].is<float>());
+  Serial.println(doc.containsKey("name"));
+  Serial.println(doc["name"] == "Dhaka");
+  for (JsonObject item : doc["weather"].as<JsonArray>()) Serial.println(item["main"].as<const char*>());
+  JsonObject root = doc.as<JsonObject>();
+  for (JsonPair kv : root) { Serial.print(kv.key().c_str()); Serial.print(","); }
+  Serial.println();
+  StaticJsonDocument<200> out;
+  out["sensor"] = "gps"; out["time"] = 1351824120; out["led"] = true; out["t"] = 23.5;
+  JsonArray data = out.createNestedArray("data"); data.add(48.756080); data.add(2.302038);
+  serializeJson(out, Serial); Serial.println();
+  char buf[64]; size_t n = serializeJson(out["data"], buf, sizeof(buf)); Serial.println(buf); Serial.println(n);
+  DeserializationError e2 = deserializeJson(doc, "{bad json");
+  Serial.println(e2.c_str());
+  DynamicJsonDocument d2(1024); d2["a"]["b"]["c"] = 5; serializeJson(d2, Serial); Serial.println();
+  serializeJsonPretty(out["data"], Serial); Serial.println();
+}
+void loop(){}`, { ms: 500 });
+  const L = r.serial.split(/\r?\n/);
+  check('deserializeJson + operator[] + | default + as<T>', r.ok && L[0] === 'Dhaka' && L[1] === '31.50' && L[2] === '-1' && L[3] === 'Rain' && L[4] === '1' && L[5] === '2' && L[6] === '4' && L[7] === '1' && L[8] === '1' && L[9] === '1', r.serial + JSON.stringify(r.error));
+  check('range-for over JsonArray / JsonObject', L[10] === 'Clouds' && L[11] === 'Rain' && L[12] === 'name,main,weather,ok,n,', r.serial);
+  check('serializeJson keeps true/false, nested arrays and char buffers', L[13] === '{"sensor":"gps","time":1351824120,"led":true,"t":23.5,"data":[48.75608,2.302038]}' && L[14] === '[48.75608,2.302038]' && L[15] === '19', r.serial);
+  check('errors and auto-created nested objects', L[16] === 'IncompleteInput' && L[17] === '{"a":{"b":{"c":5}}}' && L[18] === '[' && L[19] === '  48.75608,', r.serial);
+}
+{
+  const r = await runIot(HEAD + `#include <HTTPClient.h>\n#include <ArduinoJson.h>\nvoid setup(){ Serial.begin(115200); wifiUp(); HTTPClient http; http.begin("http://api.open-meteo.com/v1/forecast?latitude=23.81&longitude=90.41&current_weather=true"); int code = http.GET(); StaticJsonDocument<768> doc; DeserializationError err = deserializeJson(doc, http.getStream()); Serial.println(code); Serial.println(err.c_str()); float t = doc["current_weather"]["temperature"]; int wc = doc["current_weather"]["weathercode"]; Serial.println(t > -50 && t < 60); Serial.println(wc >= 0); http.end(); }\nvoid loop(){}`, { ms: 8000 });
+  check('HTTP GET → ArduinoJson parsing a stream (weather API)', /^200\r\nOk\r\n1\r\n1/.test(r.serial.trim()), r.serial + JSON.stringify(r.error));
+}
+
 console.log('Other boards and headers');
 {
   const b = browser([{ name: 'a', at: 3500, url: 'http://{ip}/' }]);

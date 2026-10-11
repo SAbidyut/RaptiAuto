@@ -197,7 +197,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .warn-pill { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 99px; background: rgba(245, 158, 11, .18); color: #fcd34d; font-weight: 700; font-size: 12px; }
 .ed-main { flex: 1; position: relative; overflow: hidden; }
 .pane { position: absolute; inset: 0; display: none; flex-direction: column; }
-.tab-circuit .pane-circuit, .tab-code .pane-code, .tab-serial .pane-serial { display: flex; }
+.tab-circuit .pane-circuit, .tab-code .pane-code, .tab-serial .pane-serial, .tab-iot .pane-iot { display: flex; }
 .ed-nav { display: flex; padding: 4px 8px calc(4px + var(--safe-b)); background: rgba(8, 12, 24, .95); border-top: 1px solid var(--line); z-index: 5; }
 .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 5px; border-radius: 14px; color: var(--dim); font-size: 11.5px; font-weight: 600; position: relative; transition: color .2s; }
 .nav-tab.active { color: var(--text); }
@@ -209,8 +209,9 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .editor.split .ed-main { display: flex; }
 .editor.split .pane { position: relative; inset: auto; display: flex; }
 .editor.split .pane-circuit { flex: 1.25; border-right: 1px solid var(--line); }
-.editor.split .pane-code, .editor.split .pane-serial { flex: 1; display: none; }
-.editor.split.tab-circuit .pane-code, .editor.split.tab-code .pane-code, .editor.split.tab-serial .pane-serial { display: flex; }
+.editor.split .pane-code, .editor.split .pane-serial, .editor.split .pane-iot { flex: 1; display: none; }
+.editor.split.tab-circuit .pane-code, .editor.split.tab-code .pane-code, .editor.split.tab-serial .pane-serial, .editor.split.tab-iot .pane-iot { display: flex; }
+.editor.split.tab-iot .pane-code { display: none; }
 .split-toggle { display: none !important; }
 .editor.wide .nav-tab.split-toggle { display: flex !important; flex: 0 0 76px; }
 .editor.wide .fs-btn.split-toggle { display: grid !important; }
@@ -743,3 +744,21 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .vb-progress.on { opacity: 1; animation: vb-load 1.6s ease-out forwards; }
 @keyframes vb-load { from { width: 0; } to { width: 88%; } }
 .vb-alert { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; max-width: 86%; background: #fff; color: #202124; border-radius: 10px; padding: 10px 16px; font: 14px var(--font); box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+
+/* IoT tab: chips of the boards on the Wi-Fi + a browser */
+.pane-iot { background: #0b1020; }
+.iot-chips { display: flex; align-items: center; gap: 6px; padding: 7px 10px; overflow-x: auto; scrollbar-width: none; flex: none; border-bottom: 1px solid var(--line); background: rgba(8, 12, 24, .9); }
+.iot-chips > * { flex: none; }
+.iot-wifi { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 13px; background: rgba(239, 68, 68, .14); color: #fca5a5; font-size: 12px; }
+.iot-wifi.on { background: rgba(34, 211, 238, .13); color: var(--accent); }
+.iot-wifi i { font-style: normal; opacity: .75; margin-left: 4px; }
+.iot-dev { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; background: rgba(148, 163, 184, .12); color: var(--dim); font-size: 12px; }
+.iot-dev.on { color: var(--text); }
+.iot-dev i { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+.iot-dev.on i { background: var(--ok, #22c55e); box-shadow: 0 0 8px var(--ok, #22c55e); }
+.iot-link { height: 26px; padding: 0 10px; border-radius: 13px; background: rgba(56, 189, 248, .14); color: #7dd3fc; font-size: 12px; font-family: var(--mono); }
+.iot-link:active { background: rgba(56, 189, 248, .3); }
+.iot-hint { color: var(--dim); font-size: 12px; }
+.iot-body { flex: 1; display: flex; min-height: 0; }
+.iot-wait { margin: auto; color: var(--dim); }
+.fs-btn.hidden, .nav-tab.hidden { display: none; }

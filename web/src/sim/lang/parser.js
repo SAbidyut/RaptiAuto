@@ -870,7 +870,13 @@ export class Parser {
         e = { kind: 'Index', obj: e, idx, line: t.line };
       } else if (t.v === '.' || t.v === '->') {
         this.p++;
-        const name = this.ident('member name');
+        let name = this.ident('member name');
+        // doc.as<JsonObject>() / to<JsonArray>() / is<int>() / as<const char*>(): the type becomes part of the method name (as_JsonObject …)
+        if (this.isOp('<') && (name === 'as' || name === 'to' || name === 'is')) {
+          let q = this.p + 1, tn = '';
+          while (this.toks[q] && this.toks[q].t !== 'eof' && !(this.toks[q].t === 'op' && this.toks[q].v === '>')) { const k = this.toks[q]; tn += k.v === '*' ? 'Ptr' : String(k.v); q++; }
+          if (this.toks[q] && this.toks[q + 1] && this.toks[q + 1].t === 'op' && this.toks[q + 1].v === '(') { name = `${name}_${tn}`; this.p = q + 1; }
+        }
         e = { kind: 'Member', obj: e, name, arrow: t.v === '->', line: t.line };
       } else if (t.v === '++' || t.v === '--') {
         this.p++;
