@@ -19,11 +19,6 @@ const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59
 const BUS_COLOR = { rs232: '#f59e0b', rs485: '#22d3ee', usb: '#a78bfa' };
 const LAMP = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
 const CAP = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#2a2d33', white: '#e9ecef' };
-const VFD_KEYS = [
-  { k: 'MODE', c: 0, r: 0, label: 'MODE' }, { k: 'UP', c: 1, r: 0, label: '▲' }, { k: 'ENTER', c: 2, r: 0, label: 'ENTER' },
-  { k: 'LEFT', c: 0, r: 1, label: '◀' }, { k: 'DOWN', c: 1, r: 1, label: '▼' },
-  { k: 'RUN', c: 0, r: 2, label: 'RUN', color: '#15803d', span: 1.5 }, { k: 'STOP', c: 1.5, r: 2, label: 'STOP', color: '#b91c1c', span: 1.5 },
-];
 
 const el = (tag, attrs = {}, parent = null, text = null) => {
   const e = document.createElementNS(SVGNS, tag);
@@ -343,36 +338,50 @@ function drawDevice(g, sym) {
       break;
     }
     case 'vfd': {
-      el('rect', { x: w / 2 - 70, y: 34, width: 140, height: 34, rx: 5, class: 'sd-lcd' }, g);
-      // right-aligned inside the LCD window; squeezed (never spilling out) when the text is long
-      const disp = txt(w / 2 + 62, 59, '', 'sd-seg');
+      // MS300 keypad as on the drive: RUN / FWD / REV LEDs, the 5-digit display, STOP / PLC LEDs,
+      // the speed dial, then RUN ▲ MODE / STOP-RESET ◀/▼ ENTER
+      const cx = w / 2;
+      el('rect', { x: cx - 106, y: 28, width: 212, height: 116, rx: 7, class: 'sd-kpface' }, g);
+      el('rect', { x: cx - 74, y: 36, width: 104, height: 32, rx: 4, class: 'sd-lcd' }, g);
+      const disp = txt(cx + 26, 59, '', 'sd-seg');
       const fitDisp = (text) => {
         disp.removeAttribute('textLength'); disp.removeAttribute('lengthAdjust');
-        if (text.length <= 6) return; // "599.00" fits
+        if (text.length <= 6) return;
         let tw = 0;
         try { tw = disp.getComputedTextLength(); } catch (e) { /* not rendered yet */ }
-        if (tw > 124) { disp.setAttribute('textLength', 124); disp.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+        if (tw > 96) { disp.setAttribute('textLength', 96); disp.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
       };
       const leds = {};
-      ['RUN', 'STOP', 'FWD', 'REV'].forEach((k, i) => { const x = w / 2 - 54 + i * 36; leds[k] = led(x, 80, k === 'STOP' ? '#ff3b30' : '#36ff6a', 3.4); txt(x + 6, 83, k, 'sd-mini l'); });
-      const kw = 40, kh = 22, kx0 = w / 2 - (3 * kw + 8) / 2;
+      [['RUN', 40], ['FWD', 52], ['REV', 64]].forEach(([k, y]) => { leds[k] = led(cx - 99, y - 3, '#36ff6a', 3); txt(cx - 94, y, k, 'sd-mini l'); });
+      [['STOP', 46, '#ff3b30'], ['PLC', 60, '#36ff6a']].forEach(([k, y, c]) => { leds[k] = led(cx + 37, y - 3, c, 3); txt(cx + 42, y, k, 'sd-mini l'); });
+      const kx = cx + 84, ky = 52;
+      el('path', { d: `M ${kx - 12.7} ${ky + 12.7} A 18 18 0 1 1 ${kx + 12.7} ${ky + 12.7}`, class: 'sd-dial-arc' }, g);
+      el('circle', { cx: kx, cy: ky, r: 13, class: 'sd-dial' }, g);
+      const mark = el('line', { x1: kx, y1: ky, x2: kx, y2: ky - 11, class: 'sd-dial-mark' }, g);
+      ctl(kx - 18, ky - 18, 36, 36, 'vfdKnob', { label: 'Speed dial (Pr.00-20 = 7)' });
+      const keys = [
+        { k: 'RUN', c: 0, r: 0, label: 'RUN', cls: 'run' }, { k: 'UP', c: 1, r: 0, label: '▲', cls: 'grey' }, { k: 'MODE', c: 2, r: 0, label: 'MODE', cls: 'grey' },
+        { k: 'STOP', c: 0, r: 1, label: 'STOP/RESET', cls: 'stop' }, { k: 'LD', c: 1, r: 1, label: '</▼', cls: 'grey' }, { k: 'ENTER', c: 2, r: 1, label: 'ENTER', cls: 'enter' },
+      ];
+      const kw = 60, kh = 26, kx0 = cx - (3 * kw + 12) / 2;
       const keyEls = {};
-      for (const k of VFD_KEYS) {
-        const x = kx0 + k.c * (kw + 4), y = 94 + k.r * (kh + 5), ww = (k.span || 1) * kw + ((k.span || 1) - 1) * 4;
-        const r = el('rect', { x, y, width: ww, height: kh, rx: 5, class: 'sd-key', fill: k.color || null }, g);
-        txt(x + ww / 2, y + kh / 2 + 3.5, k.label, 'sd-key-t');
+      for (const k of keys) {
+        const x = kx0 + k.c * (kw + 6), y = 78 + k.r * (kh + 6);
+        const r = el('rect', { x, y, width: kw, height: kh, rx: 5, class: 'sd-key ' + k.cls }, g);
+        txt(x + kw / 2, y + kh / 2 + 3.5, k.label, 'sd-key-t ' + k.cls);
         keyEls[k.k] = r;
-        ctl(x, y, ww, kh, 'vfdKey', { key: k.k, label: k.label });
+        ctl(x, y, kw, kh, 'vfdKey', { key: k.k, label: k.k === 'LD' ? '◀/▼ (tap ▼ · hold ◀)' : k.label });
       }
-      txt(w / 2, h - 34, 'MS300  ·  ' + def.part, 'sd-sub');
+      txt(cx, h - 40, 'DELTA MS300  ·  ' + def.part, 'sd-sub');
       update = (rt, t) => {
         const d = rt.vfd.display(t);
         const s = d.off ? '' : String(d.text);
         if (disp.textContent !== s) { disp.textContent = s; fitDisp(s); }
         set(disp, 'class', 'sd-seg' + (d.fault ? ' blink' : ''));
         for (const k of Object.keys(leds)) ledOn(leds[k], !!d.leds[k]);
+        set(mark, 'transform', `rotate(${(-135 + 270 * Math.max(0, Math.min(1, rt.dev.state.knob ?? 0))).toFixed(0)} ${kx} ${ky})`);
       };
-      sym.press = (key) => { const r = keyEls[key]; if (!r) return; r.classList.add('down'); setTimeout(() => r.classList.remove('down'), 140); };
+      sym.press = (key) => { const r = keyEls[key === 'DOWN' || key === 'LEFT' ? 'LD' : key]; if (!r) return; r.classList.add('down'); setTimeout(() => r.classList.remove('down'), 140); };
       break;
     }
     case 'hmi': {

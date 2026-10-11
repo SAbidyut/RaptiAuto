@@ -1,49 +1,24 @@
-// Delta MS300 variable frequency drive model: parameters, keypad, terminal / RS-485 control,
-// acceleration ramps, V/f output, an induction motor load, protections and Modbus registers.
+// Delta MS300 (VFD7A5MS21ANSAA) variable frequency drive, modelled on the MS300 user manual:
+// parameter groups 00–09 with the manual's numbers, settings and defaults (50 Hz base), the
+// KPMS-LE01 style keypad (RUN, STOP/RESET, ▲, ◀/▼, MODE, ENTER and the speed knob), F / H / U pages,
+// frequency sources (keypad, RS-485, AVI, UP/DOWN terminals, keypad knob), operation sources
+// (keypad, terminals, RS-485), 2- / 3-wire control, multi-function inputs, multi-step speeds,
+// JOG, two accel / decel sets with S-curves, stall prevention, DC braking, protections with the
+// manual's fault codes and fault record, the RA/RB/RC relay, AFM and the Modbus registers.
 
 const opts = (o) => o;
-export const VFD_PARAMS = [
-  { id: '00-00', name: 'Identity code of the AC motor drive', def: 6, dec: 0, ro: true },
-  { id: '00-01', name: 'Rated current of the drive', def: 7.5, dec: 1, unit: 'A', ro: true },
-  { id: '00-02', name: 'Parameter reset', def: 0, dec: 0, min: 0, max: 10, opts: opts({ 0: 'No function', 1: 'Parameter write protect', 9: 'Reset all to factory (50 Hz)', 10: 'Reset all to factory (60 Hz)' }) },
-  { id: '00-04', name: 'Content of the user display (U)', def: 6, dec: 0, min: 0, max: 6, opts: opts({ 0: 'Output current (A)', 2: 'Actual output frequency (H)', 3: 'DC bus voltage (u)', 4: 'Output voltage (E)', 5: 'Output power (P, kW)', 6: 'Motor speed (r, rpm)' }) },
-  { id: '00-20', name: 'Source of master frequency command', def: 0, dec: 0, min: 0, max: 2, opts: opts({ 0: 'Digital keypad', 1: 'RS-485 communication', 2: 'External analog input (AVI)' }) },
-  { id: '00-21', name: 'Source of operation command', def: 0, dec: 0, min: 0, max: 2, opts: opts({ 0: 'Digital keypad', 1: 'External terminals (MI1 / MI2)', 2: 'RS-485 communication' }) },
-  { id: '00-22', name: 'Stop method', def: 0, dec: 0, min: 0, max: 1, opts: opts({ 0: 'Ramp to stop', 1: 'Coast to stop' }) },
-  { id: '00-23', name: 'Motor direction control', def: 0, dec: 0, min: 0, max: 2, opts: opts({ 0: 'Forward and reverse enabled', 1: 'Reverse disabled', 2: 'Forward disabled' }) },
-  { id: '00-32', name: 'Digital keypad STOP function', def: 1, dec: 0, min: 0, max: 1, opts: opts({ 0: 'STOP key disabled (external / RS-485 control)', 1: 'STOP key enabled in every control mode' }) },
-  { id: '01-00', name: 'Maximum operation frequency', def: 50, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '01-01', name: 'Motor 1 rated / base frequency', def: 50, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '01-02', name: 'Motor 1 rated voltage', def: 220, dec: 1, unit: 'V', min: 0, max: 255 },
-  { id: '01-10', name: 'Output frequency upper limit', def: 599, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '01-11', name: 'Output frequency lower limit', def: 0, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '01-12', name: 'Acceleration time 1', def: 10, dec: 2, unit: 's', min: 0, max: 600 },
-  { id: '01-13', name: 'Deceleration time 1', def: 10, dec: 2, unit: 's', min: 0, max: 600 },
-  { id: '02-00', name: 'Two-wire / three-wire operation control', def: 0, dec: 0, min: 0, max: 2, opts: opts({ 0: '2-wire: MI1 FWD/STOP, MI2 REV/STOP', 1: '2-wire: MI1 RUN/STOP, MI2 REV/FWD', 2: '3-wire: MI1 RUN, MI2 REV/FWD, MI3 STOP' }) },
-  { id: '02-01', name: 'Multi-function input MI3', def: 1, dec: 0, min: 0, max: 10, opts: MI_OPTS() },
-  { id: '02-02', name: 'Multi-function input MI4', def: 2, dec: 0, min: 0, max: 10, opts: MI_OPTS() },
-  { id: '02-03', name: 'Multi-function input MI5', def: 3, dec: 0, min: 0, max: 10, opts: MI_OPTS() },
-  { id: '02-13', name: 'Relay RY1 (RA / RB / RC) function', def: 11, dec: 0, min: 0, max: 11, opts: opts({ 0: 'No function', 1: 'Indication during RUN', 2: 'Operation speed reached', 11: 'Malfunction indication' }) },
-  { id: '03-00', name: 'AVI analog input function', def: 1, dec: 0, ro: true, opts: opts({ 1: 'Frequency command (0–10 V = 0–Pr.01-00)' }) },
-  { id: '04-00', name: 'Multi-step speed 1', def: 10, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '04-01', name: 'Multi-step speed 2', def: 20, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '04-02', name: 'Multi-step speed 3', def: 30, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '04-03', name: 'Multi-step speed 4', def: 35, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '04-04', name: 'Multi-step speed 5', def: 40, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '04-05', name: 'Multi-step speed 6', def: 45, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '04-06', name: 'Multi-step speed 7', def: 50, dec: 2, unit: 'Hz', min: 0, max: 599 },
-  { id: '05-01', name: 'Motor 1 full-load current', def: 3.2, dec: 2, unit: 'A', min: 0, max: 20 },
-  { id: '05-02', name: 'Motor 1 no-load current', def: 1.3, dec: 2, unit: 'A', min: 0, max: 20 },
-  { id: '05-03', name: 'Motor 1 rated speed', def: 1420, dec: 0, unit: 'rpm', min: 0, max: 65535 },
-  { id: '05-04', name: 'Motor 1 number of poles', def: 4, dec: 0, min: 2, max: 20 },
-  { id: '09-00', name: 'COM1 communication address', def: 1, dec: 0, min: 1, max: 254 },
-  { id: '09-01', name: 'COM1 transmission speed', def: 9.6, dec: 1, unit: 'kbps', min: 4.8, max: 115.2, opts: opts({ 4.8: '4800 bps', 9.6: '9600 bps', 19.2: '19200 bps', 38.4: '38400 bps', 57.6: '57600 bps', 115.2: '115200 bps' }) },
-  { id: '09-02', name: 'COM1 transmission fault treatment', def: 3, dec: 0, min: 0, max: 3, opts: opts({ 0: 'Warn and continue operation', 1: 'Fault and ramp to stop', 2: 'Fault and coast to stop', 3: 'No warning, continue operation' }) },
-  { id: '09-03', name: 'COM1 time-out detection', def: 0, dec: 1, unit: 's', min: 0, max: 100 },
-  { id: '09-04', name: 'COM1 communication protocol', def: 1, dec: 0, min: 1, max: 17, opts: PROTO_OPTS() },
-];
+const hz = (id, name, def, o = {}) => ({ id, name, def, dec: 2, unit: 'Hz', min: 0, max: 599, ...o });
+const sec = (id, name, def, o = {}) => ({ id, name, def, dec: 2, unit: 's', min: 0, max: 600, ...o });
 
-function MI_OPTS() { return { 0: 'No function', 1: 'Multi-step speed command 1', 2: 'Multi-step speed command 2', 3: 'Multi-step speed command 3', 5: 'Fault reset', 10: 'External fault (EF) input' }; }
+/** Multi-function input settings (Pr.02-01 ~ 02-05) that the simulator acts on. */
+function MI_OPTS() {
+  return {
+    0: 'No function', 1: 'Multi-step speed command 1', 2: 'Multi-step speed command 2', 3: 'Multi-step speed command 3', 4: 'Multi-step speed command 4',
+    5: 'Reset', 6: 'JOG operation', 7: 'Acceleration / deceleration speed inhibit', 8: '1st / 2nd acceleration / deceleration time selection',
+    10: 'External fault input (EF, Pr.07-20)', 11: 'Base block input (B.B)', 12: 'Output stop', 18: 'Force to stop (Pr.07-20)',
+    19: 'Frequency UP command', 20: 'Frequency DOWN command',
+  };
+}
 function PROTO_OPTS() {
   const o = {};
   const list = ['7,N,2 ASCII', '7,E,1 ASCII', '7,O,1 ASCII', '7,E,2 ASCII', '7,O,2 ASCII', '8,N,1 ASCII', '8,N,2 ASCII', '8,E,1 ASCII', '8,O,1 ASCII', '8,E,2 ASCII', '8,O,2 ASCII', '8,N,1 RTU', '8,N,2 RTU', '8,E,1 RTU', '8,O,1 RTU', '8,E,2 RTU', '8,O,2 RTU'];
@@ -51,22 +26,163 @@ function PROTO_OPTS() {
   return o;
 }
 
+/** Fault codes as the MS300 shows them and stores them in Pr.06-17 ~ 06-22 (sim = simulated here). */
+export const FAULTS = {
+  ocA: { n: 1, sim: true, text: 'Over-current during acceleration: the acceleration time (Pr.01-12) is too short and stall prevention (Pr.06-03) is off, or the load is too heavy' },
+  ocd: { n: 2, sim: true, text: 'Over-current during deceleration' },
+  ocn: { n: 3, text: 'Over-current at constant speed' },
+  GFF: { n: 4, text: 'Ground fault on the output (U/T1, V/T2, W/T3)' },
+  occ: { n: 5, text: 'Short circuit in the IGBT module' },
+  ocS: { n: 6, text: 'Over-current at stop (hardware failure in current detection)' },
+  ovA: { n: 7, text: 'Over-voltage during acceleration' },
+  ovd: { n: 8, sim: true, text: 'Over-voltage during deceleration: the deceleration time (Pr.01-13) is too short and over-voltage stall prevention (Pr.06-01) is off' },
+  ovn: { n: 9, text: 'Over-voltage at constant speed' },
+  ovS: { n: 10, text: 'Over-voltage at stop' },
+  LvA: { n: 11, text: 'Low voltage during acceleration' },
+  Lvd: { n: 12, text: 'Low voltage during deceleration' },
+  Lvn: { n: 13, text: 'Low voltage at constant speed' },
+  LvS: { n: 14, text: 'Low voltage at stop' },
+  OrP: { n: 15, text: 'Phase loss protection of the input power' },
+  oH1: { n: 16, text: 'IGBT over-heat' },
+  tH1o: { n: 18, text: 'IGBT temperature detection failure' },
+  oL: { n: 21, sim: true, text: 'Drive over-load: output current above 150 % of the drive rated current (Pr.00-01) for 60 s' },
+  EoL1: { n: 22, sim: true, text: 'Electronic thermal relay 1 (motor over-load): reduce the load or check Pr.05-01 / 06-13 / 06-14' },
+  EoL2: { n: 23, text: 'Electronic thermal relay 2' },
+  oH3: { n: 24, text: 'Motor over-heat (PTC)' },
+  ot1: { n: 26, text: 'Over-torque 1' },
+  ot2: { n: 27, text: 'Over-torque 2' },
+  uC: { n: 28, text: 'Under current' },
+  cF1: { n: 30, text: 'EEPROM write error' },
+  cF2: { n: 31, text: 'EEPROM read error' },
+  cd1: { n: 33, text: 'U-phase current detection error' },
+  Hd0: { n: 36, text: 'cc (current clamp) hardware error' },
+  AUE: { n: 40, text: 'Auto-tuning error' },
+  AFE: { n: 41, text: 'PID feedback loss' },
+  ACE: { n: 48, text: 'Analog input loss (ACI)' },
+  EF: { n: 49, sim: true, text: 'External fault: a multi-function input set to 10 (EF) is ON (Pr.07-20 decides how the drive stops)' },
+  EF1: { n: 50, text: 'Emergency stop' },
+  bb: { n: 51, text: 'External base block' },
+  Pcod: { n: 52, text: 'Password locked (three wrong passwords)' },
+  CE1: { n: 54, text: 'Illegal Modbus function code' },
+  CE2: { n: 55, text: 'Illegal Modbus data address' },
+  CE3: { n: 56, text: 'Illegal Modbus data value' },
+  CE4: { n: 57, text: 'Modbus data written to a read-only address' },
+  CE10: { n: 58, sim: true, text: 'Modbus communication time-out (Pr.09-03)' },
+  CP10: { n: 59, text: 'Keypad communication time-out' },
+  STo: { n: 76, text: 'Safe torque off' },
+};
+const FAULT_BY_N = Object.fromEntries(Object.entries(FAULTS).map(([k, f]) => [f.n, k]));
+export const faultName = (n) => (n ? FAULT_BY_N[n] || String(n) : 'none');
+function FAULT_OPTS() { const o = { 0: 'No fault record' }; for (const [k, f] of Object.entries(FAULTS)) o[f.n] = k; return o; }
+
+export const VFD_PARAMS = [
+  // ---- 00 drive parameters
+  { id: '00-00', name: 'Identity code of the AC motor drive', def: 6, dec: 0, ro: true },
+  { id: '00-01', name: 'Display AC motor drive rated current', def: 7.5, dec: 1, unit: 'A', ro: true },
+  { id: '00-02', name: 'Parameter reset', def: 0, dec: 0, opts: opts({ 0: 'No function', 1: 'Parameter write protect', 9: 'Reset all parameters to factory defaults (base frequency 50 Hz)', 10: 'Reset all parameters to factory defaults (base frequency 60 Hz)' }) },
+  { id: '00-03', name: 'Start-up display selection', def: 0, dec: 0, opts: opts({ 0: 'Frequency command (F)', 1: 'Output frequency (H)', 2: 'Multi-function display, see Pr.00-04 (U)', 3: 'Output current (A)' }) },
+  { id: '00-04', name: 'Content of multi-function display (U page)', def: 3, dec: 0, opts: opts({ 0: 'Output current (A)', 2: 'Actual output frequency (H)', 3: 'DC bus voltage (u)', 4: 'Output voltage (E)', 6: 'Output power in kW (P)', 7: 'Actual motor speed in rpm (r)', 8: 'Estimated output torque in % (t)', 14: 'IGBT temperature in °C (i.)', 16: 'Digital input status, hex (i)', 17: 'Digital output status, hex (o)', 18: 'Multi-step speed status (S)' }) },
+  { id: '00-10', name: 'Control mode', def: 0, dec: 0, ro: true, opts: opts({ 0: 'Speed mode' }) },
+  { id: '00-11', name: 'Speed control mode', def: 0, dec: 0, ro: true, opts: opts({ 0: 'IM V/F control' }) },
+  { id: '00-17', name: 'Carrier frequency', def: 4, dec: 0, unit: 'kHz', min: 2, max: 15 },
+  { id: '00-20', name: 'Source of master frequency command (AUTO)', def: 0, dec: 0, opts: opts({ 0: 'Digital keypad (▲ ▼)', 1: 'RS-485 serial communication', 2: 'External analog input (AVI, Pr.03-00)', 3: 'External UP / DOWN terminal (MI = 19 / 20)', 7: 'Digital keypad dial (the knob)' }) },
+  { id: '00-21', name: 'Source of the operation command (AUTO)', def: 0, dec: 0, opts: opts({ 0: 'Digital keypad (RUN / STOP)', 1: 'External terminals (MI1 / MI2, Pr.02-00)', 2: 'RS-485 serial communication' }) },
+  { id: '00-22', name: 'Stop method', def: 0, dec: 0, opts: opts({ 0: 'Ramp to stop', 1: 'Coast to stop' }) },
+  { id: '00-23', name: 'Control of motor direction', def: 0, dec: 0, opts: opts({ 0: 'Enable forward / reverse', 1: 'Reverse disabled', 2: 'Forward disabled' }) },
+  { id: '00-32', name: 'Digital keypad STOP function', def: 1, dec: 0, opts: opts({ 0: 'STOP key disabled (when the command is not from the keypad)', 1: 'STOP key enabled' }) },
+  // ---- 01 basic parameters
+  hz('01-00', 'Maximum operation frequency', 50, { min: 0, max: 599 }),
+  hz('01-01', 'Output frequency of motor 1 (base frequency)', 50),
+  { id: '01-02', name: 'Output voltage of motor 1 (base voltage)', def: 220, dec: 1, unit: 'V', min: 0, max: 255 },
+  hz('01-09', 'Start-up frequency', 0.5),
+  hz('01-10', 'Output frequency upper limit', 599),
+  hz('01-11', 'Output frequency lower limit', 0),
+  sec('01-12', 'Acceleration time 1', 10),
+  sec('01-13', 'Deceleration time 1', 10),
+  sec('01-14', 'Acceleration time 2', 10),
+  sec('01-15', 'Deceleration time 2', 10),
+  sec('01-20', 'JOG acceleration time', 10),
+  sec('01-21', 'JOG deceleration time', 10),
+  hz('01-22', 'JOG frequency', 6),
+  sec('01-24', 'S-curve acceleration begin time 1', 0.2, { max: 25 }),
+  sec('01-25', 'S-curve acceleration arrival time 1', 0.2, { max: 25 }),
+  sec('01-26', 'S-curve deceleration begin time 1', 0.2, { max: 25 }),
+  sec('01-27', 'S-curve deceleration arrival time 1', 0.2, { max: 25 }),
+  // ---- 02 digital input / output
+  { id: '02-00', name: 'Two-wire / three-wire operation control', def: 1, dec: 0, opts: opts({ 0: 'No function (MI1 / MI2 are programmable)', 1: 'Two-wire mode 1: MI1 FWD / STOP, MI2 REV / STOP', 2: 'Two-wire mode 2: MI1 RUN / STOP, MI2 REV / FWD', 3: 'Three-wire: MI1 RUN, MI2 REV / FWD, MI3 STOP (NC)' }) },
+  { id: '02-01', name: 'Multi-function input command 1 (MI1)', def: 0, dec: 0, opts: MI_OPTS() },
+  { id: '02-02', name: 'Multi-function input command 2 (MI2)', def: 0, dec: 0, opts: MI_OPTS() },
+  { id: '02-03', name: 'Multi-function input command 3 (MI3)', def: 1, dec: 0, opts: MI_OPTS() },
+  { id: '02-04', name: 'Multi-function input command 4 (MI4)', def: 2, dec: 0, opts: MI_OPTS() },
+  { id: '02-05', name: 'Multi-function input command 5 (MI5)', def: 3, dec: 0, opts: MI_OPTS() },
+  { id: '02-09', name: 'UP / DOWN key mode', def: 0, dec: 0, opts: opts({ 0: 'UP / DOWN by the acceleration / deceleration time', 1: 'UP / DOWN at a constant speed (Pr.02-10)' }) },
+  { id: '02-10', name: 'Constant speed of UP / DOWN key', def: 0.01, dec: 3, unit: 'Hz/ms', min: 0.001, max: 1 },
+  { id: '02-13', name: 'Multi-function output 1 (relay RA / RB / RC)', def: 11, dec: 0, opts: opts({ 0: 'No function', 1: 'Indication during RUN', 2: 'Operation speed reached', 3: 'Desired frequency reached 1 (Pr.02-22)', 5: 'Zero speed (frequency command)', 6: 'Zero speed, including STOP', 9: 'Drive is ready', 11: 'Malfunction indication' }) },
+  hz('02-22', 'Desired frequency reached 1', 50),
+  hz('02-23', 'The width of the desired frequency reached 1', 2),
+  // ---- 03 analog input / output
+  { id: '03-00', name: 'AVI analog input selection', def: 1, dec: 0, opts: opts({ 0: 'No function', 1: 'Frequency command' }) },
+  { id: '03-03', name: 'Analog input bias 1 (AVI)', def: 0, dec: 1, unit: '%', min: -100, max: 100 },
+  { id: '03-11', name: 'Analog input gain 1 (AVI)', def: 100, dec: 1, unit: '%', min: -500, max: 500 },
+  { id: '03-20', name: 'Multi-function output 1 (AFM)', def: 0, dec: 0, opts: opts({ 0: 'Output frequency (0 – Pr.01-00)', 1: 'Frequency command', 2: 'Motor speed', 3: 'Output current (0 – 2 × rated)', 4: 'Output voltage', 5: 'DC bus voltage' }) },
+  { id: '03-21', name: 'Gain of analog output 1 (AFM)', def: 100, dec: 1, unit: '%', min: 0, max: 500 },
+  { id: '03-28', name: 'AVI terminal input selection', def: 0, dec: 0, ro: true, opts: opts({ 0: '0 – 10 V' }) },
+  // ---- 04 multi-step speed
+  ...['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th', '14th', '15th'].map((n, i) => hz('04-' + String(i).padStart(2, '0'), `${n} step speed frequency`, 0)),
+  // ---- 05 motor parameters
+  { id: '05-01', name: 'Full-load current of induction motor 1', def: 3.2, dec: 2, unit: 'A', min: 0.75, max: 9 },
+  { id: '05-02', name: 'Rated power of induction motor 1', def: 0.75, dec: 2, unit: 'kW', min: 0, max: 655.35 },
+  { id: '05-03', name: 'Rated speed of induction motor 1', def: 1410, dec: 0, unit: 'rpm', min: 0, max: 65535 },
+  { id: '05-04', name: 'Number of poles of induction motor 1', def: 4, dec: 0, min: 2, max: 20 },
+  { id: '05-05', name: 'No-load current of induction motor 1', def: 1.3, dec: 2, unit: 'A', min: 0, max: 9 },
+  // ---- 06 protection
+  { id: '06-01', name: 'Over-voltage stall prevention (0 = disabled)', def: 380, dec: 1, unit: 'V', min: 0, max: 390 },
+  { id: '06-03', name: 'Over-current stall prevention during acceleration (0 = disabled)', def: 150, dec: 0, unit: '%', min: 0, max: 250 },
+  { id: '06-04', name: 'Over-current stall prevention during operation (0 = disabled)', def: 150, dec: 0, unit: '%', min: 0, max: 250 },
+  { id: '06-13', name: 'Electronic thermal relay selection 1 (motor 1)', def: 2, dec: 0, opts: opts({ 0: 'Inverter motor (with external forced cooling)', 1: 'Standard motor (motor with the fan on the shaft)', 2: 'Disable' }) },
+  { id: '06-14', name: 'Electronic thermal relay action time 1 (150 % load)', def: 60, dec: 1, unit: 's', min: 30, max: 600 },
+  ...['Present fault record', 'Second most recent fault record', 'Third most recent fault record', 'Fourth most recent fault record', 'Fifth most recent fault record', 'Sixth most recent fault record'].map((n, i) => ({ id: '06-' + (17 + i), name: n, def: 0, dec: 0, ro: true, opts: FAULT_OPTS() })),
+  // ---- 07 special parameters
+  { id: '07-01', name: 'DC brake current level', def: 0, dec: 0, unit: '%', min: 0, max: 100 },
+  sec('07-03', 'DC brake time at stop', 0, { max: 60 }),
+  hz('07-04', 'DC brake frequency at stop', 0),
+  { id: '07-20', name: 'Emergency stop (EF) and force to stop selection', def: 0, dec: 0, opts: opts({ 0: 'Coast to stop', 1: 'Stop by the 1st deceleration time', 2: 'Stop by the 2nd deceleration time' }) },
+  // ---- 09 communication
+  { id: '09-00', name: 'COM1 communication address', def: 1, dec: 0, min: 1, max: 254 },
+  { id: '09-01', name: 'COM1 transmission speed', def: 9.6, dec: 1, unit: 'kbps', min: 4.8, max: 115.2, opts: opts({ 4.8: '4800 bps', 9.6: '9600 bps', 19.2: '19200 bps', 38.4: '38400 bps', 57.6: '57600 bps', 115.2: '115200 bps' }) },
+  { id: '09-02', name: 'COM1 transmission fault treatment', def: 3, dec: 0, opts: opts({ 0: 'Warn and continue operation', 1: 'Fault and ramp to stop', 2: 'Fault and coast to stop', 3: 'No warning, continue operation' }) },
+  { id: '09-03', name: 'COM1 time-out detection (0 = disabled)', def: 0, dec: 1, unit: 's', min: 0, max: 100 },
+  { id: '09-04', name: 'COM1 communication protocol', def: 1, dec: 0, opts: PROTO_OPTS() },
+];
+
 export const PARAM_BY_ID = Object.fromEntries(VFD_PARAMS.map((p) => [p.id, p]));
 export const PARAM_GROUPS = [...new Set(VFD_PARAMS.map((p) => p.id.slice(0, 2)))];
-export const GROUP_NAMES = { '00': 'Drive parameters', '01': 'Basic parameters', '02': 'Digital input / output', '03': 'Analog input', '04': 'Multi-step speed', '05': 'Motor parameters', '09': 'Communication' };
+export const GROUP_NAMES = { '00': 'Drive parameters', '01': 'Basic parameters', '02': 'Digital input / output', '03': 'Analog input / output', '04': 'Multi-step speed', '05': 'Motor parameters', '06': 'Protection parameters', '07': 'Special parameters', '09': 'Communication parameters' };
 
 export const paramAddr = (id) => (parseInt(id.slice(0, 2), 10) << 8) | parseInt(id.slice(3), 10);
 export const paramByAddr = (addr) => VFD_PARAMS.find((p) => paramAddr(p.id) === addr);
 
-export const FAULTS = {
-  ocA: { n: 1, text: 'Over-current during acceleration — acceleration time (01-12) is too short' },
-  ocd: { n: 2, text: 'Over-current during deceleration' },
-  ocn: { n: 3, text: 'Over-current at constant speed' },
-  ovd: { n: 8, text: 'Over-voltage during deceleration — deceleration time (01-13) is too short' },
-  EoL1: { n: 22, text: 'Motor overload (electronic thermal relay) — reduce the load' },
-  EF: { n: 49, text: 'External fault (EF) input is active' },
-  CE10: { n: 58, text: 'Modbus communication time-out (Pr.09-03)' },
-};
+/** Version of the stored parameter layout (dev.state.params._v). */
+export const PARAMS_VERSION = 2;
+
+/**
+ * Stored parameters from RaptiAuto ≤ 2.8 used a different numbering (02-00 = 0…2, MI3–MI5 on
+ * 02-01…02-03, the no-load current on 05-02, other 00-04 codes); convert them to the manual's.
+ */
+export function migrateParams(p) {
+  if (!p || typeof p !== 'object') return { _v: PARAMS_VERSION };
+  if (p._v === PARAMS_VERSION) return p;
+  const o = { ...p, _v: PARAMS_VERSION };
+  if ('02-00' in p) o['02-00'] = { 0: 1, 1: 2, 2: 3 }[p['02-00']] ?? 1;
+  delete o['02-01']; delete o['02-02']; delete o['02-03'];
+  if ('02-01' in p) o['02-03'] = p['02-01'];
+  if ('02-02' in p) o['02-04'] = p['02-02'];
+  if ('02-03' in p) o['02-05'] = p['02-03'];
+  if ('05-02' in p) { o['05-05'] = p['05-02']; delete o['05-02']; }
+  if ('00-04' in p) o['00-04'] = { 0: 0, 2: 2, 3: 3, 4: 4, 5: 6, 6: 7 }[p['00-04']] ?? 3;
+  if ('03-00' in p) o['03-00'] = 1;
+  return o;
+}
 
 /** Serial format from Pr.09-01 / 09-04. */
 export function vfdFormat(params) {
@@ -77,15 +193,28 @@ export function vfdFormat(params) {
   return { baud: Math.round(params['09-01'] * 1000), bits: +bits, parity, stop: +stop, mode };
 }
 
-export function defaultParams() { return Object.fromEntries(VFD_PARAMS.map((p) => [p.id, p.def])); }
+export function defaultParams() { return { ...Object.fromEntries(VFD_PARAMS.map((p) => [p.id, p.def])), _v: PARAMS_VERSION }; }
+
+/** Letters the 7-segment display puts in front of a U-page value (Pr.00-04). */
+const U_PREFIX = { 0: 'A', 2: 'H', 3: 'u', 4: 'E', 6: 'P', 7: 'r', 8: 't', 14: 'i.', 16: 'i', 17: 'o', 18: 'S' };
+
+/** "F" + "50.00" → a 5-digit text with the letter on the left and the number on the right. */
+function pre(letter, num) {
+  const cells = (s) => s.replace(/\./g, '').length;
+  const room = 5 - cells(letter) - cells(num);
+  return letter + ' '.repeat(Math.max(0, room)) + num;
+}
+const fmtHz = (v) => (Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2));
 
 export class VfdMS300 {
   constructor(params = {}) {
-    this.params = { ...defaultParams(), ...params };
+    this.params = { ...defaultParams(), ...migrateParams(params) };
     this.powered = false;
     this.fault = null;
     this.warning = null;
-    this.fKey = 50;
+    this.fKey = 50; // F page, set with ▲ ▼ (Pr.00-20 = 0)
+    this.knob = 0; // keypad dial 0 … 1 (Pr.00-20 = 7)
+    this.fUD = 0; // UP / DOWN terminal frequency (Pr.00-20 = 3)
     this.fComm = 0;
     this.cmdWord = 0;
     this.cmd2002 = 0;
@@ -96,14 +225,23 @@ export class VfdMS300 {
     this.keyStop = false;
     this.latch3 = false;
     this.f = 0;
+    this.rate = 0; // present ramp rate, Hz/s (S-curve)
     this.dir = 1;
+    this.cmdDir = 1;
     this.V = 0;
     this.I = 0;
-    this.dc = 0;
+    this.dc = 311;
     this.thermal = 0;
+    this.drvLoad = 0;
+    this.tempC = 30;
     this.runCmd = false;
+    this.jog = false;
     this.fcmd = 0;
     this.step = 0;
+    this.stall = null;
+    this.dcBrakeT = 0;
+    this.bb = false;
+    this.standby = false;
     this.time = 0;
     this.lastComm = 0;
     this.bootT = 0;
@@ -121,29 +259,37 @@ export class VfdMS300 {
     const d = PARAM_BY_ID[id];
     if (!d) return 'Unknown parameter';
     if (d.ro) return 'Read-only parameter';
-    if (this.params['00-02'] === 1 && id !== '00-02') return 'Parameters are write-protected (00-02 = 1)';
+    if (this.params['00-02'] === 1 && id !== '00-02') return 'Parameters are write-protected (Pr.00-02 = 1)';
     if (d.opts && d.opts[v] === undefined) return 'Value not allowed';
-    if (d.min !== undefined && (v < d.min || v > d.max)) return `Range ${d.min}–${d.max}`;
+    if (d.min !== undefined && (v < d.min || v > d.max)) return `Range ${d.min} – ${d.max}`;
     if (id === '00-02' && (v === 9 || v === 10)) {
+      const rec = VFD_PARAMS.filter((p) => /^06-(1[7-9]|2[0-2])$/.test(p.id)).map((p) => [p.id, this.params[p.id]]);
       this.params = defaultParams();
-      if (v === 10) { this.params['01-00'] = 60; this.params['01-01'] = 60; }
+      for (const [k, x] of rec) this.params[k] = x; // the fault record survives a reset
+      if (v === 10) { for (const k of ['01-00', '01-01', '02-22']) this.params[k] = 60; this.params['05-03'] = 1710; }
       return null;
     }
     this.params[id] = Math.round(v * 10 ** d.dec) / 10 ** d.dec;
+    if (id === '01-00') this.fKey = Math.min(this.fKey, this.params['01-00']);
     return null;
   }
 
-  powerOn() { if (!this.powered) { this.powered = true; this.bootT = 1.2; this.keyRun = false; this.keyStop = false; this.commRun = false; this.f = 0; } }
-  powerOff() { if (this.powered) { this.powered = false; this.f = 0; this.V = 0; this.I = 0; this.dc = 0; this.runCmd = false; this.warning = null; } }
+  powerOn() {
+    if (this.powered) return;
+    this.powered = true; this.bootT = 1.2; this.keyRun = false; this.keyStop = false; this.commRun = false; this.f = 0; this.rate = 0;
+    this.kp.mode = ['F', 'H', 'U', 'A'][this.P('00-03')] || 'F';
+    if (this.kp.mode === 'A') { this.kp.mode = 'U'; this.kp.uOverride = 0; } else this.kp.uOverride = null;
+  }
+  powerOff() { if (this.powered) { this.powered = false; this.f = 0; this.rate = 0; this.V = 0; this.I = 0; this.dc = 0; this.runCmd = false; this.warning = null; } }
 
   get running() { return this.powered && !this.fault && (Math.abs(this.f) > 0.001 || this.runCmd); }
 
-  // ------------------------------------------------------------------ control
-  /** Multi-function input active? fn = function code. */
-  /** Multi-function inputs (MI3 is the STOP input in 3-wire mode, not a multi-function input). */
+  // ------------------------------------------------------------------ inputs
+  /** [parameter, MI index] of the programmable inputs (MI1 / MI2 only when Pr.02-00 = 0, MI3 is STOP in 3-wire). */
   miMap() {
-    const map = [['02-01', 2], ['02-02', 3], ['02-03', 4]];
-    return this.P('02-00') === 2 ? map.slice(1) : map;
+    const m = this.P('02-00');
+    const all = [['02-01', 0], ['02-02', 1], ['02-03', 2], ['02-04', 3], ['02-05', 4]];
+    return all.filter(([, i]) => !(m !== 0 && i < 2) && !(m === 3 && i === 2));
   }
   miFn(fn) {
     for (const [id, i] of this.miMap()) if (this.P(id) === fn && this.MI[i]) return true;
@@ -161,17 +307,22 @@ export class VfdMS300 {
     this.keyRun = false;
     this.latch3 = false;
     this.thermal = 0;
+    this.drvLoad = 0;
   }
 
   trip(code) {
     if (this.fault) return;
     this.fault = code;
+    this.faultT = this.time;
     this.keyRun = false;
     this.commRun = false;
     this.latch3 = false;
+    // fault record Pr.06-17 (newest) … 06-22
+    for (let i = 22; i > 17; i--) this.params['06-' + i] = this.params['06-' + (i - 1)];
+    this.params['06-17'] = FAULTS[code] ? FAULTS[code].n : 0;
   }
 
-  /** Operation command and direction from the selected source. */
+  /** Operation command and direction from the selected source (Pr.00-21). */
   command() {
     const src = this.P('00-21');
     let run = false, dir = 1;
@@ -179,9 +330,9 @@ export class VfdMS300 {
     else if (src === 1) {
       const [mi1, mi2] = this.MI;
       const m = this.P('02-00');
-      if (m === 0) { run = (mi1 ^ mi2) === 1; dir = mi2 && !mi1 ? -1 : 1; }
-      else if (m === 1) { run = !!mi1; dir = mi2 ? -1 : 1; }
-      else {
+      if (m === 1) { run = (mi1 ^ mi2) === 1; dir = mi2 && !mi1 ? -1 : 1; }
+      else if (m === 2) { run = !!mi1; dir = mi2 ? -1 : 1; }
+      else if (m === 3) {
         if (!this.MI[2]) this.latch3 = false; else if (mi1 && !this.prevMI[0]) this.latch3 = true;
         run = this.latch3; dir = mi2 ? -1 : 1;
       }
@@ -189,24 +340,43 @@ export class VfdMS300 {
     // STOP pressed on the keypad (Pr.00-32 = 1) holds an external / RS-485 run command off
     // until that command is switched off and on again
     if (src !== 0 && this.keyStop) { if (!run) this.keyStop = false; run = false; }
+    // JOG input (MI = 6) when the drive is not running from its normal command
+    let jog = false;
+    if (!run && (src === 0 || src === 1) && this.miFn(6)) { run = true; jog = true; dir = src === 0 ? this.keyDir : 1; }
+    if (this.miFn(18)) run = false; // force to stop
     const lock = this.P('00-23');
     if ((lock === 1 && dir < 0) || (lock === 2 && dir > 0)) run = false;
-    return { run, dir };
+    return { run, dir, jog };
   }
 
-  freqCommand() {
-    const bits = (this.miFn(1) ? 1 : 0) | (this.miFn(2) ? 2 : 0) | (this.miFn(3) ? 4 : 0);
+  /** Frequency command from the selected source, inside the limits. */
+  freqCommand(jog) {
+    const fmax = this.P('01-00');
+    const bits = (this.miFn(1) ? 1 : 0) | (this.miFn(2) ? 2 : 0) | (this.miFn(3) ? 4 : 0) | (this.miFn(4) ? 8 : 0);
     this.step = bits;
     let f;
-    if (bits) f = this.P('04-0' + (bits - 1));
-    else {
-      const src = this.P('00-20');
-      if (src === 0) f = this.fKey;
-      else if (src === 1) f = this.fComm;
-      else f = Math.max(0, Math.min(10, this.avi)) / 10 * this.P('01-00');
+    if (jog) f = this.P('01-22');
+    else if (bits) f = this.P('04-' + String(bits - 1).padStart(2, '0'));
+    else f = this.sourceFreq();
+    const hiLim = Math.min(fmax, this.P('01-10'));
+    return Math.max(0, Math.min(hiLim, Math.max(this.P('01-11'), f)));
+  }
+
+  /** Frequency of Pr.00-20 alone (no multi-step / JOG). */
+  sourceFreq() {
+    const fmax = this.P('01-00');
+    switch (this.P('00-20')) {
+      case 0: return this.fKey;
+      case 1: return this.fComm;
+      case 2: {
+        if (this.P('03-00') !== 1) return 0;
+        const pct = (Math.max(0, Math.min(10, this.avi)) * 10 + this.P('03-03')) * this.P('03-11') / 100;
+        return Math.max(0, Math.min(100, pct)) / 100 * fmax;
+      }
+      case 3: return this.fUD;
+      case 7: return Math.max(0, Math.min(1, this.knob)) * fmax;
+      default: return 0;
     }
-    const hiLim = Math.min(this.P('01-00'), this.P('01-10'));
-    return Math.max(this.P('01-11'), Math.min(hiLim, f));
   }
 
   // ------------------------------------------------------------------ simulation step (dt in seconds)
@@ -226,43 +396,98 @@ export class VfdMS300 {
       if (tr === 0) this.warning = 'CE10';
       else if (tr === 1 || tr === 2) { this.trip('CE10'); if (tr === 2) this.f = 0; }
     }
-    const cmd = this.command();
-    this.runCmd = cmd.run && !this.fault;
-    this.fcmd = this.freqCommand();
+    // UP / DOWN terminals (Pr.00-20 = 3)
     const fmax = Math.max(1, this.P('01-00'));
-    let target = this.runCmd ? cmd.dir * this.fcmd : 0;
-    const coast = (!this.runCmd && this.P('00-22') === 1) || !!this.fault;
+    const up = this.miFn(19), dn = this.miFn(20);
+    if (up !== dn) {
+      const r = this.P('02-09') === 1 ? this.P('02-10') * 1000 : fmax / Math.max(0.01, up ? this.P('01-12') : this.P('01-13'));
+      this.fUD = Math.max(0, Math.min(fmax, this.fUD + (up ? 1 : -1) * r * dt));
+    }
+    const cmd = this.command();
+    this.cmdDir = cmd.dir;
+    this.jog = cmd.jog;
+    this.bb = this.miFn(11) || this.miFn(12);
+    this.runCmd = cmd.run && !this.fault;
+    this.fcmd = this.freqCommand(cmd.jog);
+    const startF = this.P('01-09');
+    this.standby = this.runCmd && this.fcmd < startF && Math.abs(this.f) < 0.005;
+    let target = this.runCmd && !this.standby ? cmd.dir * this.fcmd : 0;
+    // how the drive stops: fault / EF / force stop (Pr.07-20), stop method (Pr.00-22)
+    const forced = this.fault === 'EF' || this.fault === 'CE10' || this.miFn(18);
+    const forceMode = this.fault === 'CE10' ? (this.P('09-02') === 1 ? 1 : 0) : this.P('07-20');
+    const coast = this.bb || (!this.runCmd && !forced && this.P('00-22') === 1) || (!!this.fault && !forced) || (forced && forceMode === 0);
     const prevF = this.f;
-    if (coast) this.f = 0;
-    else {
-      const away = Math.abs(target) > Math.abs(this.f) && Math.sign(target || 1) === Math.sign(this.f || target || 1);
-      const tAcc = Math.max(0.01, this.P('01-12')), tDec = Math.max(0.01, this.P('01-13'));
-      const rate = (away ? fmax / tAcc : fmax / tDec) * dt;
+    const m = this.motor;
+    const Ifl = this.P('05-01'), Inl = this.P('05-05');
+    const fb = Math.max(1, this.P('01-01'));
+    const Irated = this.P('00-01');
+    this.stall = null;
+    if (coast) { this.f = 0; this.rate = 0; this.dcBrakeT = 0; }
+    else if (this.dcBrakeT > 0) { this.dcBrakeT -= dt; this.f = 0; if (this.runCmd && target !== 0) this.dcBrakeT = 0; }
+    else if (!this.miFn(7) || !this.runCmd) {
+      const set2 = this.miFn(8) || (forced && forceMode === 2);
+      let tAcc = set2 ? this.P('01-14') : this.P('01-12'), tDec = set2 ? this.P('01-15') : this.P('01-13');
+      if (cmd.jog) { tAcc = this.P('01-20'); tDec = this.P('01-21'); }
       if (Math.sign(target) !== Math.sign(this.f) && this.f !== 0) target = 0; // pass through zero first
-      if (Math.abs(target - this.f) <= rate) this.f = target; else this.f += Math.sign(target - this.f) * rate;
-      if (!this.runCmd && Math.abs(this.f) < 0.005) this.f = 0;
+      const away = Math.abs(target) > Math.abs(this.f);
+      const R = fmax / Math.max(0.01, away ? tAcc : tDec);
+      const Tb = away ? this.P('01-24') : this.P('01-26'), Ta = away ? this.P('01-25') : this.P('01-27');
+      const diff = target - this.f;
+      let r = Tb > 0 ? Math.min(R, this.rate + R / Tb * dt) : R;
+      if (Ta > 0) r = Math.min(r, Math.max(Math.sqrt(2 * Math.abs(diff) * R / Ta), R * 0.04));
+      // stall prevention: hold the ramp instead of tripping
+      if (m.connected && Math.abs(diff) > 1e-6) {
+        const k = Math.min(1, Math.abs(this.f) / fb + 0.15);
+        const Ist = Inl * k + (Ifl - Inl) * m.load * k;
+        const perHz = Ifl * 1.2 / 50; // accelerating the motor and load inertia
+        if (away) {
+          const lvl = this.P('06-03') / 100 * Irated;
+          if (lvl > 0 && Ist + perHz * r > lvl) { r = Math.max(0, (lvl - Ist) / perHz); this.stall = 'oc'; }
+        } else {
+          const lvl = this.P('06-01');
+          const perV = 0.9 * (0.5 + m.load);
+          if (lvl > 0 && 311 + perV * r > lvl) { r = Math.max(0, (lvl - 311) / perV); this.stall = 'ov'; }
+        }
+      }
+      const stepHz = r * dt;
+      if (Math.abs(diff) <= stepHz) { this.f = target; this.rate = 0; } else { this.f += Math.sign(diff) * stepHz; this.rate = r; }
+      if (prevF === 0 && this.f !== 0 && this.runCmd && Math.abs(this.f) < startF) this.f = Math.sign(this.f) * Math.min(startF, Math.abs(target));
+      // stopping: below the start-up frequency the output switches off; DC braking (Pr.07-01 / 03 / 04)
+      if (!this.runCmd || target === 0) {
+        const fdc = this.P('07-04');
+        if (Math.abs(this.f) < Math.max(0.005, startF) || (fdc > 0 && Math.abs(this.f) <= fdc)) {
+          if (this.f !== 0 && this.P('07-01') > 0 && this.P('07-03') > 0 && !this.runCmd) this.dcBrakeT = this.P('07-03');
+          if (!this.runCmd || target === 0) { this.f = 0; this.rate = 0; }
+        }
+      }
     }
     if (this.f !== 0) this.dir = Math.sign(this.f);
+    else if (this.runCmd) this.dir = cmd.dir;
     const dfdt = (Math.abs(this.f) - Math.abs(prevF)) / Math.max(dt, 1e-6);
     // electrical outputs
-    const fb = Math.max(1, this.P('01-01'));
     const af = Math.abs(this.f);
     this.V = this.P('01-02') * Math.min(1, af / fb);
-    const m = this.motor;
-    const Ifl = this.P('05-01'), Inl = this.P('05-02');
     if (m.connected && af > 0) {
       const k = Math.min(1, af / fb + 0.15);
-      const accelI = Ifl * 0.6 * Math.abs(dfdt) / 50;
+      const accelI = Ifl * 1.2 * Math.abs(dfdt) / 50;
       this.I = Inl * k + (Ifl - Inl) * m.load * k + accelI;
-      if (dfdt > 0 && this.I > Ifl * 2.5) this.trip('ocA');
-      else if (dfdt < 0 && this.I > Ifl * 2.5) this.trip('ocd');
+      const hw = 2 * Irated; // hardware over-current level
+      if (this.I > hw) this.trip(dfdt > 0.01 ? 'ocA' : dfdt < -0.01 ? 'ocd' : 'ocn');
       // regenerated energy during deceleration raises the DC bus
       this.dc = 311 + Math.max(0, -dfdt) * 0.9 * (0.5 + m.load);
       if (this.dc > 410) this.trip('ovd');
-      // electronic thermal relay
-      if (this.I > Ifl * 1.5) this.thermal += dt; else this.thermal = Math.max(0, this.thermal - dt * 0.5);
-      if (this.thermal > 5) this.trip('EoL1');
-    } else { this.I = 0; this.dc = 311; }
+      // motor electronic thermal relay (Pr.06-13 / 06-14): 150 % for Pr.06-14 seconds trips
+      if (this.P('06-13') !== 2) {
+        const x = (this.I / Ifl) ** 2 - (this.P('06-13') === 1 && af < fb / 2 ? 0.7 : 1);
+        this.thermal = Math.max(0, this.thermal + dt * x / (1.25 * this.P('06-14')));
+        if (this.thermal >= 1) this.trip('EoL1');
+      } else this.thermal = 0;
+      // drive over-load: 150 % of Pr.00-01 for 60 s
+      this.drvLoad = Math.max(0, this.drvLoad + dt * ((this.I / Irated) ** 2 - 1) / (1.25 * 60));
+      if (this.drvLoad >= 1) this.trip('oL');
+    } else if (this.dcBrakeT > 0) { this.I = this.P('07-01') / 100 * Irated; this.dc = 311; }
+    else { this.I = 0; this.dc = 311; }
+    this.tempC += ((30 + this.I * 3.2) - this.tempC) * Math.min(1, dt / 20);
     // motor speed
     if (m.connected && af > 0 && !this.fault) {
       const poles = Math.max(2, this.P('05-04'));
@@ -270,7 +495,8 @@ export class VfdMS300 {
       const syncRated = 120 * fb / poles;
       const slip = Math.max(0, (syncRated - this.P('05-03')) / syncRated) * m.load;
       this.rpm = Math.sign(this.f) * m.sign * sync * (1 - slip);
-    } else this.decayMotor(dt);
+    } else if (this.dcBrakeT > 0) { this.rpm *= Math.exp(-dt / 0.15); if (Math.abs(this.rpm) < 1) this.rpm = 0; }
+    else this.decayMotor(dt);
     this.prevMI = this.MI.slice();
   }
 
@@ -283,20 +509,33 @@ export class VfdMS300 {
   relay() {
     const fn = this.P('02-13');
     if (!this.powered) return false;
-    if (fn === 11) return !!this.fault;
-    if (fn === 1) return this.running;
-    if (fn === 2) return this.runCmd && Math.abs(Math.abs(this.f) - this.fcmd) < 0.05;
-    return false;
+    const af = Math.abs(this.f);
+    switch (fn) {
+      case 11: return !!this.fault;
+      case 1: return this.running;
+      case 2: return this.runCmd && af > 0 && Math.abs(af - this.fcmd) < 0.05;
+      case 3: return Math.abs(af - this.P('02-22')) <= this.P('02-23') && af > 0;
+      case 5: return this.fcmd < 0.005 && this.runCmd;
+      case 6: return af < 0.005;
+      case 9: return !this.fault && this.bootT <= 0;
+      default: return false;
+    }
   }
 
-  /** AFM analog output 0–10 V proportional to output frequency. */
-  afm() { return this.powered ? 10 * Math.abs(this.f) / Math.max(1, this.P('01-00')) : 0; }
+  /** AFM analog output 0–10 V (Pr.03-20 / 03-21). */
+  afm() {
+    if (!this.powered) return 0;
+    const fmax = Math.max(1, this.P('01-00'));
+    const x = [Math.abs(this.f) / fmax, this.fcmd / fmax, Math.abs(this.f) / fmax, this.I / (2 * this.P('00-01')), this.V / Math.max(1, this.P('01-02')), this.dc / 410][this.P('03-20')] ?? 0;
+    return Math.max(0, Math.min(10, 10 * x * this.P('03-21') / 100));
+  }
 
   // ------------------------------------------------------------------ Modbus slave
   status() {
     let s = 0;
     if (this.runCmd) s |= 3; else if (this.f !== 0) s |= 1;
     if (this.dir < 0) s |= 0x18;
+    if (this.jog) s |= 0x4;
     if (this.P('00-20') === 1) s |= 0x100;
     if (this.P('00-20') === 2) s |= 0x200;
     if (this.P('00-21') === 2) s |= 0x400;
@@ -309,7 +548,7 @@ export class VfdMS300 {
       case 0x2000: return this.cmdWord;
       case 0x2001: return Math.round(this.fComm * 100);
       case 0x2002: return this.cmd2002;
-      case 0x2100: return this.fault ? FAULTS[this.fault].n : 0;
+      case 0x2100: return (this.warning === 'CE10' ? FAULTS.CE10.n << 8 : 0) | (this.fault ? FAULTS[this.fault].n : 0);
       case 0x2101: return this.status();
       case 0x2102: return Math.round(this.fcmd * 100);
       case 0x2103: return Math.round(Math.abs(this.f) * 100);
@@ -317,6 +556,7 @@ export class VfdMS300 {
       case 0x2105: return Math.round(this.dc * 10);
       case 0x2106: return Math.round(this.V * 10);
       case 0x2107: return this.step;
+      case 0x2109: return 0;
       case 0x210C: return Math.round(Math.abs(this.rpm));
       default: {
         const p = paramByAddr(a);
@@ -345,6 +585,7 @@ export class VfdMS300 {
     }
     const p = paramByAddr(a);
     if (!p) return 2;
+    if (p.ro) return 3;
     const err = this.setParam(p.id, v / 10 ** p.dec);
     return err ? 3 : null;
   }
@@ -373,10 +614,22 @@ export class VfdMS300 {
   }
 
   // ------------------------------------------------------------------ keypad
+  /** Turn the keypad dial (0 … 1). Returns a hint when the dial is not the frequency source. */
+  setKnob(x) {
+    this.knob = Math.max(0, Math.min(1, x));
+    if (!this.powered) return null;
+    if (this.P('00-20') !== 7) return `The knob sets the frequency only when Pr.00-20 = 7 (now ${this.P('00-20')}: ${PARAM_BY_ID['00-20'].opts[this.P('00-20')]})`;
+    if (this.kp.mode !== 'edit' && this.kp.mode !== 'param' && this.kp.mode !== 'PrG') { this.kp.mode = 'F'; }
+    return null;
+  }
+
+  /** Number of digits ▲ ▼ can step on the F page (0.01 … 100 Hz). */
+  fDigits() { return this.P('01-00') >= 100 ? 5 : 4; }
+
   /**
-   * A key on the digital keypad. Every key does something on every page; when a key cannot act
-   * (e.g. RUN while the run command comes from the terminals) the answer is a short hint for the
-   * UI, otherwise null.
+   * A key on the digital keypad: RUN, STOP, MODE, ENTER, UP, DOWN (short press of ◀/▼) and
+   * LEFT (long press of ◀/▼: next digit to the left). When a key cannot act, the answer is a short
+   * hint for the UI, otherwise null.
    */
   key(k) {
     if (!this.powered) return 'The drive has no power — check R/L1 and S/L2';
@@ -384,21 +637,23 @@ export class VfdMS300 {
     const kp = this.kp;
     const groups = PARAM_GROUPS;
     const inGroup = () => VFD_PARAMS.filter((p) => p.id.startsWith(groups[kp.group] + '-'));
-    const runSrc = this.P('00-21'), fSrc = this.P('00-20');
+    const runSrc = this.P('00-21');
     const srcText = (id) => `${PARAM_BY_ID[id].opts[this.P(id)]} (Pr.${id} = ${this.P(id)})`;
     const flash = (t, s = 0.7) => { kp.flash = t; kp.flashT = s; };
     switch (k) {
       case 'RUN':
         if (this.fault) return `Fault ${this.fault} — press STOP/RESET first`;
         if (runSrc !== 0) return `RUN key is not the run command now: it comes from ${srcText('00-21')}. Set Pr.00-21 = 0 to run from the keypad.`;
+        if (this.miFn(18)) return 'A force-to-stop input (MI = 18) is ON';
         this.keyRun = true;
+        if (this.fcmd < this.P('01-09') && this.step === 0) return `The frequency command ${this.fcmd.toFixed(2)} Hz is below the start-up frequency (Pr.01-09 = ${this.P('01-09')} Hz) — raise it with ${this.P('00-20') === 7 ? 'the knob' : '▲'}`;
         return null;
       case 'STOP':
         if (this.fault) {
           const was = this.fault;
           this.resetFault();
           if (this.fault) return `${was} cannot be reset while the EF input is still ON`;
-          flash('rSt', 0.5);
+          flash('rESEt', 0.5);
           return null;
         }
         if (runSrc === 0) { this.keyRun = false; return null; }
@@ -409,18 +664,24 @@ export class VfdMS300 {
         }
         return null;
       case 'MODE': {
-        const order = ['F', 'H', 'A', 'U', 'dir', 'PrG'];
+        // F → H → U → parameter groups → direction → F; inside the parameters MODE goes one level back
+        const order = ['F', 'H', 'U', 'PrG', 'dir'];
         if (kp.mode === 'edit') kp.mode = 'param';
         else if (kp.mode === 'param') kp.mode = 'PrG';
-        else kp.mode = order[(order.indexOf(kp.mode) + 1) % order.length];
-        kp.pos = kp.mode === 'F' ? 2 : 0;
+        else kp.mode = order[(order.indexOf(kp.mode) + 1) % order.length] || 'F';
+        if (kp.mode === 'F') kp.pos = Math.min(kp.pos, this.fDigits() - 1);
+        kp.uOverride = null;
         return null;
       }
       case 'ENTER':
         if (kp.mode === 'PrG') { kp.mode = 'param'; kp.pidx = 0; }
-        else if (kp.mode === 'param') { const p = inGroup()[kp.pidx]; kp.mode = 'edit'; kp.edit = this.params[p.id]; kp.pos = 0; }
-        else if (kp.mode === 'edit') {
+        else if (kp.mode === 'param') {
           const p = inGroup()[kp.pidx];
+          kp.mode = 'edit'; kp.edit = this.params[p.id]; kp.pos = p.opts ? 0 : Math.min(p.dec, 3);
+          if (p.ro) return `Pr.${p.id} is read-only (shown only)`;
+        } else if (kp.mode === 'edit') {
+          const p = inGroup()[kp.pidx];
+          if (p.ro) { kp.mode = 'param'; return null; }
           const err = this.setParam(p.id, kp.edit);
           flash(err ? 'Err' : 'End', 0.8);
           kp.mode = 'param';
@@ -430,23 +691,25 @@ export class VfdMS300 {
           if (why) return why;
           flash('End', 0.6); // frequency command stored
         } else if (kp.mode === 'dir') return this.toggleKeyDir();
-        else { kp.mode = 'PrG'; } // H / A / U page: ENTER opens the parameter setup
+        else { kp.mode = 'PrG'; } // H / U page: ENTER opens the parameter setup
         return null;
       case 'UP': case 'DOWN': {
         const s = k === 'UP' ? 1 : -1;
-        if (kp.mode === 'F' || kp.mode === 'H' || kp.mode === 'A') {
-          if (kp.mode !== 'F') { kp.mode = 'F'; kp.pos = 2; }
+        if (kp.mode === 'F' || kp.mode === 'H') {
+          if (kp.mode !== 'F') { kp.mode = 'F'; }
           const why = this.freqKeyBlocked();
           if (why) return why;
           const was = this.fKey;
-          this.fKey = Math.max(0, Math.min(this.P('01-00'), Math.round((this.fKey + s * 10 ** (kp.pos - 2)) * 100) / 100));
-          if (this.fKey === was) return s > 0 ? `Already at the maximum frequency (Pr.01-00 = ${this.P('01-00')} Hz)` : 'Already at 0 Hz';
+          const fmax = this.P('01-00');
+          this.fKey = Math.max(0, Math.min(fmax, Math.round((this.fKey + s * 10 ** (kp.pos - 2)) * 100) / 100));
+          if (this.fKey === was) return s > 0 ? `Already at the maximum operation frequency (Pr.01-00 = ${fmax} Hz)` : 'Already at 0.00 Hz';
         } else if (kp.mode === 'U') {
           // ▲▼ on the U page pick what it shows (Pr.00-04)
           const keys = Object.keys(PARAM_BY_ID['00-04'].opts).map(Number);
           const i = keys.indexOf(this.P('00-04'));
           this.params['00-04'] = keys[(Math.max(0, i) + s + keys.length) % keys.length];
-          flash(['A', '', 'H', 'u', 'E', 'P', 'r'][this.params['00-04']] + '-', 0.45);
+          kp.uOverride = null;
+          flash(U_PREFIX[this.params['00-04']] + '-', 0.45);
         } else if (kp.mode === 'dir') return this.toggleKeyDir();
         else if (kp.mode === 'PrG') kp.group = (kp.group + s + groups.length) % groups.length;
         else if (kp.mode === 'param') { const n = inGroup().length; kp.pidx = (kp.pidx + s + n) % n; }
@@ -466,11 +729,12 @@ export class VfdMS300 {
         return null;
       }
       case 'LEFT':
-        // ◀: next digit while a number is edited; otherwise one level back (escape)
-        if (kp.mode === 'F' || (kp.mode === 'edit' && !inGroup()[kp.pidx].opts)) kp.pos = (kp.pos + 1) % 4;
+        // ◀ (hold ◀/▼): the blinking digit moves one place left while a number is set; elsewhere one level back
+        if (kp.mode === 'F') kp.pos = (kp.pos + 1) % this.fDigits();
+        else if (kp.mode === 'edit' && !inGroup()[kp.pidx].opts) kp.pos = (kp.pos + 1) % 5;
         else if (kp.mode === 'edit') kp.mode = 'param';
         else if (kp.mode === 'param') kp.mode = 'PrG';
-        else { kp.mode = 'F'; kp.pos = 2; }
+        else kp.mode = 'F';
         return null;
       default: return null;
     }
@@ -478,8 +742,10 @@ export class VfdMS300 {
 
   /** Why ▲▼ cannot change the keypad frequency now (null = they can). */
   freqKeyBlocked() {
-    if (this.step) return `Multi-step speed ${this.step} is selected by the MI inputs — it uses Pr.04-0${this.step - 1}`;
+    if (this.step) return `Multi-step speed ${this.step} is selected by the MI inputs — it uses Pr.04-${String(this.step - 1).padStart(2, '0')}`;
+    if (this.jog) return 'JOG is active — it uses Pr.01-22';
     const fSrc = this.P('00-20');
+    if (fSrc === 7) return 'The frequency comes from the keypad dial (Pr.00-20 = 7): turn the knob. Set Pr.00-20 = 0 to set it with ▲ ▼.';
     if (fSrc !== 0) return `The frequency command comes from ${PARAM_BY_ID['00-20'].opts[fSrc]} (Pr.00-20 = ${fSrc}). Set Pr.00-20 = 0 to set it with ▲ ▼.`;
     return null;
   }
@@ -494,42 +760,64 @@ export class VfdMS300 {
     return null;
   }
 
-  /** What the 5-digit LED display shows: {text, leds:{RUN,STOP,FWD,REV,F,H,A,U}, blink}. */
+  /** U page value for Pr.00-04 code `sel`. */
+  uText(sel) {
+    const p = U_PREFIX[sel] ?? '';
+    switch (sel) {
+      case 0: return pre(p, this.I.toFixed(2));
+      case 2: return pre(p, fmtHz(Math.abs(this.f)));
+      case 3: return pre(p, this.dc.toFixed(1));
+      case 4: return pre(p, this.V.toFixed(1));
+      case 6: return pre(p, (this.V * this.I * 1.732 * 0.8 / 1000).toFixed(2));
+      case 7: return pre(p, Math.round(Math.abs(this.rpm)).toString());
+      case 8: return pre(p, (this.f !== 0 && this.motor.connected ? this.motor.load * 100 : 0).toFixed(1));
+      case 14: return pre(p, this.tempC.toFixed(1));
+      case 16: return pre(p, this.MI.slice(0, 5).reduce((a, b, i) => a | (b << i), 0).toString(16).toUpperCase().padStart(4, '0'));
+      case 17: return pre(p, (this.relay() ? 1 : 0).toString(16).padStart(4, '0'));
+      case 18: return pre(p, String(this.step));
+      default: return '';
+    }
+  }
+
+  /** What the 5-digit LED display shows: {text, leds:{RUN,STOP,FWD,REV,PLC}, cursor, editing, fault}. */
   display(t = this.time) {
     const kp = this.kp;
-    const leds = { RUN: false, STOP: false, FWD: false, REV: false, F: false, H: false, A: false, U: false };
+    const leds = { RUN: false, STOP: false, FWD: false, REV: false, PLC: false };
     if (!this.powered) return { text: '', leds, off: true };
     const blink = Math.floor(t * 2.5) % 2 === 0;
-    leds.RUN = this.runCmd || (this.f !== 0 && blink);
-    leds.STOP = !this.runCmd;
-    leds.FWD = this.dir > 0;
-    leds.REV = this.dir < 0;
-    if (this.bootT > 0) return { text: 'dELtA', leds };
+    const moving = this.f !== 0 || this.dcBrakeT > 0;
+    // RUN: on while running, blinks while decelerating to stop or in base block
+    leds.RUN = (this.runCmd && moving && !this.bb) || ((!this.runCmd && moving) || (this.bb && this.runCmd) ? blink : false);
+    // STOP: on when stopped, blinks in standby (run command but no output)
+    leds.STOP = !moving && (this.runCmd || this.keyStop ? blink : true);
+    // FWD / REV: the direction; blinks while the direction is changing
+    const changing = this.runCmd && this.f !== 0 && Math.sign(this.f) !== this.cmdDir;
+    const d = moving ? this.dir : this.runCmd ? this.cmdDir : (this.P('00-21') === 0 ? this.keyDir : this.dir);
+    leds.FWD = d > 0 && (!changing || blink);
+    leds.REV = d < 0 && (!changing || blink);
+    if (changing) { leds.FWD = this.dir > 0 ? blink : !blink; leds.REV = !leds.FWD; }
+    if (this.bootT > 0) return { text: this.bootT > 0.6 ? '88888' : 'dELtA', leds: this.bootT > 0.6 ? { RUN: true, STOP: true, FWD: true, REV: true, PLC: true } : leds };
     if (kp.flash) return { text: kp.flash, leds };
     if (this.fault) return { text: blink ? this.fault : '', leds, fault: true };
+    if (this.bb && blink) return { text: 'bb', leds, warn: true };
     if (this.warning && blink) return { text: this.warning, leds, warn: true };
     const groups = PARAM_GROUPS;
     const fmt = (v, dec) => v.toFixed(dec);
     switch (kp.mode) {
-      case 'F': leds.F = true; return { text: fmt(this.fcmd, 2), leds, cursor: kp.pos };
-      case 'H': leds.H = true; return { text: fmt(Math.abs(this.f), 2), leds };
-      case 'A': leds.A = true; return { text: fmt(this.I, 2), leds };
-      case 'U': {
-        leds.U = true;
-        const sel = this.P('00-04');
-        if (sel === 0) return { text: fmt(this.I, 2) + 'A', leds };
-        if (sel === 2) return { text: fmt(Math.abs(this.f), 2), leds };
-        if (sel === 3) return { text: 'u' + fmt(this.dc, 0), leds };
-        if (sel === 4) return { text: 'E' + fmt(this.V, 0), leds };
-        if (sel === 5) return { text: 'P' + fmt(this.V * this.I * 1.732 * 0.8 / 1000, 2), leds };
-        return { text: 'r' + fmt(Math.abs(this.rpm), 0), leds };
+      case 'F': {
+        const fc = this.freqCommand(this.jog);
+        const cur = this.freqKeyBlocked() ? -1 : fc >= 100 ? kp.pos - 1 : kp.pos;
+        return { text: pre('F', fmtHz(fc)), leds, cursor: cur, page: 'F' };
       }
+      case 'H': return { text: pre('H', fmtHz(Math.abs(this.f))), leds, page: 'H' };
+      case 'U': return { text: this.uText(kp.uOverride ?? this.P('00-04')), leds, page: 'U' };
       case 'dir': return { text: this.keyDir < 0 ? 'rEv' : 'Frd', leds };
       case 'PrG': return { text: groups[kp.group] + '-', leds };
       case 'param': { const p = VFD_PARAMS.filter((x) => x.id.startsWith(groups[kp.group] + '-'))[kp.pidx]; return { text: p.id, leds }; }
       case 'edit': {
         const p = VFD_PARAMS.filter((x) => x.id.startsWith(groups[kp.group] + '-'))[kp.pidx];
-        return { text: fmt(kp.edit, p.dec), leds, cursor: kp.pos, editing: true };
+        const txt = fmt(kp.edit, p.dec);
+        return { text: txt.replace(/\./g, '').length > 5 ? fmt(kp.edit, Math.max(0, p.dec - 1)) : txt, leds, cursor: p.opts || p.ro ? -1 : kp.pos, editing: true };
       }
       default: return { text: '', leds };
     }

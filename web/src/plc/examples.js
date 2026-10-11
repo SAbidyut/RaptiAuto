@@ -135,11 +135,11 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'vfd-terminals', name: 'VFD forward / reverse, 2 speeds', level: 'intermediate', tags: ['VFD', 'MS300', 'Interlock'],
-    description: 'Interlocked FWD / REV control of a Delta MS300 through its terminals: PLC relays drive MI1 (FWD), MI2 (REV) and MI3 / MI4 (multi-step speeds 15 Hz / 45 Hz).',
+    description: 'Interlocked FWD / REV control of a Delta MS300 through its terminals: PLC relays drive MI1 (FWD), MI2 (REV) and MI3 / MI4 (multi-step speeds 15 Hz / 50 Hz).',
     build() {
       const b = builder();
       base(b);
-      b.dev('vfd', 'ms300', {}, { params: { '00-21': 1, '00-20': 0, '02-00': 0, '01-12': 3, '01-13': 3, '04-00': 15, '04-01': 45 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-21': 1, '00-20': 0, '02-00': 1, '01-12': 3, '01-13': 3, '04-00': 15, '04-01': 50 } });
       b.dev('motor', 'motor', { load: 40 });
       b.dev('fwd', 'pb', { label: 'FWD', color: 'green', contact: 'NO' });
       b.dev('rev', 'pb', { label: 'REV', color: 'yellow', contact: 'NO' });
@@ -161,7 +161,7 @@ export const LAB_EXAMPLES = [
         rung('Forward: MI1 (Y4) + FWD lamp (Y0)', ['M0 =>| OUT Y4', '=> OUT Y0']),
         rung('Reverse: MI2 (Y5) + REV lamp (Y1)', ['M1 =>| OUT Y5', '=> OUT Y1']),
         rung('LOW speed → MI3 (multi-step 1 = Pr.04-00 = 15 Hz)', ['/X3 => OUT Y6']),
-        rung('HIGH speed → MI4 (multi-step 2 = Pr.04-01 = 45 Hz)', ['X3 => OUT Y7']),
+        rung('HIGH speed → MI4 (multi-step 2 = Pr.04-01 = 50 Hz)', ['X3 => OUT Y7']),
       ], { X0: 'FWD button', X1: 'REV button', X2: 'STOP button (NC)', X3: 'SPEED selector', Y4: 'VFD MI1 (FWD)', Y5: 'VFD MI2 (REV)', Y6: 'VFD MI3 (step 1)', Y7: 'VFD MI4 (step 2)', M0: 'Forward run', M1: 'Reverse run' });
       return finish(this, b, prog);
     },
@@ -172,7 +172,7 @@ export const LAB_EXAMPLES = [
     build() {
       const b = builder();
       base(b);
-      b.dev('vfd', 'ms300', {}, { params: { '00-21': 1, '00-20': 0, '02-00': 0, '01-12': 2, '01-13': 1, '04-00': 40 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-21': 1, '00-20': 0, '02-00': 1, '01-12': 2, '01-13': 1, '04-00': 40 } });
       b.dev('km1', 'contactor', { label: 'KM1', coil: '24DC' });
       b.dev('f1', 'olr', { label: 'F1' }, { tripped: false });
       b.dev('motor', 'motor', { load: 40 });
@@ -215,7 +215,7 @@ export const LAB_EXAMPLES = [
       const b = builder();
       base(b);
       b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
-      b.dev('vfd', 'ms300', {}, { params: { '00-20': 1, '00-21': 2, '09-00': 1, '09-01': 9.6, '09-04': 14, '01-12': 5, '01-13': 5 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-20': 1, '00-21': 2, '09-00': 1, '09-01': 9.6, '09-04': 14, '01-12': 5, '01-13': 5 } });
       b.dev('motor', 'motor', { load: 40 });
       b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
       b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
@@ -347,7 +347,7 @@ export const LAB_EXAMPLES = [
     build() {
       const b = builder();
       base(b, 'dvp-20ex2');
-      b.dev('vfd', 'ms300', {}, { params: { '00-20': 2, '00-21': 1, '01-12': 4, '01-13': 4 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-20': 2, '00-21': 1, '01-12': 4, '01-13': 4 } });
       b.dev('motor', 'motor', { load: 30 });
       b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
       b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });

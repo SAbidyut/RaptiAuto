@@ -198,120 +198,166 @@ function buildHmi(dev, ctx) {
 }
 
 // ====================================================================== VFD (MS300)
+// Front of a real MS300 (frame A): the KPMS-LE01 style keypad on top — DELTA logo, RUN / FWD / REV
+// LEDs left of the 5-digit display, STOP / PLC right of it, the speed dial in the corner, then
+// RUN (green), ▲, MODE / STOP-RESET (red), ◀/▼, ENTER (blue) — and below it the cover with the
+// DELTA MS300 print, the warning label and the NET1 / NET2 LEDs.
 const VFD_KEYS = [
-  { k: 'MODE', x: -27, y: 131, w: 19, h: 10, label: 'MODE' },
-  { k: 'UP', x: 0, y: 131, w: 19, h: 10, label: '▲' },
-  { k: 'ENTER', x: 27, y: 131, w: 19, h: 10, label: 'ENTER' },
-  { k: 'LEFT', x: -27, y: 117, w: 19, h: 10, label: '◀' },
-  { k: 'DOWN', x: 0, y: 117, w: 19, h: 10, label: '▼' },
-  { k: 'RUN', x: -16, y: 103, w: 27, h: 10, label: 'RUN', color: '#15803d' },
-  { k: 'STOP', x: 16, y: 103, w: 27, h: 10, label: 'STOP/RESET', color: '#b91c1c' },
+  { k: 'RUN', x: -26, y: 147, label: 'RUN', color: '#1f9d69', text: '#f1fff8' },
+  { k: 'UP', x: 0, y: 147, label: '▲', color: '#c9ccd2', text: '#15171b' },
+  { k: 'MODE', x: 26, y: 147, label: 'MODE', color: '#c9ccd2', text: '#15171b' },
+  { k: 'STOP', x: -26, y: 134.5, label: 'STOP\nRESET', color: '#e0383e', text: '#fff4f4' },
+  { k: 'LD', x: 0, y: 134.5, label: '</▼', color: '#c9ccd2', text: '#15171b' },
+  { k: 'ENTER', x: 26, y: 134.5, label: 'ENTER', color: '#1597d6', text: '#f2fbff' },
 ];
+const VFD_KNOB = { x: 33, y: 168.5, r: 7.2 };
 
 function buildVfd(dev) {
   const group = new THREE.Group();
   const B = new Builder();
-  const body = mat('vfdBody', { color: 0x2a2d33, roughness: 0.5 });
-  const cover = mat('vfdCover', { color: 0x363a42, roughness: 0.45 });
+  const body = mat('vfdBody', { color: 0x3b3e44, roughness: 0.62 });
+  const cover = mat('vfdCover', { color: 0x4a4d53, roughness: 0.58 });
+  const bezel = mat('vfdBezel', { color: 0x2c2f34, roughness: 0.5 });
   B.add(rbox(100, 190, 128, 4), body, M4(0, 95, 64));
   for (let i = 0; i < 9; i++) {
     const z = 14 + i * 7;
     B.add(box(3, 168, 1.6), MAT.alu, M4(-51.2, 95, z));
     B.add(box(3, 168, 1.6), MAT.alu, M4(51.2, 95, z));
   }
-  B.add(rbox(96, 96, 22, 3), cover, M4(0, 141, 139));
+  // lower front cover (logo band) and the keypad housing above it
+  B.add(rbox(94, 30, 6, 2), cover, M4(0, 110, 129));
+  B.add(rbox(94, 66, 18, 3.5), bezel, M4(0, 157, 136));
+  B.add(rbox(88, 60, 2, 2.5), MAT.blackPlastic, M4(0, 157.5, 145.2));
+  // terminal windows
   B.add(rbox(92, 28, 9, 1.5), MAT.blackPlastic, M4(0, 79.5, 132));
   B.add(rbox(92, 18, 10, 1.5), MAT.blackPlastic, M4(0, 22, 133));
   // RJ45 jack
   B.add(box(15, 13, 9), MAT.blackPlastic, M4(26, 54, 132.5));
   B.add(box(11, 8, 2), mat('rjHole', { color: 0x050506, roughness: 0.9 }), M4(26, 53, 136.2));
   B.add(box(9, 0.8, 1), MAT.gold, M4(26, 56.2, 136.6));
-  // display window frame
-  B.add(rbox(66, 22, 2, 2), MAT.blackPlastic, M4(0, 163, 150.4));
+  // display window
+  B.add(rbox(44, 17, 1.2, 1.2), mat('vfdWin', { color: 0x0d0505, roughness: 0.15 }), M4(-9, 168.5, 146.4));
   for (const p of devicePorts(dev)) if (p.kind === 'term') addScrew(B, p.pos, p.dir, p.pos[1] < 40 ? 2.6 : 1.8);
   B.build(group);
-  // keypad print
-  const kp = decal(96, 96, (g, W) => {
-    const Y = (y) => 189 - y;
-    deltaLogo(g, 5, Y(182), 6.5, '#e8eef9');
-    txt(g, 'MS300', W - 5, Y(182), { size: 4.6, align: 'right', weight: 800, color: '#9fb3cf', font: FONT_D });
-    for (const [t, x] of [['RUN', -24], ['STOP', -8], ['FWD', 8], ['REV', 24]]) txt(g, t, 48 + x, Y(145.5), { size: 2.6, weight: 800, color: '#aab4c3' });
-    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 0.4;
-    rrect(g, 6, Y(139), 84, 44, 3); g.stroke();
-  }, { ppm: 10 });
-  kp.position.set(0, 141, 150.06);
+  // keypad print (black face, z 146.2)
+  const kp = decal(88, 60, (g, W, H) => {
+    const X = (x) => x + W / 2, Y = (y) => 187.5 - y;
+    deltaLogo(g, X(-36), Y(182), 4.4, '#f1f4f8');
+    for (const [t, y] of [['RUN', 174.3], ['FWD', 168.6], ['REV', 162.9]]) txt(g, t, X(-37.6), Y(y), { size: 2.5, weight: 800, color: '#d5dae2', align: 'left', font: FONT_D });
+    for (const [t, y] of [['STOP', 174.3], ['PLC', 168.6]]) txt(g, t, X(14.4), Y(y), { size: 2.5, weight: 800, color: '#d5dae2', align: 'left', font: FONT_D });
+    // dial scale: a white arc that grows clockwise
+    g.save(); g.translate(X(VFD_KNOB.x), Y(VFD_KNOB.y));
+    g.strokeStyle = '#eef1f5'; g.lineCap = 'butt';
+    for (let i = 0; i < 9; i++) {
+      const a0 = (-128 + i * 30) * Math.PI / 180 - Math.PI / 2;
+      g.lineWidth = 0.5 + i * 0.18;
+      g.beginPath(); g.arc(0, 0, VFD_KNOB.r + 1.9 + i * 0.04, a0, a0 + 0.36); g.stroke();
+    }
+    g.fillStyle = '#eef1f5'; g.beginPath(); g.arc(-VFD_KNOB.r * 0.95, VFD_KNOB.r * 1.05, 0.55, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }, { ppm: 12 });
+  kp.position.set(0, 157.5, 146.25);
   group.add(kp);
-  const lower = decal(96, 92, (g) => {
-    const Y = (y) => 92 - y;
-    txt(g, 'RS-485', 9 + 48, Y(54), { size: 2.6, weight: 800, color: '#cbd5e1' });
-    g.fillStyle = '#f5c518'; rrect(g, 6, Y(61.5), 40, 12, 1.2); g.fill();
-    g.fillStyle = '#111';
-    g.beginPath(); g.moveTo(10, Y(51.5)); g.lineTo(13.5, Y(58.5)); g.lineTo(17, Y(51.5)); g.closePath(); g.fill();
-    txt(g, '!', 13.5, Y(53.6), { size: 4, color: '#f5c518', weight: 900 });
-    txt(g, 'DANGER', 19, Y(57.2), { size: 3, align: 'left', weight: 900, color: '#111' });
-    txt(g, 'Hazardous voltage', 19, Y(52.8), { size: 2.3, align: 'left', weight: 700, color: '#111' });
-    txt(g, 'VFD7A5MS21ANSAA · 1.5 kW · 1~230 V', 48, Y(40.5), { size: 2.6, weight: 700, color: '#94a3b8' });
+  // cover print: logo + MS300, warning label, NET1 / NET2
+  const band = decal(94, 30, (g, W) => {
+    deltaLogo(g, W / 2 + 1, 9.5, 6.4, '#e7eaee', 'center');
+    txt(g, 'MS300', W / 2, 21, { size: 6.6, weight: 800, color: '#e7eaee', font: FONT_D });
   }, { ppm: 10 });
-  lower.position.set(0, 46, 128.06);
+  band.position.set(0, 110, 132.06);
+  group.add(band);
+  const lower = decal(96, 30, (g) => {
+    const warnTri = (x, y, s, mark) => {
+      g.fillStyle = '#f5d000'; g.strokeStyle = '#111'; g.lineWidth = 0.35;
+      g.beginPath(); g.moveTo(x, y - s * 0.55); g.lineTo(x + s * 0.55, y + s * 0.42); g.lineTo(x - s * 0.55, y + s * 0.42); g.closePath(); g.fill(); g.stroke();
+      txt(g, mark, x, y + s * 0.08, { size: s * 0.62, weight: 900, color: '#111' });
+    };
+    warnTri(10, 6.2, 6, 'ϟ'); warnTri(50, 6.2, 6, '!');
+    txt(g, 'WARNING', 30, 6.6, { size: 3.6, weight: 900, color: '#e7eaee', font: FONT_D });
+    const lines = ['• Read the user manual before operation.', '• Risk of electrical shock. Wait 10 minutes', '  after removing power before servicing.', '• Do not connect AC power to output', '  terminals U/T1, V/T2 and W/T3.'];
+    lines.forEach((l, i) => txt(g, l, 5, 12.5 + i * 3.4, { size: 2.25, weight: 600, color: '#d7dbe1', align: 'left' }));
+    txt(g, 'RS-485', 74, 27.5, { size: 2.3, weight: 800, color: '#cbd5e1' });
+    txt(g, 'NET1', 89, 13.6, { size: 2.1, weight: 800, color: '#d7dbe1' });
+    txt(g, 'NET2', 89, 23.6, { size: 2.1, weight: 800, color: '#d7dbe1' });
+  }, { ppm: 10 });
+  lower.position.set(0, 50, 128.06);
   group.add(lower);
   const ports = devicePorts(dev);
   const ctrl1 = ports.filter((p) => p.pos[1] === 88), ctrl2 = ports.filter((p) => p.pos[1] === 72), pw = ports.filter((p) => p.pos[1] === 22);
   const l1 = labelStrip(92, 4, ctrl1.map((p) => ({ x: p.pos[0], label: p.label, size: 2.4 }))); l1.position.set(0, 83.6, 136.6); group.add(l1);
   const l2 = labelStrip(92, 4, ctrl2.map((p) => ({ x: p.pos[0], label: p.label, size: 2.4 }))); l2.position.set(0, 67.4, 136.6); group.add(l2);
   const l3 = labelStrip(96, 6, pw.map((p) => ({ x: p.pos[0], label: p.label, size: 2.8 })), { color: '#e2e8f0' }); l3.position.set(0, 8.5, 128.2); group.add(l3);
-  // display
-  const dispTex = canvasTexture(320, 96, () => {}, { mip: false });
+  // NET1 / NET2 LED windows
+  for (const y of [55.4, 45.4]) { const n = new THREE.Mesh(rbox(9, 4.6, 1.2, 0.6), mat('vfdNet', { color: 0x1a1c20, roughness: 0.2 })); n.position.set(41, y, 128.6); group.add(n); }
+  // 5-digit display
+  const dispTex = canvasTexture(320, 112, () => {}, { mip: false });
   const dm = offsetMat(new THREE.MeshStandardMaterial({ color: 0x120404, emissive: 0xffffff, emissiveMap: dispTex, emissiveIntensity: 1, roughness: 0.2 }), 2);
   dm.toneMapped = false;
-  const disp = new THREE.Mesh(new THREE.PlaneGeometry(60, 18), dm);
-  disp.position.set(0, 163, 151.5);
+  const disp = new THREE.Mesh(new THREE.PlaneGeometry(41, 14.4), dm);
+  disp.position.set(-9, 168.5, 147.1);
   group.add(disp);
   // status LEDs
   const sl = {};
-  for (const [k, x] of [['RUN', -24], ['STOP', -8], ['FWD', 8], ['REV', 24]]) {
-    sl[k] = ledMat(k === 'STOP' ? '#ff3b30' : '#36ff6a');
-    const me = new THREE.Mesh(rbox(3.6, 2, 1, 0.5), sl[k]);
-    me.position.set(x, 149.6, 150.6);
+  const LEDS = [['RUN', -40.2, 174.3, '#36ff6a'], ['FWD', -40.2, 168.6, '#36ff6a'], ['REV', -40.2, 162.9, '#36ff6a'], ['STOP', 22.6, 174.3, '#ff3b30'], ['PLC', 22.6, 168.6, '#36ff6a']];
+  for (const [k, x, y, c] of LEDS) {
+    sl[k] = ledMat(c);
+    const me = new THREE.Mesh(rbox(2.2, 1.6, 0.8, 0.4), sl[k]);
+    me.position.set(x, y, 146.6);
     group.add(me);
   }
   // keys
   const controls = [];
   const keyMeshes = {};
   for (const k of VFD_KEYS) {
-    const kmat = k.color ? mat('vfdKey' + k.k, { color: k.color, roughness: 0.4 }) : mat('vfdKey', { color: 0x4a505b, roughness: 0.45 });
-    const mesh = new THREE.Mesh(rbox(k.w, k.h, 3, 1.4), kmat);
-    mesh.position.set(k.x, k.y, 151.5);
-    const lbl = decal(k.w - 2, k.h - 2, (g, W, H) => txt(g, k.label, W / 2, H / 2 + 0.2, { size: k.label.length > 5 ? 2.5 : k.label.length > 1 ? 3 : 5, weight: 800, color: '#f8fafc' }), { ppm: 12 });
+    const kmat = mat('vfdKey' + k.k, { color: k.color, roughness: 0.32 });
+    const mesh = new THREE.Mesh(rbox(19, 10.4, 3, 1.6), kmat);
+    mesh.position.set(k.x, k.y, 147.4);
+    const lbl = decal(17, 8.4, (g, W, H) => {
+      const two = k.label.split('\n');
+      if (two.length > 1) two.forEach((t, i) => txt(g, t, W / 2, H / 2 + (i - 0.5) * 3.3, { size: 3, weight: 800, color: k.text, font: FONT_D }));
+      else txt(g, k.label, W / 2, H / 2 + 0.2, { size: k.label.length > 3 ? 3.6 : k.label.length > 1 ? 3.8 : 5.4, weight: 800, color: k.text, font: FONT_D });
+    }, { ppm: 14 });
     lbl.position.z = 1.55;
     mesh.add(lbl);
-    control(mesh, dev.id, 'vfdKey', { key: k.k, label: k.label });
+    control(mesh, dev.id, 'vfdKey', { key: k.k, label: k.k === 'LD' ? '◀/▼ (tap ▼ · hold ◀)' : k.label.replace('\n', '/') });
     controls.push(mesh);
     keyMeshes[k.k] = mesh;
     group.add(mesh);
   }
+  // speed dial
+  const knob = new THREE.Group();
+  const kb = new THREE.Mesh(cyl(VFD_KNOB.r, VFD_KNOB.r + 0.4, 6, 36), mat('vfdKnob', { color: 0x2a2c30, roughness: 0.55 }));
+  kb.rotation.x = Math.PI / 2; kb.position.z = 3;
+  for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; const r = new THREE.Mesh(box(0.6, 0.8, 5.4), MAT.blackPlastic); r.position.set(Math.cos(a) * VFD_KNOB.r, Math.sin(a) * VFD_KNOB.r, 3); r.rotation.z = a; knob.add(r); }
+  const mark = new THREE.Mesh(box(1, VFD_KNOB.r * 0.95, 0.5), mat('vfdKnobMark', { color: 0x9aa0a8, roughness: 0.4 }));
+  mark.position.set(0, VFD_KNOB.r * 0.4, 6.1);
+  knob.add(kb, mark);
+  knob.position.set(VFD_KNOB.x, VFD_KNOB.y, 146.2);
+  group.add(knob);
+  const hit = control(new THREE.Mesh(cyl(VFD_KNOB.r + 3, VFD_KNOB.r + 3, 10, 16), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'vfdKnob', { label: 'Speed dial (Pr.00-20 = 7)' });
+  hit.rotation.x = Math.PI / 2; hit.position.set(VFD_KNOB.x, VFD_KNOB.y, 150);
+  group.add(hit);
+  controls.push(hit);
   let last = '';
   return {
     group, controls,
-    press(key) { const me = keyMeshes[key]; if (me) { me.position.z = 150.3; me.userData.upAt = performance.now() + 140; } },
+    press(key) { const me = keyMeshes[key === 'DOWN' || key === 'LEFT' ? 'LD' : key]; if (me) { me.position.z = 146.4; me.userData.upAt = performance.now() + 140; } },
     update(rt, ctx) {
       const v = rt.vfd;
       let ch = false;
-      for (const me of Object.values(keyMeshes)) if (me.userData.upAt && performance.now() > me.userData.upAt) { me.position.z = 151.5; me.userData.upAt = 0; ch = true; }
+      for (const me of Object.values(keyMeshes)) if (me.userData.upAt && performance.now() > me.userData.upAt) { me.position.z = 147.4; me.userData.upAt = 0; ch = true; }
+      const a = -(-135 + 270 * Math.max(0, Math.min(1, rt.dev.state.knob ?? 0))) * Math.PI / 180;
+      if (knob.rotation.z !== a) { knob.rotation.z = a; ch = true; }
       const d = v.display(ctx.t);
-      for (const k of ['RUN', 'STOP', 'FWD', 'REV']) ch = setLed(sl[k], !!d.leds[k], 2) || ch;
+      for (const k of Object.keys(sl)) ch = setLed(sl[k], !!d.leds[k], 2) || ch;
       const blink = Math.floor(ctx.t * 3) % 2 === 0;
-      const key = (d.off ? 'off' : d.text) + '|' + d.cursor + '|' + (d.cursor >= 0 ? blink : '') + JSON.stringify(d.leds);
+      const key = (d.off ? 'off' : d.text) + '|' + d.cursor + '|' + (d.cursor >= 0 ? blink : '');
       if (key !== last) {
         last = key;
         const c = dispTex.userData.canvas;
         const g = c.getContext('2d');
         g.fillStyle = '#0b0303';
         g.fillRect(0, 0, c.width, c.height);
-        if (!d.off) {
-          drawSegDisplay(g, 260, 96, d.text, { n: 5, cursor: d.editing || (d.cursor >= 0 && rt.vfd.kp.mode === 'F') ? d.cursor : -1, blink });
-          const ind = [['F', d.leds.F], ['H', d.leds.H], ['A', d.leds.A], ['U', d.leds.U]];
-          ind.forEach(([t, on], i) => txt(g, t, 290, 14 + i * 22, { size: 17, weight: 800, color: on ? '#ff5a3c' : 'rgba(255,80,60,.16)', font: FONT_D }));
-        }
+        if (!d.off) drawSegDisplay(g, c.width, c.height, d.text, { n: 5, cursor: d.cursor ?? -1, blink });
         dispTex.needsUpdate = true;
         ch = true;
       }

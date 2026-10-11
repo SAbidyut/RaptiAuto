@@ -27,10 +27,10 @@ export const LAB_TASKS = {
   ],
   'vfd-terminals': [
     { text: 'Press FWD — the drive runs forward at LOW speed (15 Hz)', check: (c) => near(hz(c), 15) },
-    { text: 'Turn SPEED to HIGH — 45 Hz (multi-step 2)', check: (c) => near(hz(c), 45) },
+    { text: 'Turn SPEED to HIGH — 50 Hz (multi-step 2)', check: (c) => near(hz(c), 50) },
     { text: 'Press STOP, then REV — the motor turns backwards', check: (c) => hz(c) < -1 },
     { text: 'Change Pr.04-00 (step 1) to 20 Hz in the VFD tab or with the keypad', check: (c) => !!(c.vfd && c.vfd.params['04-00'] === 20) },
-    { text: 'Make it trip: set Pr.01-12 to 0.10 s and start — fault ocA', hint: 'Then press STOP/RESET and set the time back', check: (c) => !!(c.vfd && c.vfd.fault === 'ocA') },
+    { text: 'Make it trip: switch stall prevention off (Pr.06-03 = 0), set Pr.01-12 to 0.10 s and start — fault ocA', hint: 'With Pr.06-03 = 150 % the drive just accelerates slower. Then press STOP/RESET and put both back', check: (c) => !!(c.vfd && c.vfd.fault === 'ocA') },
   ],
   'contactor-starter': [
     { text: 'Press START — KM1 pulls in, the RUN lamp lights and the conveyor motor turns', check: (c) => !!(c.rt('km1') && c.rt('km1').closed && c.motor && Math.abs(c.motor.rpm) > 300) },

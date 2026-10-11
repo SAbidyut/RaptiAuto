@@ -526,6 +526,60 @@ const scenarios = {
     const wires = await page.evaluate(() => JSON.stringify(window.__rapti.pi.circuit.project.wires.map((w) => `${w.from.pin}-${w.to.pin}`)));
     console.log('hand wires', wires);
   },
+  async labvfd(page) {
+    // MS300 keypad in the VFD tab, driven by touch: keypad source, ▼ to 0, hold ◀ to the tens digit, ▲ to 50, RUN
+    await page.evaluate(() => window.__rapti.home.openLabExample('vfd-terminals')); await sleep(1500);
+    await page.click('.lab .run-btn'); await sleep(1500);
+    await page.evaluate(() => { const l = window.__rapti.lab; const rt = l.sys.rts.get('vfd'); rt.vfd.setParam('00-21', 0); rt.vfd.setParam('02-03', 0); rt.vfd.setParam('02-04', 0); l.sys.persistVfd(rt); l.setTab('vfd'); });
+    await sleep(800);
+    const key = async (cls, holdMs = 60) => {
+      const b = await page.$('.vv-key.' + cls); const r = await b.boundingBox();
+      await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await page.mouse.down(); await sleep(holdMs); await page.mouse.up(); await sleep(80);
+    };
+    for (let i = 0; i < 3; i++) await key('k-ld');
+    await key('k-ld', 800); // hold = ◀
+    await key('k-up');
+    const fk = await page.evaluate(() => window.__rapti.lab.sys.rts.get('vfd').vfd.fKey);
+    console.log('fKey after keys', fk);
+    await key('k-run');
+    await sleep(12000);
+    const st = await page.evaluate(() => { const v = window.__rapti.lab.sys.rts.get('vfd').vfd; return { f: v.f, text: v.display().text, fault: v.fault }; });
+    console.log('keypad run', JSON.stringify(st));
+    await page.screenshot({ path: join(outDir, 'vfd-tab.png') });
+    // the dial
+    await page.evaluate(() => { const l = window.__rapti.lab; const rt = l.sys.rts.get('vfd'); rt.vfd.setParam('00-20', 7); l.sys.persistVfd(rt); });
+    const kb = await (await page.$('.vv-knob')).boundingBox();
+    await page.mouse.move(kb.x + kb.width / 2, kb.y + kb.height / 2); await page.mouse.down(); await page.mouse.move(kb.x + kb.width + 30, kb.y + kb.height + 20, { steps: 8 }); await page.mouse.up();
+    await sleep(12000);
+    const st2 = await page.evaluate(() => { const v = window.__rapti.lab.sys.rts.get('vfd').vfd; return { knob: v.knob, f: v.f, text: v.display().text }; });
+    console.log('knob run', JSON.stringify(st2));
+    await page.screenshot({ path: join(outDir, 'vfd-tab-knob.png') });
+    await page.evaluate(() => window.__rapti.lab.setTab('panel')); await sleep(800);
+    await page.evaluate(() => window.__rapti.lab.scene.focus('vfd', false)); await sleep(2500);
+    await page.screenshot({ path: join(outDir, 'vfd-3d.png') });
+    await page.evaluate(() => window.__rapti.lab.views.panel.setView('2d', false)); await sleep(1500);
+    await page.evaluate(() => window.__rapti.lab.scene.focus('vfd', false)); await sleep(1500);
+    await page.screenshot({ path: join(outDir, 'vfd-2d.png') });
+  },
+  async labvfdpanel(page) {
+    await page.evaluate(() => window.__rapti.home.openLabExample('vfd-terminals')); await sleep(1500);
+    await page.click('.lab .run-btn'); await sleep(1500);
+    const out = await page.evaluate(async () => {
+      const w = (ms) => new Promise((r) => setTimeout(r, ms));
+      const l = window.__rapti.lab, pv = l.views.panel, v = l.sys.rts.get('vfd').vfd;
+      const tap = async (key, ms) => { pv.pressControl({ action: 'vfdKey', devId: 'vfd', key }, { pointerId: 7 }); await w(ms); pv.releaseControl(); };
+      await w(3000); v.setParam('02-03', 0); await w(300);
+      const r = { f0: v.fKey, boot: v.bootT };
+      await tap('LD', 100); r.afterTap = v.fKey;
+      await tap('LD', 800); r.posAfterHold = v.kp.pos; r.afterHold = v.fKey;
+      await tap('UP', 1000); r.afterUpHold = v.fKey;
+      pv.pressControl({ action: 'vfdKnob', devId: 'vfd' }, { pointerId: 8 }); pv.releaseControl();
+      r.knobCard = !!document.querySelector('.pot-card');
+      return r;
+    });
+    console.log('panel keys', JSON.stringify(out));
+    await page.screenshot({ path: join(outDir, 'vfd-knobcard.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);

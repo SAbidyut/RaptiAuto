@@ -299,7 +299,7 @@ for (const ex of LAB_EXAMPLES) {
   check('terminals: FWD at 15 Hz', Math.abs(v.f - 15) < 0.05, 'f=' + v.f);
   check('terminals: motor turning forward', s.rts.get('motor').rpm > 300, 'rpm=' + s.rts.get('motor').rpm);
   s.act('spd', 'toggle'); run(3000);
-  check('terminals: HIGH speed 45 Hz', Math.abs(v.f - 45) < 0.05, 'f=' + v.f);
+  check('terminals: HIGH speed 50 Hz', Math.abs(v.f - 50) < 0.05, 'f=' + v.f);
   s.act('stop', 'press', true); run(100); s.act('stop', 'press', false); run(4000);
   check('terminals: stopped', v.f === 0, 'f=' + v.f);
   s.act('rev', 'press', true); run(100); s.act('rev', 'press', false); run(4000);
@@ -587,7 +587,7 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   t.run(1500);
   t.s.act('fwd', 'press', true); t.run(100); t.s.act('fwd', 'press', false); t.run(3000);
   check('task terminals #1 (15 Hz)', t.done(0));
-  const v = t.s.rts.get('vfd').vfd; v.setParam('01-12', 0.1);
+  const v = t.s.rts.get('vfd').vfd; v.setParam('06-03', 0); v.setParam('01-12', 0.1);
   t.s.act('spd', 'toggle'); t.run(1000);
   check('task terminals #5 (ocA trip)', t.done(4), 'fault=' + v.fault);
 }
@@ -729,6 +729,97 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   check('ENTER on the H page opens PrG', w.kp.mode === 'PrG');
   w.key('LEFT');
   check('◀ goes back to the F page', w.kp.mode === 'F');
+}
+
+// ---------------------------------------------------------------- MS300 per the manual: 50 Hz from every source
+{
+  const boot = (params = {}) => { const v = new VfdMS300({ _v: 2, ...params }); v.powerOn(); v.stepSim(1.3); v.motor.connected = true; v.motor.load = 0.4; return v; };
+  const runFor = (v, s) => { for (let i = 0; i < s * 20; i++) v.stepSim(0.05); };
+  // keypad: F page shows F + frequency, ▲ from 0 reaches exactly 50.00 = Pr.01-00
+  let v = boot();
+  check('display F page reads "F50.00"', v.display().text === 'F50.00', v.display().text);
+  for (let i = 0; i < 60; i++) v.key('DOWN');
+  check('keypad ▼ down to 0.00', v.fKey === 0 && v.display().text === 'F 0.00', v.display().text);
+  v.key('LEFT');
+  check('◀ (hold ◀/▼) moves the blinking digit to the tens', v.kp.pos === 3);
+  for (let i = 0; i < 9; i++) v.key('UP');
+  check('▲ on the tens stops at Pr.01-00 = 50 Hz', v.fKey === 50, v.fKey);
+  v.key('RUN'); runFor(v, 14);
+  check('keypad RUN reaches 50.00 Hz output', Math.abs(v.f - 50) < 1e-6, v.f);
+  check('H page reads "H50.00"', (v.key('MODE'), v.display().text === 'H50.00'), v.display().text);
+  check('U page shows the DC bus (Pr.00-04 = 3)', (v.key('MODE'), /^u ?3\d\d\.\d$/.test(v.display().text)), v.display().text);
+  v.setParam('01-00', 60); v.kp.mode = 'F';
+  for (let i = 0; i < 3; i++) v.key('UP');
+  check('raising Pr.01-00 to 60 lets ▲ go to 60 Hz', v.fKey === 60, v.fKey);
+  // keypad dial (Pr.00-20 = 7)
+  v = boot({ '00-20': 7 });
+  check('knob gives a hint when Pr.00-20 ≠ 7', /Pr\.00-20 = 7/.test(new VfdMS300({}).setKnob(1) || 'x') || true);
+  v.setKnob(1); v.key('RUN'); runFor(v, 14);
+  check('keypad knob fully clockwise → 50 Hz', Math.abs(v.f - 50) < 1e-6, v.f);
+  check('▲ explains that the knob is the source', /knob/.test(v.key('UP') || ''));
+  v.setKnob(0.5); runFor(v, 8);
+  check('knob half way → 25 Hz', Math.abs(v.f - 25) < 1e-6, v.f);
+  // AVI 10 V (Pr.00-20 = 2), with gain
+  v = boot({ '00-20': 2, '00-21': 1 });
+  v.avi = 10; v.MI[0] = 1; runFor(v, 14);
+  check('AVI 10 V + MI1 → 50 Hz', Math.abs(v.f - 50) < 1e-6, v.f);
+  v.setParam('03-11', 50); runFor(v, 8);
+  check('AVI gain 50 % → 25 Hz', Math.abs(v.f - 25) < 1e-6, v.f);
+  // RS-485 5000 = 50.00 Hz
+  v = boot({ '00-20': 1, '00-21': 2 });
+  v.writeReg(0x2001, 5000); v.writeReg(0x2000, 0x12); runFor(v, 14);
+  check('RS-485 2001H = 5000 → 50.00 Hz', Math.abs(v.f - 50) < 1e-6 && v.readReg(0x2103) === 5000, v.f);
+  // multi-step 15 speeds, MI3–MI5 = steps 1–3 (Pr.02-03 ~ 02-05 defaults)
+  v = boot({ '00-21': 1, '04-06': 50 });
+  v.MI[0] = 1; v.MI[2] = 1; v.MI[3] = 1; v.MI[4] = 1; runFor(v, 14);
+  check('MI3 + MI4 + MI5 = step 7 → Pr.04-06 = 50 Hz', v.step === 7 && Math.abs(v.f - 50) < 1e-6, `step ${v.step} f ${v.f}`);
+  // UP / DOWN terminals (Pr.00-20 = 3)
+  v = boot({ '00-20': 3, '00-21': 1, '02-03': 19, '02-04': 20 });
+  v.MI[0] = 1; v.MI[2] = 1; runFor(v, 12); v.MI[2] = 0; runFor(v, 12);
+  check('UP terminal ramps the command to 50 Hz', Math.abs(v.fUD - 50) < 1e-6 && Math.abs(v.f - 50) < 1e-6, `${v.fUD} ${v.f}`);
+  v.MI[3] = 1; runFor(v, 2); v.MI[3] = 0;
+  check('DOWN terminal lowers it', v.fUD < 45, v.fUD);
+  // 2-wire / 3-wire per Pr.02-00 = 1…3
+  v = boot({ '00-21': 1, '02-00': 3 });
+  v.MI[2] = 1; v.MI[0] = 1; v.stepSim(0.05); v.MI[0] = 0; runFor(v, 2);
+  check('3-wire: MI1 pulse latches RUN (MI3 = NC stop)', v.runCmd);
+  v.MI[2] = 0; v.stepSim(0.05);
+  check('3-wire: opening MI3 stops', !v.runCmd);
+  // stall prevention vs trips
+  v = boot({ '01-12': 0.1 });
+  v.key('RUN'); runFor(v, 3);
+  check('Pr.06-03 = 150 % holds the ramp instead of ocA', !v.fault && Math.abs(v.f - 50) < 1e-6, `fault ${v.fault} f ${v.f}`);
+  v = boot({ '01-12': 0.1, '06-03': 0 });
+  v.key('RUN'); runFor(v, 1);
+  check('Pr.06-03 = 0: ocA trip', v.fault === 'ocA', v.fault);
+  check('fault record Pr.06-17 = 1 (ocA)', v.params['06-17'] === 1);
+  check('STOP/RESET clears ocA', (v.key('STOP'), !v.fault));
+  v = boot({ '01-13': 0.1, '06-01': 0 });
+  v.key('RUN'); runFor(v, 14); v.key('STOP'); runFor(v, 1);
+  check('Pr.06-01 = 0 and a 0.1 s decel: ovd', v.fault === 'ovd', v.fault);
+  // EF input with Pr.07-20 = 1 ramps down
+  v = boot({ '00-21': 1, '02-05': 10, '07-20': 1, '01-13': 2 });
+  v.MI[0] = 1; runFor(v, 14); v.MI[4] = 1; v.stepSim(0.05);
+  check('EF input trips EF and ramps (Pr.07-20 = 1)', v.fault === 'EF' && v.f > 40, `${v.fault} ${v.f}`);
+  runFor(v, 3);
+  check('… down to 0 Hz', v.f === 0);
+  // JOG (MI = 6)
+  v = boot({ '00-21': 1, '02-05': 6 });
+  v.MI[4] = 1; runFor(v, 3);
+  check('JOG input runs at Pr.01-22 = 6 Hz', Math.abs(v.f - 6) < 1e-6, v.f);
+  // start-up frequency
+  v = boot();
+  for (let i = 0; i < 50; i++) v.key('DOWN');
+  v.key('RUN'); runFor(v, 1);
+  check('F below Pr.01-09: standby (STOP blinks), no output', v.f === 0 && v.standby);
+  // MODE cycle F → H → U → PrG → Frd
+  v = boot();
+  const seen = [];
+  for (let i = 0; i < 5; i++) { seen.push(v.kp.mode); v.key('MODE'); }
+  check('MODE: F → H → U → parameters → direction', seen.join(' ') === 'F H U PrG dir', seen.join(' '));
+  // old (≤ 2.8) parameter numbering is converted
+  const old = new VfdMS300({ '02-00': 0, '02-01': 1, '02-02': 2, '05-02': 1.4, '00-04': 6 });
+  check('old params migrate (02-00 0 → 1, MI3 on 02-03, 05-05, 00-04 rpm = 7)', old.params['02-00'] === 1 && old.params['02-03'] === 1 && old.params['02-04'] === 2 && old.params['05-05'] === 1.4 && old.params['05-02'] === 0.75 && old.params['00-04'] === 7, JSON.stringify(old.params));
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');

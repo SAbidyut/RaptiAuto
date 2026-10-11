@@ -9,6 +9,7 @@ import { TapTracker, SelectBox, slideZoomFactor } from '../../ui/gestures.js';
 import { DEVICE_DEFS, CATEGORIES, devicePorts, deviceProps, compatible, findPort, wireColorFor, busName } from '../devices/defs.js';
 import { makeConn, labId, portUse, MAX_WIRES } from '../store.js';
 import { LabSystem } from '../sim/system.js';
+import { defaultParams } from '../sim/vfd.js';
 
 const WIRE_COLORS = [['auto', 'Auto'], ['#dc2626', 'Red'], ['#1e3a8a', 'Dark blue'], ['#2563eb', 'Blue'], ['#7c4a1e', 'Brown'], ['#f97316', 'Orange'], ['#e5e7eb', 'White'], ['#111827', 'Black'], ['#a855f7', 'Violet'], ['#eab308', 'Yellow'], ['pe', 'Earth']];
 const thumbs = new Map();
@@ -344,12 +345,19 @@ export class PanelView {
       case 'toggle': sys.act(ctl.devId, 'toggle'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; this.scene.dirty = true; break;
       case 'vfdKey': {
         if (!this.lab.sys) { toast('Press Simulate to power the drive'); break; }
-        const hint = sys.act(ctl.devId, 'vfdKey', ctl.key);
-        const m = this.scene.modelOf(ctl.devId); if (m && m.press) m.press(ctl.key);
-        if (hint) toast(hint, 'info', 4200);
-        Native.vibrate(8);
+        const a = this.active;
+        if (ctl.key === 'LD') {
+          // ◀/▼ is one key: a tap is ▼, holding it is ◀ (move the blinking digit)
+          const m = this.scene.modelOf(ctl.devId); if (m && m.press) m.press('LD');
+          a.timer = setTimeout(() => { a.held = true; this.vfdKey(ctl.devId, 'LEFT'); }, 550);
+          break;
+        }
+        this.vfdKey(ctl.devId, ctl.key);
+        // holding ▲ repeats, like the real keypad
+        if (ctl.key === 'UP') a.timer = setTimeout(function rep(self) { if (self.active !== a) return; self.vfdKey(ctl.devId, 'UP', true); a.timer = setTimeout(rep, 90, self); }, 450, this);
         break;
       }
+      case 'vfdKnob': this.openVfdKnob(ctl.devId); break;
       case 'hmi': {
         const rt = sys.rts.get(ctl.devId);
         if (rt && rt.hmi && ctl.uv) { rt.hmi.pointerDown(ctl.uv.x * 800, (1 - ctl.uv.y) * 480, e.pointerId); Native.vibrate(6); }
@@ -387,13 +395,17 @@ export class PanelView {
     const sys = this.scene.system;
     if (ctl.action === 'press') sys.act(ctl.devId, 'press', false);
     if (ctl.action === 'hmi') { const rt = sys.rts.get(ctl.devId); if (rt && rt.hmi) rt.hmi.pointerUp(0, 0, id); }
+    if (ctl.action === 'vfdKey') {
+      clearTimeout(this.active.timer);
+      if (ctl.key === 'LD' && !this.active.held && !cancel && this.lab.sys) this.vfdKey(ctl.devId, 'DOWN');
+    }
     this.active = null;
     this.scene.controls.enabled = true;
   }
 
   onUp(e, cancel) {
     this.pointers.delete(e.pointerId);
-    if (this.active && this.active.id === e.pointerId) { this.releaseControl(); return; }
+    if (this.active && this.active.id === e.pointerId) { this.releaseControl(cancel); return; }
     const d = this.down;
     this.down = null;
     clearTimeout(this.boxTimer);
@@ -881,6 +893,45 @@ export class PanelView {
     if (!this.lab.sys) content.appendChild(h('p', { class: 'muted small center' }, 'Checked with a short test run. Press Simulate to run the lab.'));
     const sheet = new Sheet({ title: 'Lab check', content, icon: 'warning', cls: 'sheet-tall' });
     sheet.open();
+  }
+
+  /** One MS300 keypad key (RUN, STOP, MODE, ENTER, UP, DOWN, LEFT); `quiet` = auto-repeat (no hints). */
+  vfdKey(devId, key, quiet = false) {
+    const sys = this.lab.sys;
+    if (!sys) return;
+    const hint = sys.act(devId, 'vfdKey', key);
+    const m = this.scene.modelOf(devId); if (m && m.press) m.press(key);
+    if (hint && !quiet) toast(hint, 'info', 4200);
+    if (!quiet) Native.vibrate(8);
+    this.scene.dirty = true;
+  }
+
+  /** The speed dial on the MS300 keypad (frequency source Pr.00-20 = 7). */
+  openVfdKnob(devId) {
+    this.closePot();
+    const dev = this.lab.project.devices.find((d) => d.id === devId);
+    if (!dev) return;
+    const val = h('b', {}, '');
+    const range = h('input', { class: 'range', type: 'range', min: 0, max: 100, value: Math.round((dev.state.knob ?? 0) * 100) });
+    let hinted = false;
+    const upd = (first) => {
+      const v = +range.value / 100;
+      const rt = this.lab.sys && this.lab.sys.rts.get(devId);
+      let hint = null;
+      if (rt) hint = this.lab.sys.act(devId, 'vfdKnob', v); else dev.state.knob = v;
+      const p = rt ? rt.vfd.params : { ...defaultParams(), ...(dev.state.params || {}) };
+      const src = p['00-20'] === 7;
+      val.textContent = `${(v * p['01-00']).toFixed(2)} Hz${src ? '' : ' · off'}`;
+      if (hint && !hinted && !first) { hinted = true; toast(hint, 'info', 4200); }
+      this.scene.dirty = true;
+    };
+    range.addEventListener('input', () => upd(false));
+    range.addEventListener('change', () => this.lab.save());
+    this.potCard = h('div', { class: 'pot-card' },
+      h('div', { class: 'ctl-head' }, h('label', {}, 'Speed dial'), val), range,
+      h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
+    this.el.appendChild(this.potCard);
+    upd(true);
   }
 
   // ------------------------------------------------------------------ potentiometer

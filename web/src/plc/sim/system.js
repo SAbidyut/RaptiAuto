@@ -50,6 +50,7 @@ export class LabSystem {
         this.loadProgramInto(rt);
       } else if (rt.kind === 'vfd') {
         rt.vfd = new VfdMS300(dev.state.params || {});
+        rt.vfd.knob = dev.state.knob ?? 0;
       } else if (rt.kind === 'hmi') {
         rt.hmi = new HmiRuntime(this.project.hmi, this.hmiLink(rt));
       } else if (rt.kind === 'motor') {
@@ -113,6 +114,7 @@ export class LabSystem {
         break;
       case 'pos': s.pos = Math.max(0, Math.min(1, value)); break;
       case 'vfdKey': if (rt.vfd) { const hint = rt.vfd.key(value); this.persistVfd(rt); return hint; } break;
+      case 'vfdKnob': s.knob = Math.max(0, Math.min(1, value)); if (rt.vfd) return rt.vfd.setKnob(s.knob); break;
       default: break;
     }
     return null;
