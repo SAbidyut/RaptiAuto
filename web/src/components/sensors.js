@@ -23,7 +23,7 @@ register({
       for (let k = 0; k < 4; k++) s += circle(cx, -32, 4 + k * 2.5, { fill: 'none', stroke: '#3a3d44', sw: 0.6 });
     }
     s += rect(8, -50, 14, 9, { fill: '#e5e7eb', rx: 1.5 }) + text(15, -45.5, '40 kHz', { size: 2.6, fill: '#333' });
-    s += text(15, -10, 'HC-SR04', { size: 4.5, weight: 700 });
+    s += text(15, -19, 'HC-SR04', { size: 4.5, weight: 700 }) + rect(-34, -13, 98, 0.4, { fill: 'rgba(255,255,255,.2)' });
     s += `<text class="us-dist" x="15" y="-62" font-size="7" text-anchor="middle" fill="#a5f3fc" font-family="JetBrains Mono, monospace" font-weight="700">100 cm</text>`;
     s += maleHeader([[0, 0], [10, 0], [20, 0], [30, 0]]);
     s += headerLabels(['VCC', 'Trig', 'Echo', 'GND']);

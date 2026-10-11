@@ -2,7 +2,9 @@
 import { register } from './registry.js';
 import {
   rect, circle, text, line, path, femaleHeader, maleHeader, smdLed, chipDIP, chipQFP, mountHole, pad, g,
+  silk, silkBox, smdRow, smdElec, regulator, crystal, polyfuse, via, traces, smallChip,
 } from './draw.js';
+import { rowArt, nanoArt, esp32Art, nodemcuArt, picoBoardArt, bluePillArt, megaDetails } from './board-art.js';
 
 const range = (a, b) => { const r = []; for (let i = a; i <= b; i++) r.push(i); return r; };
 
@@ -44,8 +46,9 @@ function unoLabels() {
     s += text(x, 188, l, { size: 4.2, rot: -90, anchor: 'start', fill: '#eafcff' });
   }
   s += text(120, 39, 'DIGITAL (PWM ~)', { size: 4.2, fill: '#eafcff', anchor: 'start', weight: 600 });
-  s += text(122, 168, 'POWER', { size: 4.6, fill: '#eafcff', weight: 700 });
-  s += text(215, 168, 'ANALOG IN', { size: 4.6, fill: '#eafcff', weight: 700 });
+  // the header names (rotated, 188 → 175) are 12 units clear of these; the chip pins end at 159
+  s += text(125, 170, 'POWER', { size: 4.6, fill: '#eafcff', weight: 700 });
+  s += text(215, 170, 'ANALOG IN', { size: 4.6, fill: '#eafcff', weight: 700 });
   return s;
 }
 
@@ -54,8 +57,8 @@ function unoBase(color, o = {}) {
   s += `<g filter="url(#softShadow)">`;
   s += path('M3 0 H256 L270 14 V196 L262 204 V210 H3 A3 3 0 0 1 0 207 V3 A3 3 0 0 1 3 0Z', { fill: color, stroke: 'rgba(0,0,0,.4)', sw: 0.8 });
   s += `</g>`;
-  // subtle copper texture lines
-  s += path('M40 95 H105 M40 101 H98 M150 98 H235 M150 92 H228', { stroke: 'rgba(255,255,255,.07)', sw: 2 });
+  // copper traces under the solder mask (kept clear of the lettering)
+  s += traces('M46 92 H88 V108 H100 M104 112 H236 M60 150 H100 V158 H240 M120 30 H180 M30 186 H80') + traces('M262 36 V150', { sw: 1 });
   s += mountHole(60, 10, 3.2) + mountHole(55, 200, 3.2) + mountHole(260, 70, 3.2) + mountHole(260, 180, 3.2);
   // silkscreen outlines
   s += rect(78, 3.5, 102, 13, { stroke: '#e9fbff', sw: 0.5, rx: 1 });
@@ -111,39 +114,54 @@ function smdParts(list) {
 
 function unoR3Art() {
   let s = unoBase('#008f95');
-  s += usbB() + powerJack() + resetButton(20, 14);
-  s += chipDIP(103, 136, 28, { label: 'ATMEGA328P-PU', h: 28, size: 6 });
-  s += rect(70, 120, 22, 9, { fill: 'url(#silver)', rx: 4.5, stroke: '#777', sw: 0.5 }) + text(81, 124.5, '16.000', { size: 3.2, fill: '#333' });
+  s += usbB() + powerJack() + resetButton(20, 14) + silk(32, 14, 'RESET', { size: 3.2, anchor: 'start' });
+  s += polyfuse(50, 36) + silk(54.5, 44, 'F1', { size: 2.6 });
+  // ATmega16U2 (USB ↔ serial), its crystal, ICSP header and the passives around it
   s += chipQFP(78, 58, 18, { pins: 8, label: '16U2' });
+  s += crystal(90, 73, 10, '16M');
+  s += maleHeader([[56, 84], [66, 84], [56, 94], [66, 94], [56, 104], [66, 104]]) + silk(73, 94, 'ICSP', { size: 3, anchor: 'start' });
+  s += smdRow([[93, 50], [93, 55], [93, 60, 'c'], [93, 65, 'c'], [99, 50, 'cv'], [99, 58, 'rv'], [105, 50, 'r'], [105, 55, 'r']]);
+  // main chip, resonator, voltage regulator, electrolytics
+  s += chipDIP(103, 126, 28, { label: 'ATMEGA328P-PU', h: 28, size: 6 });
+  s += crystal(68, 110, 16, '16.000');
   s += circle(55, 133, 7, { fill: 'url(#silver)', stroke: '#777', sw: 0.6 }) + path('M50 128 A7 7 0 0 1 60 128', { stroke: '#222', sw: 2 });
   s += circle(55, 116, 7, { fill: 'url(#silver)', stroke: '#777', sw: 0.6 }) + path('M50 111 A7 7 0 0 1 60 111', { stroke: '#222', sw: 2 });
-  s += rect(46, 175, 14, 16, { fill: '#222', rx: 1 }) + rect(48, 171, 10, 4, { fill: '#bbb' });
-  s += smdParts([[100, 50, 5, 3], [100, 57, 5, 3], [108, 106, 5, 3, '#c49a5b'], [150, 108, 5, 3], [160, 108, 5, 3, '#c49a5b'], [230, 140, 3, 5], [236, 140, 3, 5]]);
+  s += regulator(50, 172, 'REG') + silk(56, 168, '5V', { size: 2.6 });
+  s += smdRow([[108, 112, 'r'], [115, 112, 'c'], [122, 112, 'c'], [160, 112, 'r'], [168, 112, 'c'], [176, 112, 'r'], [64, 150, 'r'], [64, 155, 'r'], [72, 152, 'c'], [78, 152, 'c'], [84, 150, 'rv']]);
+  s += smallChip(150, 100, 14, 6, 'M7') + smdRow([[226, 98, 'cv'], [226, 106, 'cv']]);
+  s += via(100, 108) + via(236, 112) + via(84, 168) + via(240, 160);
   s += boardLeds(128, 32 + 22, true);
   s += onLed(250, 44);
   s += g(text(0, 0, '∞', { size: 30, fill: '#eafcff', weight: 700 }), { tr: 'translate(160 82)' });
   s += text(180, 74, 'UNO', { size: 24, fill: '#eafcff', weight: 800, anchor: 'start', ls: 1 });
   s += text(181, 92, 'ARDUINO', { size: 6.5, fill: '#eafcff', weight: 700, anchor: 'start', ls: 1.6 });
   s += text(181, 101, 'R3', { size: 6, fill: '#eafcff', weight: 700, anchor: 'start' });
+  s += silk(18, 202, 'arduino.cc', { size: 2.8, anchor: 'start', weight: 500 });
   return s;
 }
 
 function unoR4Art(wifi) {
   let s = unoBase(wifi ? '#008a90' : '#00979d');
-  s += usbC(40) + powerJack() + resetButton(30, 22);
+  s += usbC(40) + powerJack() + resetButton(30, 22) + silk(41, 22, 'RESET', { size: 3.2, anchor: 'start' });
+  s += regulator(50, 172, 'REG') + silk(56, 168, '5V', { size: 2.6 }) + polyfuse(24, 68) + silk(28.5, 76, 'F1', { size: 2.6 });
+  s += traces('M30 88 H90 V104 M104 112 H236 M60 150 H92 M150 36 H190') + traces('M262 36 V150', { sw: 1 });
   s += chipQFP(wifi ? 108 : 150, wifi ? 140 : 128, 32, { pins: 14, label: 'RA4M1' });
-  s += smdParts([[60, 110, 6, 4], [60, 118, 6, 4, '#c49a5b'], [190, 150, 5, 3], [200, 150, 5, 3], [72, 82, 8, 6, '#333']]);
+  s += crystal(wifi ? 62 : 104, wifi ? 118 : 110, 12, '16M');
+  s += smdRow([[60, 90, 'r'], [60, 95, 'r'], [66, 90, 'c'], [66, 95, 'c'], [74, 90, 'rv'], [190, 150, 'r'], [198, 150, 'c'], [206, 150, 'r'], [72, 172, 'c'], [78, 172, 'c'], [84, 168, 'rv']]);
+  s += smallChip(wifi ? 62 : 104, 150, 14, 6, wifi ? 'LDO' : 'EEPR');
+  s += via(100, 108) + via(236, 112) + via(90, 164) + via(240, 160);
   s += boardLeds(128, 54, true);
   s += onLed(250, 44);
   if (wifi) {
     // ESP32-S3 module
     s += rect(34, 62, 46, 40, { fill: 'url(#silver)', rx: 1.5, stroke: '#7d828a', sw: 0.6 });
-    s += text(57, 82, 'ESP32-S3', { size: 4.6, fill: '#444', weight: 700 });
+    s += rect(34, 62, 46, 8, { fill: '#2b5da8' }) + path('M37 66 h6 v-2 h6 v2 h6 v-2 h6 v2 h6', { stroke: '#d4a83a', sw: 1 });
+    s += text(57, 84, 'ESP32-S3', { size: 4.6, fill: '#444', weight: 700 }) + text(57, 92, 'MINI-1', { size: 3.2, fill: '#666' });
     // 12x8 LED matrix
-    s += rect(150, 110, 82, 56, { fill: '#0b0b0d', rx: 2 });
+    s += rect(150, 104, 82, 56, { fill: '#0b0b0d', rx: 2 });
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 12; c++) {
-        const x = 156 + c * 6.3, y = 116 + r * 6.3;
+        const x = 156 + c * 6.3, y = 110 + r * 6.3;
         s += rect(x - 1.6, y - 1.1, 3.2, 2.2, { fill: '#3b1414', cls: `mx mx-${r}-${c}`, rx: 0.4 });
       }
     }
@@ -160,10 +178,16 @@ function unoR4Art(wifi) {
 function leonardoArt() {
   let s = unoBase('#00838a');
   s += rect(-6, 36, 26, 22, { fill: 'url(#silver)', rx: 2, stroke: '#7b818a', sw: 0.6 }) + rect(-6, 42, 5, 10, { fill: '#30343a' });
-  s += powerJack() + resetButton(30, 16);
+  s += powerJack() + resetButton(30, 16) + silk(41, 16, 'RESET', { size: 3.2, anchor: 'start' });
+  s += regulator(50, 172, 'REG') + silk(56, 168, '5V', { size: 2.6 }) + polyfuse(30, 66) + silk(34.5, 74, 'F1', { size: 2.6 });
+  s += traces('M30 90 H100 V108 M104 112 H236 M60 150 H92') + traces('M262 36 V150', { sw: 1 });
   s += chipQFP(150, 125, 30, { pins: 11, label: 'ATmega32U4' });
+  s += crystal(108, 110, 12, '16M') + circle(66, 120, 6, { fill: 'url(#silver)', stroke: '#777', sw: 0.6 }) + path('M62 116 A6 6 0 0 1 70 116', { stroke: '#222', sw: 2 });
+  s += smdRow([[72, 140, 'r'], [72, 145, 'r'], [80, 140, 'c'], [80, 145, 'c'], [190, 140, 'r'], [198, 140, 'c'], [206, 140, 'rv'], [96, 168, 'c'], [102, 168, 'r']]);
+  s += via(100, 108) + via(236, 112) + via(84, 164);
   s += boardLeds(128, 54, true) + onLed(250, 44);
   s += text(180, 78, 'LEONARDO', { size: 13, fill: '#eafcff', weight: 800, anchor: 'start' });
+  s += text(182, 92, 'ARDUINO', { size: 6, fill: '#eafcff', weight: 700, anchor: 'start', ls: 1.4 });
   return s;
 }
 
@@ -254,16 +278,6 @@ function dualRow(top, bottom, x0, yTop, yBot) {
   return pins;
 }
 
-function rowArt(pins, o = {}) {
-  let s = '';
-  for (const p of pins) s += pad(p.x, p.y, { r: 3.3 });
-  for (const p of pins) {
-    const up = p.y === o.yTop;
-    s += text(p.x, p.y + (up ? 8.5 : -8.5), p.label, { size: o.labelSize || 3.4, rot: -90, anchor: up ? 'end' : 'start', fill: o.labelFill || '#fff' });
-  }
-  return s;
-}
-
 // Arduino Nano: rows 0.6" apart
 const NANO_TOP = [['D13', '13'], ['3.3V', '3V3'], ['AREF'], ['A0'], ['A1'], ['A2'], ['A3'], ['A4'], ['A5'], ['A6'], ['A7'], ['5V'], ['RST.1', 'RST'], ['GND.1', 'GND'], ['VIN']];
 const NANO_BOT = [['D12', '12'], ['D11', '~11'], ['D10', '~10'], ['D9', '~9'], ['D8', '8'], ['D7', '7'], ['D6', '~6'], ['D5', '~5'], ['D4', '4'], ['D3', '~3'], ['D2', '2'], ['GND.2', 'GND'], ['RST.2', 'RST'], ['D0', 'RX0'], ['D1', 'TX1']];
@@ -279,16 +293,7 @@ register({
     analogPins: range(14, 21), supplies: [{ pin: '5V', v: 5, r: 0.05, maxI: 0.5 }, { pin: '3.3V', v: 3.3, r: 1, maxI: 0.05 }, { pin: 'VIN', v: 4.6, diode: true }],
     macros: { ARDUINO: 10819, ARDUINO_AVR_NANO: 1, ARDUINO_ARCH_AVR: 1, __AVR__: 1, __AVR_ATmega328P__: 1 },
   }),
-  render() {
-    let s = `<g filter="url(#softShadow)">${rect(-24, -6, 168, 72, { fill: '#0b6fb8', rx: 3 })}</g>`;
-    s += rect(-30, 18, 22, 24, { fill: 'url(#silver)', rx: 2, stroke: '#7b818a', sw: 0.5 }) + rect(-30, 24, 5, 12, { fill: '#30343a' });
-    s += chipQFP(70, 30, 20, { pins: 8, label: '328P' });
-    s += rect(30, 23, 14, 14, { fill: 'url(#silver)', rx: 1.5 }) + circle(37, 30, 4, { fill: '#eee', stroke: '#999', sw: 0.5 });
-    s += smdLed(105, 22, { cls: 'led-L', color: '#ffb000' }) + smdLed(105, 30, { cls: 'led-TX', color: '#ffb000' }) + smdLed(105, 38, { cls: 'led-RX', color: '#ffb000' }) + smdLed(118, 30, { cls: 'led-ON', color: '#39ff6a' });
-    s += text(125, 47, 'NANO', { size: 7, weight: 800, anchor: 'end' });
-    s += rowArt(NANO_PINS, { yTop: 0 });
-    return s;
-  },
+  render: () => nanoArt(NANO_PINS),
   update: UNO_UPDATE,
 });
 
@@ -324,15 +329,22 @@ register({
   }),
   render() {
     let s = `<g filter="url(#softShadow)">${path('M3 0 H392 A6 6 0 0 1 400 8 V202 A6 6 0 0 1 394 210 H3 A3 3 0 0 1 0 207 V3 A3 3 0 0 1 3 0Z', { fill: '#008f95', stroke: 'rgba(0,0,0,.4)', sw: 0.8 })}</g>`;
-    s += mountHole(60, 10, 3.2) + mountHole(55, 200, 3.2) + mountHole(260, 180, 3.2) + mountHole(350, 70, 3.2);
+    s += mountHole(60, 10, 3.2) + mountHole(55, 200, 3.2) + mountHole(268, 150, 3.2) + mountHole(350, 70, 3.2);
+    s += megaDetails();
     s += femaleHeader(MEGA_TOP.slice(0, 10).map((p) => p[1]), 10) + femaleHeader(MEGA_TOP.slice(10, 18).map((p) => p[1]), 10) + femaleHeader(MEGA_TOP.slice(18).map((p) => p[1]), 10);
     s += femaleHeader(UNO_BOTTOM.slice(0, 8).map((p) => p[1]), 200) + femaleHeader(range(0, 7).map((i) => 190 + i * 10), 200) + femaleHeader(range(0, 7).map((i) => 280 + i * 10), 200);
     s += femaleHeader(range(0, 17).map((i) => 20 + i * 10), 370, { vertical: true }) + femaleHeader(range(0, 17).map((i) => 20 + i * 10), 380, { vertical: true });
-    s += usbB() + powerJack() + resetButton(20, 14);
-    s += chipQFP(215, 112, 42, { pins: 16, label: 'ATMEGA2560' });
-    s += rect(150, 128, 20, 8, { fill: 'url(#silver)', rx: 4 });
+    s += usbB() + powerJack() + resetButton(20, 14) + silk(32, 14, 'RESET', { size: 3.2, anchor: 'start' });
+    s += chipQFP(215, 100, 42, { pins: 16, label: 'ATMEGA2560' });
     for (const [, x, label] of MEGA_TOP) s += text(x, 22.5, label ?? '', { size: 3.8, rot: -90, anchor: 'end', fill: '#eafcff' });
     for (const [id, x, label] of MEGA_BOTTOM) { const l = label ?? id; if (l) s += text(x, 188, l, { size: 3.8, rot: -90, anchor: 'start', fill: '#eafcff' }); }
+    // the two columns of digital pins 22 … 53 on the right edge
+    for (let i = 0; i < 16; i++) {
+      s += text(363, 30 + i * 10, String(22 + i * 2), { size: 3.4, anchor: 'end', fill: '#eafcff' }) + text(387, 30 + i * 10, String(23 + i * 2), { size: 3.4, anchor: 'start', fill: '#eafcff' });
+    }
+    s += silk(330, 39, 'COMMUNICATION', { size: 3.6, weight: 700, anchor: 'middle' });
+    s += text(125, 170, 'POWER', { size: 4.6, fill: '#eafcff', weight: 700 }) + text(222, 170, 'ANALOG IN', { size: 4.6, fill: '#eafcff', weight: 700 }) + text(315, 170, 'ANALOG IN', { size: 4.6, fill: '#eafcff', weight: 700 });
+    s += text(120, 39, 'DIGITAL (PWM ~)', { size: 4.2, fill: '#eafcff', anchor: 'start', weight: 600 });
     s += boardLeds(128, 54, true) + onLed(110, 92);
     s += text(285, 62, 'MEGA', { size: 20, weight: 800, fill: '#eafcff' }) + text(285, 80, '2560', { size: 9, weight: 700, fill: '#eafcff' });
     return s;
@@ -360,19 +372,7 @@ register({
     constants: { A0: 36, A3: 39, A4: 32, A5: 33, A6: 34, A7: 35, A10: 4, A12: 2, A13: 15, A14: 13, A15: 12, A16: 14, A17: 27, A18: 25, A19: 26, T0: 4, T3: 15, T4: 13, T5: 12, T6: 14, T7: 27, T8: 33, T9: 32, DAC1: 25, DAC2: 26, SDA: 21, SCL: 22, SS: 5, MOSI: 23, MISO: 19, SCK: 18, TX: 1, RX: 3, BUILTIN_LED: 2 },
     macros: { ARDUINO: 10819, ESP32: 1, ARDUINO_ARCH_ESP32: 1, ARDUINO_ESP32_DEV: 1, CONFIG_IDF_TARGET_ESP32: 1 },
   },
-  render() {
-    let s = `<g filter="url(#softShadow)">${rect(-26, -8, 194, 106, { fill: '#18181b', rx: 4 })}</g>`;
-    s += rect(-32, 34, 18, 22, { fill: 'url(#silver)', rx: 2 }) + rect(-32, 40, 4, 10, { fill: '#30343a' });
-    s += rect(60, 12, 104, 66, { fill: 'url(#silver)', rx: 1.5, stroke: '#888', sw: 0.6 });
-    s += rect(150, 12, 14, 66, { fill: '#1c4e8f' }) + path('M152 20 h8 v6 h-8 v6 h8 v6 h-8 v6 h8 v6 h-8 v6 h8', { stroke: '#d4a83a', sw: 1.2 });
-    s += text(102, 38, 'ESP32-WROOM-32', { size: 5.4, fill: '#3d3f44', weight: 700 }) + text(102, 50, 'Espressif', { size: 4.4, fill: '#55585f' });
-    s += rect(-6, 16, 12, 12, { fill: '#2b2b2e', rx: 2 }) + circle(0, 22, 3.5, { fill: '#444' }) + text(0, 34, 'EN', { size: 3.6 });
-    s += rect(-6, 62, 12, 12, { fill: '#2b2b2e', rx: 2 }) + circle(0, 68, 3.5, { fill: '#444' }) + text(0, 58, 'BOOT', { size: 3.6 });
-    s += chipQFP(30, 45, 14, { pins: 6, label: 'CP2102' });
-    s += smdLed(20, 70, { cls: 'led-ON', color: '#ff3030', off: '#cbb' }) + smdLed(40, 70, { cls: 'led-L', color: '#2f8bff', off: '#bcc6d6' });
-    s += rowArt(ESP_PINS, { yTop: 0 });
-    return s;
-  },
+  render: () => esp32Art(ESP_PINS),
   update: UNO_UPDATE,
 });
 
@@ -393,18 +393,7 @@ register({
     constants: { D0: 16, D1: 5, D2: 4, D3: 0, D4: 2, D5: 14, D6: 12, D7: 13, D8: 15, RX: 3, TX: 1, A0: 17, SDA: 4, SCL: 5, BUILTIN_LED: 2 },
     macros: { ARDUINO: 10819, ESP8266: 1, ARDUINO_ARCH_ESP8266: 1, ARDUINO_ESP8266_NODEMCU: 1 },
   },
-  render() {
-    let s = `<g filter="url(#softShadow)">${rect(-26, -8, 194, 106, { fill: '#1d1d20', rx: 4 })}</g>`;
-    s += rect(-32, 34, 18, 22, { fill: 'url(#silver)', rx: 2 });
-    s += rect(66, 14, 96, 62, { fill: 'url(#silver)', rx: 1.5, stroke: '#888', sw: 0.6 });
-    s += rect(146, 14, 16, 62, { fill: '#1f2f6b' }) + path('M149 22 h9 v6 h-9 v6 h9 v6 h-9 v6 h9 v6 h-9', { stroke: '#d4a83a', sw: 1.2 });
-    s += text(104, 40, 'ESP8266MOD', { size: 5.5, fill: '#3d3f44', weight: 700 }) + text(104, 52, 'ESP-12E', { size: 4.4, fill: '#55585f' });
-    s += chipQFP(30, 45, 14, { pins: 6, label: 'CH340' });
-    s += smdLed(140, 70, { cls: 'led-L', color: '#2f8bff', off: '#bcc6d6' }) + smdLed(20, 70, { cls: 'led-ON', color: '#ff3030', off: '#cbb' });
-    s += text(30, 20, 'NodeMCU', { size: 6, weight: 700, fill: '#e5e5e5' });
-    s += rowArt(NODE_PINS, { yTop: 0 });
-    return s;
-  },
+  render: () => nodemcuArt(NODE_PINS),
   update: UNO_UPDATE,
 });
 
@@ -429,17 +418,7 @@ register({
     constants: { A0: 26, A1: 27, A2: 28, PIN_LED: 25 },
     macros: { ARDUINO: 10819, ARDUINO_ARCH_RP2040: 1, ARDUINO_RASPBERRY_PI_PICO: 1, PICO_RP2040: 1 },
   },
-  render() {
-    let s = `<g filter="url(#softShadow)">${rect(-14, -8, 210, 86, { fill: '#1a7f3c', rx: 4 })}</g>`;
-    s += rect(-20, 25, 16, 20, { fill: 'url(#silver)', rx: 2 });
-    s += chipQFP(95, 35, 26, { pins: 10, label: 'RP2040' });
-    s += rect(140, 22, 22, 26, { fill: '#222', rx: 1 }) + text(151, 35, 'W25Q', { size: 3.4, fill: '#999' });
-    s += rect(12, 18, 12, 12, { fill: '#eee', rx: 2 }) + text(18, 14, 'BOOTSEL', { size: 3.2 });
-    s += smdLed(20, 46, { cls: 'led-L', color: '#3bff6b', off: '#cdd8cd' });
-    s += text(172, 35, 'Pico', { size: 8, weight: 800, rot: -90 });
-    s += rowArt(PICO_PINS, { yTop: 0, labelSize: 3 });
-    return s;
-  },
+  render: () => picoBoardArt(PICO_PINS),
   update: UNO_UPDATE,
 });
 
@@ -466,16 +445,7 @@ register({
     constants: { ...bpNum, A0: 0, A1: 1, A2: 2, A3: 3, A4: 4, A5: 5, A6: 6, A7: 7, A8: 16, A9: 17 },
     macros: { ARDUINO: 10819, ARDUINO_ARCH_STM32: 1, STM32F1xx: 1, ARDUINO_BLUEPILL_F103C8: 1 },
   },
-  render() {
-    let s = `<g filter="url(#softShadow)">${rect(-20, -8, 222, 76, { fill: '#1e4fb4', rx: 3 })}</g>`;
-    s += rect(-26, 18, 16, 24, { fill: 'url(#silver)', rx: 2 });
-    s += chipQFP(100, 30, 26, { pins: 10, label: 'STM32F103' });
-    s += rect(150, 20, 10, 8, { fill: '#ffd700' }) + rect(165, 22, 14, 6, { fill: '#ddd' });
-    s += smdLed(30, 25, { cls: 'led-L', color: '#3bff6b', off: '#cdd8cd' }) + smdLed(30, 36, { cls: 'led-ON', color: '#ff3030', off: '#cbb' });
-    s += rect(48, 18, 16, 22, { fill: '#111', rx: 1 });
-    s += rowArt(BP_PINS, { yTop: 0, labelSize: 3 });
-    return s;
-  },
+  render: () => bluePillArt(BP_PINS),
   update: (el, v) => UNO_UPDATE(el, { ...v, L: v.L ? 0 : 1 }),
 });
 
