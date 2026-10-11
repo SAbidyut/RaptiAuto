@@ -739,7 +739,7 @@ export class PanelView {
     else if (def.sim === 'relay') tip = 'Relay added. Coil: PLC Y → A1 (+), A2 → 0 V. Contact: 11 is common, 14 closes (NO) and 12 opens (NC) when the coil is ON — switch a 230 V load or a VFD input with it.';
     else if (def.sim === 'cb') tip = `${def.short} added. Feed the top terminal(s), take the protected supply from the bottom. 3-pole: drive / supply → 1 3 5, 2 4 6 → contactor or motor.`;
     else if (def.sim === 'tb') tip = 'Terminal block added. Top terminal n and bottom terminal n are joined — land field wires (sensors, buttons, motor) on one side and the panel wiring on the other.';
-    else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP-20EX2: V0+, with AIG to 0 V). Tap it to set the value.`;
+    else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
     this.lab.commitHardware('Add ' + def.short);
     this.select({ kind: 'dev', id: dev.id });
     setTimeout(() => this.scene.focus(dev.id), 60);

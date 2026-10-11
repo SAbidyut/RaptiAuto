@@ -199,6 +199,16 @@ const scenarios = {
     await sleep(2500);
     await page.screenshot({ path: join(outDir, `labhero-${id}-${focus}.png`) });
   },
+  async labplc(page, id = 'blank', view = '3d') {
+    // close-up of the PLC (3D) or its 2D symbol, running with a few inputs on
+    await page.evaluate((v) => { window.__rapti.settings.labView = v; }, view);
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(view === '3d' ? 2600 : 1500);
+    await page.click('.lab .run-btn'); await sleep(400);
+    await page.evaluate(() => { const l = window.__rapti.lab; const s = l.sys; for (let i = 0; i < 100; i++) s.step(20); const c = s.plc && s.plc.cpu; if (c) { c.Xphys[0] = 1; c.Xphys[2] = 1; } for (let i = 0; i < 50; i++) s.step(20); });
+    await page.evaluate(() => { const l = window.__rapti.lab; const d = l.project.devices.find((x) => /^dvp/.test(x.type)); l.scene.focus(d.id, false); });
+    await sleep(2600);
+    await page.screenshot({ path: join(outDir, `labplc-${id}-${view}.png`) });
+  },
   async labqa(page) {
     await page.evaluate(() => window.__rapti.home.openLabExample('vfd-modbus-hmi')); await sleep(1500);
     await page.click('.lab .run-btn'); await sleep(400);
@@ -596,6 +606,7 @@ for (const spec of list) {
     if (name === 'zoom') await scenarios.zoom(page, arg, arg2, arg3);
     else if (name === 'labhero') await scenarios.labhero(page, arg, arg2);
     else if (name === 'labselect' || name === 'labzoom') await scenarios[name](page, arg);
+    else if (name === 'labplc') await scenarios.labplc(page, arg, arg2);
     else await scenarios[name](page, arg, arg2 ? +arg2 : undefined);
   } catch (e) {
     errors.push(`[scenario ${spec}] ${e.message}`);

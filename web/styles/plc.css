@@ -548,6 +548,17 @@
 .sd-sub { font-size: 9px; fill: #64748b; }
 .sd-mini { font-size: 8px; font-weight: 700; fill: #94a3b8; }
 .sd-mini.l { text-anchor: start; }
+.sd-mini.r { text-anchor: end; }
+.sd-plcface { fill: #121418; stroke: #2c3038; stroke-width: 2; }
+.sd-plcslide { fill: #d03a33; transition: x .12s; }
+.sd-plcdin { fill: #08090b; stroke: #3a3e45; stroke-width: 3; }
+.sd-plcpin { fill: #9aa1ab; }
+.schem .sd-plclogo { font-family: var(--display); font-size: 15px; font-weight: 800; fill: #eef0f2; text-anchor: start; }
+.schem .sd-plcmodel { font-family: var(--display); font-size: 19px; font-weight: 800; fill: #eef0f2; text-anchor: start; }
+.schem .sd-plcspec { font-size: 9px; font-weight: 700; fill: #eef0f2; text-anchor: start; }
+.sd-plcbox { fill: none; stroke: #cbd5e1; stroke-width: 1; }
+.sd-plcbadge { fill: #f4f5f6; }
+.schem .sd-plcbadge-t { font-size: 13px; font-weight: 800; fill: #111; text-anchor: middle; }
 .sd-mini.err, .sd-state.err { fill: #f87171; }
 .sd-label { font-size: 11px; font-weight: 800; fill: #e2e8f0; letter-spacing: .3px; }
 .sd-state { font-size: 12px; font-weight: 800; fill: #94a3b8; }

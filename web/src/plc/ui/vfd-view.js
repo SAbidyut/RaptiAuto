@@ -194,6 +194,15 @@ export class VfdView {
       card('Accel / decel time', `${P['01-12']} / ${P['01-13']}`, 's'),
       card('Run command from', src('00-21'), '', 'wide'),
       card('Frequency from', src('00-20'), '', 'wide'));
+    if (v && v.powered) {
+      const dot = (on) => (on ? '●' : '○');
+      this.cards.appendChild(h('div', { class: 'vv-note io' },
+        `MI1–MI7 ${v.MIL.map(dot).join('')}  ·  RA–RC ${v.relay() ? 'closed' : 'open'}  ·  MO1 ${v.mo(1) ? 'ON' : 'off'}  ·  MO2 ${v.mo(2) ? 'ON' : 'off'}  ·  AVI ${v.avi.toFixed(2)} V  ·  ACI ${P['03-29'] === 1 ? v.aci.toFixed(2) + ' V' : v.aciMA().toFixed(1) + ' mA'}  ·  AFM ${v.afm().toFixed(2)} V`));
+      if (v.pidOn()) this.cards.appendChild(h('div', { class: 'vv-note' }, `PID (Pr.08-00 = ${P['08-00']}): set point ${v.pid.sp.toFixed(1)} %, feedback ${v.pid.fb.toFixed(1)} %, output ${v.pid.f.toFixed(2)} Hz${v.pid.sleep ? ' · sleeping (Pr.08-10)' : ''}${v.pid.lost ? ' · feedback lost (AFE)' : ''}`));
+      if (v.miHas(23) || P['02-19'] || P['02-20']) this.cards.appendChild(h('div', { class: 'vv-note' }, `Counter (MI = 23): ${v.counter}  ·  terminal value Pr.02-19 = ${P['02-19']}, preliminary Pr.02-20 = ${P['02-20']}`));
+      if (v.warning) this.cards.appendChild(h('div', { class: 'vv-note' }, `Warning ${v.warning} blinking on the display${v.warning === 'AnL' ? ': ACI 4–20 mA signal lost (Pr.03-19)' : v.warning === 'ot1' ? ': over-torque (Pr.06-06 ~ 06-08)' : v.warning === 'oH1' ? ': heat sink above Pr.06-15' : v.warning === 'AFE' ? ': PID feedback lost (Pr.08-08)' : ''}.`));
+      if (v.autoT > 0 && v.fault) this.cards.appendChild(h('div', { class: 'vv-note' }, `Auto-restart ${v.restarts + 1} of ${P['07-11']} in ${v.autoT.toFixed(0)} s (Pr.07-11 / 07-33).`));
+    }
     if (v && v.stall) this.cards.appendChild(h('div', { class: 'vv-note' }, v.stall === 'oc' ? 'Over-current stall prevention (Pr.06-03): the drive holds its frequency until the current drops, so the acceleration takes longer.' : 'Over-voltage stall prevention (Pr.06-01): the drive slows its deceleration to keep the DC bus below the limit.'));
     if (v && v.standby) this.cards.appendChild(h('div', { class: 'vv-note' }, `Standby: the frequency command is below the start-up frequency Pr.01-09 (${P['01-09']} Hz).`));
     const rec = ['06-17', '06-18', '06-19'].map((id) => P[id]).filter(Boolean);

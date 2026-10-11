@@ -1,7 +1,7 @@
 // PLC lab projects: persistence (localStorage), factory helpers and the connection builder.
 import { normalizeProgram, createProgram } from './sim/ladder.js';
 import { normalizeHmi } from './sim/hmi.js';
-import { DEVICE_DEFS, findPort, wireColorFor } from './devices/defs.js';
+import { DEVICE_DEFS, PLC_PORT_RENAMES, findPort, wireColorFor } from './devices/defs.js';
 
 const INDEX = 'raptiauto.plc.index.v1';
 const PKEY = (id) => 'raptiauto.plc.p.' + id;
@@ -51,6 +51,13 @@ export function normalizeLab(p) {
   }
   const ids = new Set(p.devices.map((d) => d.id));
   p.conns = (Array.isArray(p.conns) ? p.conns : []).filter((c) => c && c.a && c.b && ids.has(c.a.dev) && ids.has(c.b.dev));
+  // terminals renamed to the names printed on the real PLC (RaptiAuto 2.10); drop wires to terminals that no longer exist
+  const byId = new Map(p.devices.map((d) => [d.id, d]));
+  for (const c of p.conns) for (const e of [c.a, c.b]) {
+    const ren = PLC_PORT_RENAMES[byId.get(e.dev).type];
+    if (ren && ren[e.port]) e.port = ren[e.port];
+  }
+  p.conns = p.conns.filter((c) => findPort(byId.get(c.a.dev), c.a.port) && findPort(byId.get(c.b.dev), c.b.port));
   for (const c of p.conns) c.id = c.id || labId('c');
   p.program = normalizeProgram(p.program || createProgram());
   p.hmi = normalizeHmi(p.hmi);

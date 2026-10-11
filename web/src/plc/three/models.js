@@ -5,7 +5,7 @@ import {
   THREE, MAT, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
   glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M,
 } from './kit.js';
-import { DEVICE_DEFS, PLC_MODELS, devicePorts, deviceProps } from '../devices/defs.js';
+import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps } from '../devices/defs.js';
 import { drawSegDisplay } from './sevenseg.js';
 
 const LAMP_COLORS = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
@@ -26,113 +26,142 @@ function labelStrip(w, h, items, { bg = null, color = '#f1f5f9', size = 2.5, fon
 }
 
 // ====================================================================== PLC (DVP-ES2 / EX2)
+// Drawn after the real units: black housing, grey removable terminal blocks top and bottom with the
+// wire holes and the terminal names on the black shoulders, the STOP/RUN slide switch and the round
+// COM1 (mini-DIN) on the left, DELTA + model + I/O spec, the POWER … COM3 LEDs, the IN / OUT LED
+// grid and the R (relay) / T (transistor) badge.
 function buildPlc(dev) {
-  const def = DEVICE_DEFS[dev.type];
   const m = PLC_MODELS[dev.type];
+  const G = PLC_GEO;
   const w = m.w;
   const group = new THREE.Group();
   const B = new Builder();
-  B.add(rbox(w, 90, 60, 3), MAT.plcBody, M4(0, 45, 30));
-  // terminal blocks sit a little below the top / above the bottom of the housing: flush faces on the
-  // same plane z-fight (the strip on top of the PLC flickered while orbiting or when LEDs changed)
-  B.add(rbox(w - 4, 18.6, 16, 1.6), MAT.termBlock, M4(0, 79.3, 52.5));
-  B.add(rbox(w - 4, 18.6, 16, 1.6), MAT.termBlock, M4(0, 10.7, 52.5));
-  B.add(rbox(w - 8, 44, 22, 3), MAT.plcFront, M4(0, 45, 71));
-  B.add(box(30, 12, 18), MAT.darkPlastic, M4(0, -2, 20)); // DIN clip
-  const ports = devicePorts(dev);
-  for (const p of ports) {
-    if (p.kind === 'term') addScrew(B, p.pos, p.dir, Math.min(2.3, (p.pitch || 7) * 0.33));
+  const body = mat('plcBlack', { color: 0x1e2024, roughness: 0.55 });
+  const face = mat('plcFace', { color: 0x16181b, roughness: 0.45 });
+  const grey = mat('plcTermGrey', { color: 0xa9adb1, roughness: 0.6 });
+  B.add(rbox(w, G.h, 40, 3), body, M4(0, G.h / 2, 20));
+  B.add(rbox(w - 1, 15, 32, 2), body, M4(0, 92, G.face - 16));
+  B.add(rbox(w - 1, 15, 32, 2), body, M4(0, 18, G.face - 16));
+  B.add(rbox(w - 2, 57.5, 30, 3), face, M4(0, 55, G.d - 15));
+  // grey terminal blocks with the clamp screws (they stand a little proud of the housing)
+  B.add(rbox(w - 5, 12, 26, 1.5), grey, M4(0, 104.6, 49));
+  B.add(rbox(w - 5, 12, 26, 1.5), grey, M4(0, 5.4, 49));
+  for (const [list, y, dz] of [[m.top, 105.4, 0.6], [m.bottom, 4.6, -0.6]]) {
+    list.forEach((id, i) => addScrew(B, [plcTermX(m, list.length, i), y, 62.2], norm3([0, dz, 1]), Math.min(2.2, ((w - 8) / list.length) * 0.36)));
   }
-  // left recess with USB, RUN/STOP and COM1
-  const lx = -w / 2 + 17;
-  B.add(rbox(24, 38, 2, 2), MAT.blackPlastic, M4(lx, 45, 81.5));
-  B.add(box(8, 3.6, 2.4), MAT.steel, M4(lx, 57, 82.6));
-  B.add(box(6, 1.6, 0.6), MAT.blackPlastic, M4(lx, 57, 83.9));
-  B.add(cyl(5.6, 5.6, 1.4, 28), MAT.steel, M4(lx, 33, 82.4, Math.PI / 2));
-  B.add(cyl(4.6, 4.6, 1.2, 28), MAT.blackPlastic, M4(lx, 33, 83, Math.PI / 2));
-  B.add(box(9, 4.2, 1.2), MAT.blackPlastic, M4(lx, 45, 82.6));
-  // COM2 header (bottom right)
-  const com2 = ports.find((p) => p.id === 'COM2');
-  B.add(box(17, 9, 6), MAT.blackPlastic, M4(com2.pos[0], com2.pos[1] + 1, 58));
+  B.add(box(30, 10, 16), MAT.darkPlastic, M4(0, -1, 18)); // DIN clip
+  // COM1 (8-pin mini-DIN) and the mini-USB under it
+  const cx = G.colX(m);
+  B.add(cyl(6.4, 6.4, 1.2, 32), mat('plcRing', { color: 0x2b2e33, roughness: 0.4 }), M4(cx, G.com1Y, G.d + 0.3, Math.PI / 2));
+  B.add(cyl(5, 5, 1.2, 32), MAT.blackPlastic, M4(cx, G.com1Y, G.d + 0.6, Math.PI / 2));
+  for (let k = 0; k < 8; k++) { const a = (k / 7) * Math.PI * 1.5 + Math.PI * 0.75; B.add(cyl(0.38, 0.38, 0.6, 6), MAT.steel, M4(cx + Math.cos(a) * 2.6 * (k === 7 ? 0 : 1), G.com1Y + Math.sin(a) * 2.6 * (k === 7 ? 0 : 1), G.d + 1.1, Math.PI / 2)); }
+  B.add(box(7.4, 3.2, 1.6), MAT.steel, M4(cx, G.usbY, G.d + 0.4));
+  B.add(box(5.6, 1.2, 0.6), MAT.blackPlastic, M4(cx, G.usbY, G.d + 1.3));
+  // STOP / RUN slide switch recess
+  B.add(rbox(11, 6.4, 1.2, 3), MAT.blackPlastic, M4(cx, G.swY, G.d + 0.2));
   B.build(group);
 
-  // front print
-  const fw = w - 10;
-  const xs0 = -w / 2 + 62, xs1 = w / 2 - 9;
-  const n = Math.max(m.inputs, m.outputs);
-  const pitch = Math.min(5.2, (xs1 - xs0) / Math.max(1, n - 1));
-  const ledX = (i) => xs0 + i * pitch;
-  const front = decal(fw, 42, (g, W, H) => {
-    const X = (x) => x + W / 2, Y = (y) => 45 + 21 - y; // local → decal coords
-    g.fillStyle = '#4a5260';
-    for (const [t, y] of [['POWER', 58], ['RUN', 51], ['ERROR', 44]]) txt(g, t, X(-w / 2 + 40), Y(y), { size: 2.3, align: 'left', weight: 700, color: '#3b4250' });
-    txt(g, 'RUN', X(lx), Y(49.3), { size: 2, weight: 800, color: '#cbd5e1' });
-    txt(g, 'STOP', X(lx), Y(40.8), { size: 2, weight: 800, color: '#cbd5e1' });
-    txt(g, 'COM1', X(lx), Y(26.6), { size: 2, weight: 800, color: '#cbd5e1' });
-    txt(g, 'USB', X(lx), Y(61.4), { size: 2, weight: 800, color: '#cbd5e1' });
-    txt(g, 'IN', X(xs0 - 7), Y(58), { size: 2.4, weight: 800, color: '#3b4250' });
-    txt(g, 'OUT', X(xs0 - 7.5), Y(48), { size: 2.4, weight: 800, color: '#3b4250' });
-    for (let i = 0; i < n; i++) {
-      const lbl = i.toString(8);
-      if (i < m.inputs) txt(g, lbl, X(ledX(i)), Y(54.6), { size: 1.9, weight: 700, color: '#596273' });
-      if (i < m.outputs) txt(g, lbl, X(ledX(i)), Y(44.6), { size: 1.9, weight: 700, color: '#596273' });
+  // shoulders: wire holes, terminal names and the bracket captions
+  const shoulder = (list, groups, top) => decal(w, 15, (g, W) => {
+    const n = list.length, X = (i) => plcTermX(m, n, i) + W / 2;
+    const yHole = top ? 4 : 11, yLbl = top ? 9.4 : 5.8, yCap = top ? 12.7 : 2.4;
+    list.forEach((id, i) => {
+      g.fillStyle = '#060708'; g.beginPath(); g.arc(X(i), yHole, Math.min(1.9, (W - 8) / n * 0.34), 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#3a3e45'; g.lineWidth = 0.25; g.stroke();
+      const lbl = plcTermLabel(id);
+      txt(g, lbl, X(i), yLbl, { size: lbl.length > 3 ? 1.55 : 1.9, weight: 700, color: '#e8eaed' });
+    });
+    for (const [i0, i1, t] of groups) {
+      const x0 = X(i0) - 1.6, x1 = X(i1) + 1.6, yl = top ? yCap - 1.3 : yCap + 1.3;
+      g.strokeStyle = '#c9cdd3'; g.lineWidth = 0.22;
+      g.beginPath(); g.moveTo(x0, yl + (top ? -0.8 : 0.8)); g.lineTo(x0, yl); g.lineTo(x1, yl); g.lineTo(x1, yl + (top ? -0.8 : 0.8)); g.stroke();
+      g.font = `800 1.45px ${FONT}`;
+      const tw = g.measureText(t).width + 1.2, xm = (x0 + x1) / 2;
+      g.fillStyle = '#d9dce0'; g.fillRect(xm - tw / 2, yl - 0.85, tw, 1.7);
+      txt(g, t, xm, yl + 0.05, { size: 1.45, weight: 800, color: '#111317' });
     }
-    g.fillStyle = 'rgba(40,50,70,.12)';
-    rrect(g, X(xs0 - 3), Y(41), xs1 - xs0 + 6, 0.5, 0.2); g.fill();
-    deltaLogo(g, X(w / 2 - 10), Y(33.5), 5.6, '#1d4f9c', 'right');
-    txt(g, m.short, X(w / 2 - 10), Y(27), { size: 3.2, align: 'right', weight: 800, color: '#2a3140', font: FONT_D });
-    if (m.ai) txt(g, 'AD 4CH · DA 2CH', X(-w / 2 + 40), Y(30), { size: 2.2, align: 'left', weight: 700, color: '#596273' });
-    else txt(g, 'Programmable Logic Controller', X(-w / 2 + 40), Y(30), { size: 2, align: 'left', weight: 600, color: '#6b7280' });
-  }, { ppm: 12 });
-  front.position.set(0, 45, 82.05);
+  }, { ppm: 16 });
+  const st = shoulder(m.top, m.groups.top, true); st.position.set(0, 92, G.face + 0.05); group.add(st);
+  const sb = shoulder(m.bottom, m.groups.bottom, false); sb.position.set(0, 18, G.face + 0.05); group.add(sb);
+
+  // front print
+  const wide = w > 120;
+  const lp = wide ? 5.2 : 4.4;
+  const gx0 = w / 2 - 7.5 - 7 * lp; // first LED column of the IN / OUT grid
+  const sx = gx0 - 8.5; // POWER … COM3 LEDs
+  const two = (n) => n > 8;
+  const inRows = two(m.inputs) ? 2 : 1, outRows = two(m.outputs) ? 2 : 1;
+  const yIn = 75, yOut = yIn - 6 - inRows * 7.6;
+  const ledXY = (kind, i) => [gx0 + (i & 7) * lp, (kind === 'x' ? yIn : yOut) - 5.6 - (i >> 3) * 7.6];
+  const front = decal(w - 3, 57, (g, W, H) => {
+    const X = (x) => x + W / 2, Y = (y) => 55 + H / 2 - y;
+    const lx = X(cx);
+    txt(g, 'STOP', lx - 6.4, Y(G.swY), { size: wide ? 2.1 : 1.7, weight: 700, color: '#e3e5e8', align: 'right' });
+    txt(g, 'RUN', lx + 6.4, Y(G.swY), { size: wide ? 2.1 : 1.7, weight: 700, color: '#e3e5e8', align: 'left' });
+    txt(g, 'COM1', lx, Y(G.com1Y - 9.2), { size: 2, weight: 700, color: '#e3e5e8' });
+    txt(g, 'USB', lx, Y(G.usbY - 4.4), { size: 1.7, weight: 700, color: '#9aa1ab' });
+    const tx = cx + (wide ? 15 : 12.5);
+    deltaLogo(g, X(tx), Y(wide ? 69 : 70), wide ? 4.8 : 3.5, '#eef0f2');
+    txt(g, m.short, X(tx), Y(wide ? 50 : 52), { size: wide ? 3.6 : 3, align: 'left', weight: 800, color: '#eef0f2', font: FONT_D });
+    g.font = `700 ${wide ? 2.1 : 1.8}px ${FONT}`;
+    const sw = g.measureText(m.spec).width + 1.6, sy = Y(wide ? 45.6 : 47.8);
+    g.strokeStyle = '#e6e8eb'; g.lineWidth = 0.25; g.strokeRect(X(tx) - 0.2, sy - 1.5, sw, 3);
+    g.beginPath(); g.moveTo(X(tx) - 0.2, sy + 1.5); g.lineTo(X(w / 2 - 6), sy + 1.5); g.stroke();
+    txt(g, m.spec, X(tx) + 0.6, sy + 0.1, { size: wide ? 2.1 : 1.8, align: 'left', weight: 700, color: '#eef0f2' });
+    ['POWER', 'RUN', 'ERROR', 'COM1', 'COM2', 'COM3'].forEach((t, i) => txt(g, t, X(sx - 2.2), Y(73 - i * 5.2), { size: wide ? 2 : 1.7, align: 'right', weight: 700, color: '#e3e5e8' }));
+    const grid = (title, y0, n) => {
+      txt(g, title, X(gx0 - 1.2), Y(y0 + 1.6), { size: 2.3, align: 'left', weight: 800, color: '#eef0f2' });
+      for (let i = 0; i < n; i++) { const r = i >> 3; txt(g, String(r ? 10 + (i & 7) : i & 7), X(gx0 + (i & 7) * lp), Y(y0 - 2.2 - r * 7.6), { size: 1.85, weight: 700, color: '#e3e5e8' }); }
+    };
+    grid('IN', yIn, m.inputs);
+    grid('OUT', yOut, m.outputs);
+    // smoked LED window edge
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 0.4;
+    g.beginPath(); g.moveTo(X(w / 2 - 3), Y(80)); g.quadraticCurveTo(X(w / 2 - 8), Y(55), X(w / 2 - 3), Y(30)); g.stroke();
+    // R / T badge
+    g.fillStyle = '#f4f5f6'; rrect(g, X(w / 2 - 9.5), Y(34.5), 5.4, 5.4, 0.5); g.fill();
+    txt(g, m.badge, X(w / 2 - 6.8), Y(31.8), { size: 4, weight: 800, color: '#111' });
+  }, { ppm: 14 });
+  front.position.set(0, 55, G.d + 0.05);
   group.add(front);
 
-  // terminal labels
-  const top = ports.filter((p) => p.kind === 'term' && p.pos[1] > 45);
-  const bot = ports.filter((p) => p.kind === 'term' && p.pos[1] <= 45);
-  const lt = labelStrip(w - 6, 4.6, top.map((p) => ({ x: p.pos[0], label: p.label, size: p.label.length > 3 ? 2 : 2.4 })));
-  lt.position.set(0, 85.8, 60.65); group.add(lt);
-  const lb = labelStrip(w - 6, 4.6, [...bot.map((p) => ({ x: p.pos[0], label: p.label, size: p.label.length > 3 ? 2 : 2.4 })), { x: com2.pos[0], label: 'D+ D− SG', size: 2 }]);
-  lb.position.set(0, 4.2, 60.65); group.add(lb);
-
   // LEDs
-  const leds = { pow: ledMat('#36ff6a'), run: ledMat('#36ff6a'), err: ledMat('#ff3b30'), x: [], y: [] };
-  const ledGeo = rbox(2.8, 1.8, 1, 0.4);
-  const addLed = (matl, x, y) => { const me = new THREE.Mesh(ledGeo, matl); me.position.set(x, y, 82.4); group.add(me); return me; };
-  addLed(leds.pow, -w / 2 + 36.5, 58); addLed(leds.run, -w / 2 + 36.5, 51); addLed(leds.err, -w / 2 + 36.5, 44);
-  for (let i = 0; i < m.inputs; i++) { const lm = ledMat('#36ff6a'); leds.x.push(lm); addLed(lm, ledX(i), 58); }
-  for (let i = 0; i < m.outputs; i++) { const lm = ledMat('#ffb020'); leds.y.push(lm); addLed(lm, ledX(i), 48); }
+  const leds = { pow: ledMat('#36ff6a'), run: ledMat('#36ff6a'), err: ledMat('#ff3b30'), c1: ledMat('#ffb020'), c2: ledMat('#ffb020'), c3: ledMat('#ffb020'), x: [], y: [] };
+  const ledGeo = rbox(2.2, 1.3, 0.8, 0.3);
+  const addLed = (matl, x, y) => { const me = new THREE.Mesh(ledGeo, matl); me.position.set(x, y, G.d + 0.3); group.add(me); return me; };
+  [leds.pow, leds.run, leds.err, leds.c1, leds.c2, leds.c3].forEach((lm, i) => addLed(lm, sx, 73 - i * 5.2));
+  for (let i = 0; i < m.inputs; i++) { const lm = ledMat('#36ff6a'); leds.x.push(lm); addLed(lm, ...ledXY('x', i)); }
+  for (let i = 0; i < m.outputs; i++) { const lm = ledMat('#36ff6a'); leds.y.push(lm); addLed(lm, ...ledXY('y', i)); }
 
-  // RUN/STOP lever (interactive)
-  const lever = new THREE.Group();
-  lever.position.set(lx, 45, 83);
-  const lv = new THREE.Mesh(rbox(3, 5, 4, 0.8), MAT.white);
-  lv.position.set(0, 2, 2);
-  lever.add(lv);
+  // STOP / RUN slider (interactive)
+  const lever = new THREE.Mesh(rbox(4.2, 3.8, 2.2, 0.8), mat('plcSlider', { color: 0xc8352e, roughness: 0.5 }));
+  lever.position.set(cx + 2.2, G.swY, G.d + 1.2);
   group.add(lever);
-  const hit = control(new THREE.Mesh(box(14, 12, 8), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: 'RUN / STOP switch' });
-  hit.position.set(lx, 45, 84);
+  const hit = control(new THREE.Mesh(box(16, 11, 8), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: 'RUN / STOP switch' });
+  hit.position.set(cx, G.swY, G.d + 3);
   group.add(hit);
 
-  let blink = 0;
   return {
     group, controls: [hit],
     update(rt, ctx) {
       const cpu = rt.cpu;
       let ch = false;
       const p = cpu.powered;
-      blink = Math.floor(ctx.t * 3) % 2;
-      ch = setLed(leds.pow.emissive ? leds.pow : leds.pow, p) || ch;
+      const blink = Math.floor(ctx.t * 3) % 2;
+      const fast = Math.floor(ctx.t * 8) % 2;
+      ch = setLed(leds.pow, p) || ch;
       ch = setLed(leds.run, p && cpu.running) || ch;
       ch = setLed(leds.err, p && cpu.errorFlag && blink) || ch;
+      ch = setLed(leds.c2, p && !!(rt.m2 && rt.m2.busy) && fast) || ch;
       for (let i = 0; i < leds.x.length; i++) ch = setLed(leds.x[i], p && cpu.X[i], 2) || ch;
       for (let i = 0; i < leds.y.length; i++) ch = setLed(leds.y[i], p && cpu.Y[i], 2) || ch;
-      const ang = rt.dev.state.run !== false ? -0.5 : 0.5;
-      if (lever.rotation.x !== ang) { lever.rotation.x = ang; ch = true; }
+      const x = cx + (rt.dev.state.run !== false ? 2.2 : -2.2);
+      if (lever.position.x !== x) { lever.position.x = x; ch = true; }
       return ch;
     },
   };
 }
+function norm3(v) { const l = Math.hypot(...v); return v.map((x) => x / l); }
 
 // ====================================================================== HMI (DOP-107BV)
 function buildHmi(dev, ctx) {
@@ -284,7 +313,7 @@ function buildVfd(dev) {
   const ports = devicePorts(dev);
   const ctrl1 = ports.filter((p) => p.pos[1] === 88), ctrl2 = ports.filter((p) => p.pos[1] === 72), pw = ports.filter((p) => p.pos[1] === 22);
   const l1 = labelStrip(92, 4, ctrl1.map((p) => ({ x: p.pos[0], label: p.label, size: 2.4 }))); l1.position.set(0, 83.6, 136.6); group.add(l1);
-  const l2 = labelStrip(92, 4, ctrl2.map((p) => ({ x: p.pos[0], label: p.label, size: 2.4 }))); l2.position.set(0, 67.4, 136.6); group.add(l2);
+  const l2 = labelStrip(92, 4, ctrl2.map((p) => ({ x: p.pos[0], label: p.label, size: 2.1 }))); l2.position.set(0, 67.4, 136.6); group.add(l2);
   const l3 = labelStrip(96, 6, pw.map((p) => ({ x: p.pos[0], label: p.label, size: 2.8 })), { color: '#e2e8f0' }); l3.position.set(0, 8.5, 128.2); group.add(l3);
   // NET1 / NET2 LED windows
   for (const y of [55.4, 45.4]) { const n = new THREE.Mesh(rbox(9, 4.6, 1.2, 0.6), mat('vfdNet', { color: 0x1a1c20, roughness: 0.2 })); n.position.set(41, y, 128.6); group.add(n); }

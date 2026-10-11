@@ -71,6 +71,16 @@ function connector(kind) {
       add(box(7, 6, 3), MAT.steel, 0, 3, 0);
       add(rbox(11, 16, 7, 2), MAT.blackPlastic, 0, 13, 0);
       len = 21; break;
+    case 'term3': {
+      // RS-485 cable on screw terminals D+ / D− / SG: three ferrule wires out of a sleeve
+      const cols = [0xf2f2f2, 0x2563eb, 0x1b1d22];
+      [-5.5, 0, 5.5].forEach((x, i) => {
+        add(cyl(0.9, 0.9, 6, 8), MAT.steel, x, 3, 0);
+        add(cyl(1.15, 1.15, 7, 8), mat('rsw' + i, { color: cols[i], roughness: 0.6 }), x, 9.5, 0);
+      });
+      add(rbox(15, 6, 4.6, 1.8), mat('rsSleeve', { color: 0x3a3f47, roughness: 0.7 }), 0, 15, 0);
+      len = 16; break;
+    }
     case 'plug3':
       add(rbox(16, 12, 9, 1.5), MAT.greenPlug, 0, 6, 0);
       add(box(16, 2, 6), MAT.steel, 0, 12.5, 0);

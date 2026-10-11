@@ -117,7 +117,7 @@ export const LAB_EXAMPLES = [
         screens: [{
           id: 's1', name: 'Counter', bg: '#0b1630', elements: [
             E('rect', 16, 14, 768, 64, { fill: '#10224a', stroke: '#2b4470', radius: 14, title: '' }),
-            E('text', 36, 28, 600, 40, { text: 'PART COUNTER · DVP-16ES2', size: 28, color: '#e2e8f0', align: 'left', bold: true }),
+            E('text', 36, 28, 600, 40, { text: 'PART COUNTER · DVP16ES2', size: 28, color: '#e2e8f0', align: 'left', bold: true }),
             E('rect', 16, 94, 380, 370, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'PRODUCTION' }),
             E('num', 40, 140, 330, 90, { word: 'C0', dec: 0, unit: 'pcs', label: 'COUNT' }),
             E('input', 40, 250, 330, 80, { word: 'D0', dec: 0, unit: 'pcs', label: 'TARGET', min: 1, max: 999 }),
@@ -301,7 +301,7 @@ export const LAB_EXAMPLES = [
       base(b);
       b.devices.find((d) => d.id === 'plc').props.name = 'PLC 1 · Master';
       b.dev('plc2', 'dvp-32es2', { name: 'PLC 2 · Slave' }, { run: true });
-      b.w('plc', 'L', 'plc2', 'L'); b.w('plc', 'N', 'plc2', 'N'); b.w('plc', 'PE', 'plc2', 'PE');
+      b.w('mcb', 'L', 'plc2', 'L'); b.w('mcb', 'N', 'plc2', 'N'); b.w('mcb', 'PE', 'plc2', 'PE');
       b.w('plc2', 'S/S', 'psu', '-V1');
       // the RS-485 link: COM2 to COM2 (D+ / D- / SG)
       b.w('plc', 'COM2', 'plc2', 'COM2');
@@ -343,7 +343,7 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'analog-speed', name: 'Analog speed: pot → EX2 → VFD', level: 'advanced', tags: ['Analog', 'EX2', 'AVI'],
-    description: 'A DVP-20EX2 reads a speed pot on AI channel 0 (D1110) and drives the MS300 AVI input from AO channel 0 (D1116). START/STOP run the drive through MI1.',
+    description: 'A DVP20EX2 reads a speed pot on AI channel 0 (D1110) and drives the MS300 AVI input from AO channel 0 (D1116). START/STOP run the drive through MI1.',
     build() {
       const b = builder();
       base(b, 'dvp-20ex2');
@@ -357,9 +357,10 @@ export const LAB_EXAMPLES = [
       b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
       b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
       b.w('vfd', '+10V', 'pot', '1'); b.w('pot', '3', 'vfd', 'ACM'); b.w('pot', '2', 'plc', 'V0+');
-      b.w('plc', 'AIG', 'vfd', 'ACM');
-      b.w('plc', 'VO0', 'vfd', 'AVI'); b.w('plc', 'AOG', 'vfd', 'ACM');
-      b.w('plc', 'C0', 'vfd', 'DCM'); b.w('plc', 'Y0', 'vfd', 'MI1');
+      b.w('plc', 'VI0-', 'vfd', 'ACM');
+      b.w('plc', 'VO0', 'vfd', 'AVI'); b.w('plc', 'AG0', 'vfd', 'ACM');
+      // DVP20EX200T: NPN transistor outputs powered from UP / ZP; Y0 pulls MI1 to DCM (sink mode)
+      b.w('plc', 'UP', 'psu', '+V2'); b.w('plc', 'ZP', 'psu', '-V2'); b.w('plc', 'ZP', 'vfd', 'DCM'); b.w('plc', 'Y0', 'vfd', 'MI1');
       const prog = program([
         rung('Run latch → Y0 drives MI1 (FWD)', ['X0| X1 => OUT Y0', 'Y0']),
         rung('Analog pass-through: AI CH0 (D1110, 0–2000) → AO CH0 (D1116, 0–2000 = 0–10 V)', ['M1000 => MOV D1110 D1116']),
@@ -370,7 +371,7 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'blank', name: 'Blank lab (PLC + power)', level: 'beginner', tags: ['Empty'],
-    description: 'A powered DVP-16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
+    description: 'A powered DVP16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
     build() {
       const b = builder();
       base(b);

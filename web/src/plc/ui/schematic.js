@@ -36,12 +36,12 @@ const shortLabel = (port) => (port.kind === 'comm' ? (port.id === 'RS485' ? 'RS-
 function edgeOf(def, port) {
   if (['console', 'motor', 'hmi', 'desk'].includes(def.zone)) return 'top';
   if (def.sim === 'mcb') return 'bottom';
-  if (def.sim === 'plc') return port.kind === 'comm' || port.pos[1] < 45 ? 'bottom' : 'top';
+  if (def.sim === 'plc') return port.kind === 'comm' || port.pos[1] < def.size[1] / 2 ? 'bottom' : 'top';
   if (def.sim === 'vfd') return port.pos[1] > 40 ? 'top' : 'bottom';
   return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
 }
 
-const BODY_H = { plc: 176, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112 };
+const BODY_H = { plc: 196, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112 };
 
 function symbolFor(dev) {
   const def = DEVICE_DEFS[dev.type];
@@ -49,7 +49,9 @@ function symbolFor(dev) {
   const top = [], bottom = [];
   for (const p of ports) (edgeOf(def, p) === 'top' ? top : bottom).push(p);
   const order = (a, b) => (a.kind === 'comm') - (b.kind === 'comm') || b.pos[1] - a.pos[1] || a.pos[0] - b.pos[0];
-  top.sort(order); bottom.sort(order);
+  // PLC: COM1 / USB (front) first, then the bottom terminals left → right as printed (COM2 on D+ D− SG)
+  const plcKey = (p) => (p.id === 'COM1' ? -1e4 : p.id === 'USB' ? -9e3 : p.pos[0]);
+  top.sort(order); bottom.sort(def.sim === 'plc' ? (a, b) => plcKey(a) - plcKey(b) : order);
   const slotW = (p) => (p.kind === 'comm' ? COMM_W : P);
   const rowW = (row) => row.reduce((s, p) => s + slotW(p), 0);
   const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130 }[def.sim] || 104;
@@ -286,26 +288,54 @@ function drawDevice(g, sym) {
 
   switch (def.sim) {
     case 'plc': {
-      const xl = [], yl = [];
-      for (const sl of sym.slots.values()) {
-        if (/^X\d/.test(sl.port.id)) xl.push([Number.parseInt(sl.port.id.slice(1), 8), led(sl.x, 30, '#36ff6a', 3.6)]);
-        if (/^Y\d/.test(sl.port.id)) yl.push([Number.parseInt(sl.port.id.slice(1), 8), led(sl.x, h - 26, '#ffb020', 3.6)]);
-      }
-      txt(w / 2, h / 2 - 6, def.short, 'sd-title big');
-      txt(w / 2, h / 2 + 12, 'Delta · ' + def.part, 'sd-sub');
-      const pw = led(26, h / 2 - 16, '#36ff6a'), run = led(26, h / 2, '#36ff6a'), err = led(26, h / 2 + 16, '#ff3b30');
-      txt(36, h / 2 - 13, 'POW', 'sd-mini l'); txt(36, h / 2 + 3, 'RUN', 'sd-mini l'); txt(36, h / 2 + 19, 'ERR', 'sd-mini l');
-      const sw = el('g', { class: 'sd-switch' }, g);
-      el('rect', { x: w - 52, y: h / 2 - 22, width: 34, height: 44, rx: 6, class: 'sd-well' }, sw);
-      const knob = el('rect', { x: w - 47, y: h / 2 - 18, width: 24, height: 18, rx: 4, class: 'sd-knob' }, sw);
-      txt(w - 35, h / 2 + 34, 'RUN/STOP', 'sd-mini');
-      ctl(w - 58, h / 2 - 28, 46, 56, 'toggle', { label: 'RUN / STOP switch' });
+      // the front of the DVP-ES2 / EX2: STOP/RUN switch and COM1 on the left, DELTA + model + I/O
+      // spec, the POWER … COM3 LEDs, the IN / OUT LED grid and the R / T badge
+      const m = def.model;
+      el('rect', { class: 'sd-plcface', x: 10, y: 30, width: w - 20, height: h - 60, rx: 6 }, g);
+      const lx = 58;
+      el('rect', { x: lx - 17, y: 50, width: 34, height: 16, rx: 8, class: 'sd-well' }, g);
+      const knob = el('rect', { x: lx, y: 52, width: 14, height: 12, rx: 3, class: 'sd-plcslide' }, g);
+      txt(lx - 21, 61, 'STOP', 'sd-mini r'); txt(lx + 21, 61, 'RUN', 'sd-mini l');
+      ctl(lx - 26, 44, 52, 28, 'toggle', { label: 'RUN / STOP switch' });
+      el('circle', { cx: lx, cy: 98, r: 14, class: 'sd-plcdin' }, g);
+      for (let k = 0; k < 8; k++) { const an = (k / 7) * Math.PI * 1.5 + Math.PI * 0.75, rr = k === 7 ? 0 : 7; el('circle', { cx: lx + Math.cos(an) * rr, cy: 98 + Math.sin(an) * rr, r: 1.4, class: 'sd-plcpin' }, g); }
+      txt(lx, 124, 'COM1', 'sd-mini');
+      const tx = 102;
+      txt(tx, 62, '▲ DELTA', 'sd-plclogo');
+      txt(tx, 96, m.short, 'sd-plcmodel');
+      const spec = txt(tx + 4, 114, m.spec, 'sd-plcspec');
+      el('rect', { x: tx, y: 104, width: m.spec.length * 6.1 + 8, height: 14, class: 'sd-plcbox' }, g);
+      g.appendChild(spec);
+      const lp = 16;
+      const gx0 = w - 34 - 7 * lp;
+      const sx = gx0 - 24;
+      const st = {};
+      ['POWER', 'RUN', 'ERROR', 'COM1', 'COM2', 'COM3'].forEach((t, i) => {
+        const y = 46 + i * 15;
+        txt(sx - 8, y + 3, t, 'sd-mini r');
+        st[t] = led(sx, y, t === 'ERROR' ? '#ff3b30' : t.startsWith('COM') ? '#ffb020' : '#36ff6a', 3.4);
+      });
+      const grid = (title, y0, n) => {
+        txt(gx0 - 6, y0, title, 'sd-mini l');
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const r = i >> 3, x = gx0 + (i & 7) * lp, y = y0 + 12 + r * 24;
+          txt(x, y, String(r ? 10 + (i & 7) : i & 7), 'sd-mini');
+          out.push(led(x, y + 9, '#36ff6a', 3.4));
+        }
+        return out;
+      };
+      const xl = grid('IN', 42, m.inputs);
+      const yl = grid('OUT', 42 + 18 + (m.inputs > 8 ? 2 : 1) * 24, m.outputs);
+      el('rect', { x: w - 34, y: h - 56, width: 16, height: 16, rx: 2, class: 'sd-plcbadge' }, g);
+      txt(w - 26, h - 44, m.badge, 'sd-plcbadge-t');
       update = (rt, t) => {
         const cpu = rt.cpu, p = cpu.powered;
-        ledOn(pw, p); ledOn(run, p && cpu.running); ledOn(err, p && cpu.errorFlag && Math.floor(t * 3) % 2);
-        for (const [i, e] of xl) ledOn(e, p && cpu.X[i]);
-        for (const [i, e] of yl) ledOn(e, p && cpu.Y[i]);
-        set(knob, 'y', rt.dev.state.run !== false ? h / 2 - 18 : h / 2);
+        ledOn(st.POWER, p); ledOn(st.RUN, p && cpu.running); ledOn(st.ERROR, p && cpu.errorFlag && Math.floor(t * 3) % 2);
+        ledOn(st.COM2, p && !!(rt.m2 && rt.m2.busy) && Math.floor(t * 8) % 2);
+        xl.forEach((e, i) => ledOn(e, p && cpu.X[i]));
+        yl.forEach((e, i) => ledOn(e, p && cpu.Y[i]));
+        set(knob, 'x', rt.dev.state.run !== false ? lx : lx - 14);
       };
       break;
     }
@@ -1088,4 +1118,8 @@ const THUMB_CSS = `
 .sd-led{fill:#1f2937;stroke:#0b1222}.sd-well,.sd-bezel{fill:#0b1222;stroke:#334155}.sd-knob,.sd-lever{fill:#cbd5e1}.sd-bezelr{fill:#9ca3af;stroke:#475569}
 .sd-lcd{fill:#1a0505;stroke:#3f1d1d}.sd-key{fill:#4a505b}.sd-key-t{font-size:9px;font-weight:800;fill:#fff}.sd-screen-edge{fill:#020305;stroke:#1e293b}
 .sd-motor{fill:#475569;stroke:#94a3b8;stroke-width:2}.sd-motor-in{fill:#334155}.sd-fan line{stroke:#94a3b8;stroke-width:4}.sd-glow{opacity:0}.sd-lens{opacity:.45}
-.sd-wave{fill:none}.sd-target{fill:#8892a0;opacity:.35}.sd-knobc{fill:#111827;stroke:#64748b}.sd-ptr{stroke:#fff;stroke-width:2.5}.sd-state{font-size:12px;font-weight:800}`;
+.sd-wave{fill:none}.sd-target{fill:#8892a0;opacity:.35}.sd-knobc{fill:#111827;stroke:#64748b}.sd-ptr{stroke:#fff;stroke-width:2.5}.sd-state{font-size:12px;font-weight:800}
+.sd-mini.r{text-anchor:end}.sd-plcface{fill:#121418;stroke:#2c3038;stroke-width:2}.sd-plcslide{fill:#d03a33}.sd-plcdin{fill:#08090b;stroke:#3a3e45;stroke-width:3}.sd-plcpin{fill:#9aa1ab}
+.sd-plclogo,.sd-plcmodel,.sd-plcspec{text-anchor:start;fill:#eef0f2;font-weight:800}.sd-plclogo{font-size:15px}.sd-plcmodel{font-size:19px}.sd-plcspec{font-size:9px}.sd-plcbox{fill:none;stroke:#cbd5e1}
+.sd-plcbadge{fill:#f4f5f6}.sd-plcbadge-t{font-size:13px;font-weight:800;fill:#111}
+.sd-kpface{fill:#111316;stroke:#2c2f34;stroke-width:3}.sd-dial{fill:#2a2c30;stroke:#000}.sd-dial-arc{fill:none;stroke:#eef1f5;stroke-width:2.4;stroke-dasharray:5 3}.sd-dial-mark{stroke:#9aa0a8;stroke-width:2.4}`;

@@ -16,41 +16,73 @@ function row(ids, { x0, x1, y, z, dir, sig, kind = 'term', labels }) {
   return ids.map((id, i) => ({ id, label: (labels && labels[i]) || id, kind, pos: [x0 + pitch * i, y, z], dir, sig: typeof sig === 'function' ? sig(id) : sig, pitch }));
 }
 
-const plcInSig = (id) => (id === 'L' ? 'L' : id === 'N' ? 'N' : id === 'PE' ? 'PE' : id === '+24V' ? '+24' : id === '0V' ? '0V' : id === 'S/S' ? 'ss' : /^V\d\+|^AIG/.test(id) ? 'an' : 'in');
-const plcOutSig = (id) => (/^C\d/.test(id) ? 'com' : /^VO|^AOG/.test(id) ? 'an' : 'out');
-
-export const PLC_MODELS = {
-  'dvp-16es2': { name: 'DVP16ES200R', short: 'DVP-16ES2', inputs: 8, outputs: 8, ai: 0, ao: 0, w: 120, relayGroups: [4, 4], steps: 15872 },
-  'dvp-32es2': { name: 'DVP32ES200R', short: 'DVP-32ES2', inputs: 16, outputs: 16, ai: 0, ao: 0, w: 160, relayGroups: [4, 4, 4, 4], steps: 15872 },
-  'dvp-20ex2': { name: 'DVP20EX200R', short: 'DVP-20EX2', inputs: 8, outputs: 6, ai: 4, ao: 2, w: 160, relayGroups: [4, 2], steps: 15872 },
-};
+const plcSig = (id) => (id === 'L' ? 'L' : id === 'N' ? 'N' : id === 'PE' || /^FE/.test(id) ? 'PE' : id === '+24V' || id === 'UP' ? '+24' : id === '0V' || id === 'ZP' ? '0V'
+  : id === 'S/S' ? 'ss' : /^C\d/.test(id) ? 'com' : /^Y/.test(id) ? 'out' : /^(V\d|I\d|VI\d|VO|IO|AG)/.test(id) ? 'an' : 'in');
 
 const oct = (n) => n.toString(8);
+const Xs = (n) => Array.from({ length: n }, (_, i) => 'X' + oct(i));
+const Ys = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => 'Y' + oct(a + i));
+const COM23 = ['COM2:D+', 'COM2:D-', 'COM2:SG', 'COM3:D+', 'COM3:D-'];
+
+/**
+ * Delta DVP-ES2 / EX2 as on the real units (black housing, grey removable terminal blocks). `top` /
+ * `bottom` list the terminal positions left → right exactly as printed on the PLC; `COMn:x` are the
+ * RS-485 screw terminals (COM2 is one cable port, COM3 is drawn but not simulated). `groups` are
+ * the bracket captions printed next to the terminal names.
+ */
+export const PLC_MODELS = {
+  'dvp-16es2': {
+    name: 'DVP16ES200R', short: 'DVP16ES2', spec: '8DI/8DO', badge: 'R', inputs: 8, outputs: 8, ai: 0, ao: 0, w: 105, out: 'relay', relayGroups: [4, 4], steps: 15872,
+    top: ['L', 'N', 'PE', 'NC', '+24V', '0V', 'S/S', ...Xs(8)],
+    bottom: [...COM23, 'C0', ...Ys(0, 3), 'C1', ...Ys(4, 7)],
+    groups: { top: [[0, 1, 'AC IN'], [4, 5, 'DC OUT'], [7, 14, 'IN']], bottom: [[0, 2, 'COM2'], [3, 4, 'COM3'], [5, 9, 'OUT'], [10, 14, 'OUT']] },
+  },
+  'dvp-32es2': {
+    name: 'DVP32ES200R', short: 'DVP32ES2', spec: '16DI/16DO', badge: 'R', inputs: 16, outputs: 16, ai: 0, ao: 0, w: 145, out: 'relay', relayGroups: [4, 4, 4, 4], steps: 15872,
+    top: ['L', 'N', 'PE', 'NC', '+24V', '0V', 'S/S', ...Xs(16)],
+    bottom: [...COM23, 'C0', ...Ys(0, 3), 'C1', ...Ys(4, 7), 'C2', ...Ys(8, 11), 'C3', ...Ys(12, 15)],
+    groups: { top: [[0, 1, 'AC IN'], [4, 5, 'DC OUT'], [7, 22, 'IN']], bottom: [[0, 2, 'COM2'], [3, 4, 'COM3'], [5, 9, 'OUT'], [10, 14, 'OUT'], [15, 19, 'OUT'], [20, 24, 'OUT']] },
+  },
+  'dvp-20ex2': {
+    name: 'DVP20EX200T', short: 'DVP20EX2', spec: '8DI/6DO/4AI/2AO', badge: 'T', inputs: 8, outputs: 6, ai: 4, ao: 2, w: 145, out: 'npn', steps: 15872,
+    top: ['L', 'N', 'PE', 'NC', 'S/S', ...Xs(8), 'FE', 'V0+', 'I0+', 'VI0-', 'V1+', 'I1+', 'VI1-', 'V2+', 'I2+', 'VI2-'],
+    bottom: [...COM23, '+24V', '0V', 'UP', 'ZP', ...Ys(0, 5), 'FE2', 'V3+', 'I3+', 'VI3-', 'VO0', 'IO0', 'AG0', 'VO1', 'IO1', 'AG1'],
+    groups: { top: [[0, 1, 'AC IN'], [4, 12, 'IN'], [14, 22, 'A→D']], bottom: [[0, 2, 'COM2'], [3, 4, 'COM3'], [5, 6, 'DC OUT'], [7, 14, 'OUT'], [16, 18, 'A→D'], [19, 24, 'D→A']] },
+  },
+};
+
+const PLC_LABEL = { PE: '⏚', '0V': '24G', FE2: 'FE', AG0: 'AG', AG1: 'AG', 'COM2:D+': 'D+', 'COM2:D-': 'D−', 'COM2:SG': 'SG', 'COM3:D+': 'D+', 'COM3:D-': 'D−' };
+export const plcTermLabel = (id) => PLC_LABEL[id] || id.replace(/-$/, '−');
+
+/** Housing of the ES2 / EX2 (mm): height, depth, terminal hole rows, terminal x positions. */
+export const PLC_GEO = { h: 110, d: 82, holeTop: 95.5, holeBot: 14.5, face: 70, swY: 71, com1Y: 54, usbY: 34, colX: (m) => -m.w / 2 + 17 };
+export function plcTermX(m, n, i) {
+  const x0 = -m.w / 2 + 4, x1 = m.w / 2 - 4;
+  return x0 + ((x1 - x0) * (i + 0.5)) / n;
+}
 
 function plcPorts(type) {
   const m = PLC_MODELS[type];
-  const w = m.w;
-  const top = ['L', 'N', 'PE', '+24V', '0V', 'S/S'];
-  for (let i = 0; i < m.inputs; i++) top.push('X' + oct(i));
-  for (let i = 0; i < m.ai; i++) top.push(`V${i}+`);
-  if (m.ai) top.push('AIG');
-  const bottom = [];
-  let y = 0;
-  m.relayGroups.forEach((n, g) => { bottom.push('C' + g); for (let i = 0; i < n; i++) bottom.push('Y' + oct(y++)); });
-  for (let i = 0; i < m.ao; i++) bottom.push('VO' + i);
-  if (m.ao) bottom.push('AOG');
-  const x0 = -w / 2 + 7, x1 = w / 2 - 7;
-  const ports = [
-    ...row(top, { x0, x1, y: 80, z: 60, dir: up(0.7), sig: plcInSig, labels: top.map((t) => (t === 'PE' ? '⏚' : t)) }),
-  ];
-  // bottom row leaves room for the COM2 plug at the right end
-  const bx1 = x1 - 20;
-  ports.push(...row(bottom, { x0, x1: bx1, y: 10, z: 60, dir: down(0.7), sig: plcOutSig }));
-  ports.push({ id: 'COM2', label: 'COM2 RS-485', kind: 'comm', bus: 'rs485', conn: 'plug3', pos: [x1 - 6, 10, 62], dir: down(0.7), max: 2 });
-  ports.push({ id: 'COM1', label: 'COM1 RS-232', kind: 'comm', bus: 'rs232', conn: 'minidin', pos: [-w / 2 + 17, 33, 82], dir: FRONT, max: 1 });
-  ports.push({ id: 'USB', label: 'USB (programming)', kind: 'comm', bus: 'usb', conn: 'usbmini', pos: [-w / 2 + 17, 57, 82], dir: FRONT, max: 1 });
+  const G = PLC_GEO;
+  const ports = [];
+  for (const [list, y, dir] of [[m.top, G.holeTop, up(0.35)], [m.bottom, G.holeBot, down(0.35)]]) {
+    const pitch = (m.w - 8) / list.length;
+    list.forEach((id, i) => {
+      if (id.startsWith('COM')) return;
+      ports.push({ id, label: plcTermLabel(id), kind: 'term', pos: [plcTermX(m, list.length, i), y, G.face], dir, sig: plcSig(id), pitch });
+    });
+  }
+  // COM2: one RS-485 cable landing on D+ / D− / SG
+  const nb = m.bottom.length;
+  ports.push({ id: 'COM2', label: 'COM2 RS-485 (D+ D− SG)', kind: 'comm', bus: 'rs485', conn: 'term3', pos: [plcTermX(m, nb, 1), G.holeBot, G.face + 1], dir: down(0.35), max: 2 });
+  ports.push({ id: 'COM1', label: 'COM1 RS-232', kind: 'comm', bus: 'rs232', conn: 'minidin', pos: [G.colX(m), G.com1Y, G.d], dir: FRONT, max: 1 });
+  // mini-USB programming port under COM1
+  ports.push({ id: 'USB', label: 'USB (programming)', kind: 'comm', bus: 'usb', conn: 'usbmini', pos: [G.colX(m), G.usbY, G.d], dir: FRONT, max: 1 });
   return ports;
 }
+
+/** Old (≤ 2.9) PLC terminal ids → the real terminal names. */
+export const PLC_PORT_RENAMES = { 'dvp-20ex2': { AIG: 'VI0-', AOG: 'AG0', C0: 'ZP', C1: 'ZP' } };
 
 const SIG_COLOR = {
   L: '#7c4a1e', N: '#2563eb', PE: 'pe', '+24': '#dc2626', '0V': '#1e3a8a', in: '#f97316', ss: '#dc2626', out: '#e5e7eb', com: '#dc2626',
@@ -64,9 +96,9 @@ const sockRow = (ids, labels, sig) => row(ids, { x0: -((ids.length - 1) * 17) / 
 
 export const DEVICE_DEFS = {
   // ---------------------------------------------------------------- PLC
-  'dvp-16es2': plcDef('dvp-16es2', 'Compact PLC, 8 inputs (X0–X7) and 8 relay outputs (Y0–Y7), RS-232 + RS-485 + USB. The most popular Delta starter PLC.'),
-  'dvp-32es2': plcDef('dvp-32es2', 'Standard PLC with 16 inputs (X0–X17) and 16 relay outputs (Y0–Y17).'),
-  'dvp-20ex2': plcDef('dvp-20ex2', 'PLC with 8 DI / 6 relay DO plus 4 analog inputs (D1110–D1113) and 2 analog outputs (D1116–D1117, 0–2000 = 0–10 V).'),
+  'dvp-16es2': plcDef('dvp-16es2', 'DVP16ES200R: 8 inputs X0–X7 (S/S common, sink or source), 8 relay outputs Y0–Y7 in two groups (C0: Y0–Y3, C1: Y4–Y7), 100–240 V AC supply with a 24 V DC 0.5 A output (+24V / 24G), COM1 RS-232, COM2 and COM3 RS-485. The most popular Delta starter PLC.'),
+  'dvp-32es2': plcDef('dvp-32es2', 'DVP32ES200R: 16 inputs X0–X17, 16 relay outputs Y0–Y17 in four groups of four (C0 … C3), 24 V DC output +24V / 24G, COM1 RS-232, COM2 and COM3 RS-485.'),
+  'dvp-20ex2': plcDef('dvp-20ex2', 'DVP20EX200T: 8 inputs X0–X7, 6 NPN transistor outputs Y0–Y5 (power UP = +24 V, ZP = 0 V; an ON output pulls its load to ZP), 4 analog inputs V0+ / I0+ / VI0− … (±10 V, or ±20 mA with In+ bridged to Vn+; D1110–D1113, ±2000) and 2 analog outputs VO0 / IO0 / AG (0–10 V or 0–20 mA; D1116–D1117, 0–2000).'),
 
   // ---------------------------------------------------------------- HMI
   'dop-107bv': {
@@ -91,12 +123,12 @@ export const DEVICE_DEFS = {
   'ms300': {
     type: 'ms300', name: 'Delta VFD MS300', short: 'MS300', part: 'VFD7A5MS21ANSAA', brand: 'Delta', category: 'vfd', sim: 'vfd', zone: 'rail2', max: 3,
     size: [100, 190, 150],
-    description: 'Compact AC motor drive, 1.5 kW, 1-phase 230 V in → 3-phase out. Keypad, MI1–MI5 inputs, AVI 0–10 V, relay RA/RB/RC and RS-485 Modbus (RJ45).',
+    description: 'Compact AC motor drive, 1.5 kW, 1-phase 230 V in → 3-phase out. Keypad with speed dial, MI1–MI7 inputs, AVI 0–10 V and ACI 4–20 mA / 0–10 V, AFM output, relay RA/RB/RC, MO1 / MO2 open-collector outputs (MCM common), PID control and RS-485 Modbus (RJ45).',
     props: [],
     defaults: {},
     ports: () => [
-      ...row(['MI1', 'MI2', 'MI3', 'MI4', 'MI5', 'DCM', '+24V'], { x0: -39, x1: 39, y: 88, z: 136, dir: FRONT, sig: (id) => (id === '+24V' ? '+24' : id === 'DCM' ? '0V' : 'ctl') }),
-      ...row(['+10V', 'AVI', 'ACM', 'AFM', 'RA', 'RB', 'RC'], { x0: -39, x1: 39, y: 72, z: 136, dir: FRONT, sig: (id) => (/^R/.test(id) ? 'ctl' : 'an') }),
+      ...row(['MI1', 'MI2', 'MI3', 'MI4', 'MI5', 'MI6', 'MI7', 'DCM', '+24V'], { x0: -40, x1: 40, y: 88, z: 136, dir: FRONT, sig: (id) => (id === '+24V' ? '+24' : id === 'DCM' ? '0V' : 'ctl') }),
+      ...row(['MO1', 'MO2', 'MCM', '+10V', 'AVI', 'ACI', 'ACM', 'AFM', 'RA', 'RB', 'RC'], { x0: -41, x1: 41, y: 72, z: 136, dir: FRONT, sig: (id) => (/^R|^MO|^MCM/.test(id) ? 'ctl' : 'an') }),
       { id: 'RS485', label: 'RS-485 (RJ45)', kind: 'comm', bus: 'rs485', conn: 'rj45', pos: [26, 54, 137], dir: FRONT, max: 2 },
       ...row(['R/L1', 'S/L2', 'PE', 'U/T1', 'V/T2', 'W/T3'], { x0: -38, x1: 38, y: 22, z: 138, dir: down(0.35), sig: (id) => (id === 'R/L1' ? 'L' : id === 'S/L2' ? 'N' : id === 'PE' ? 'PE' : 'mot'), labels: ['R/L1', 'S/L2', '⏚', 'U/T1', 'V/T2', 'W/T3'] }),
     ],
@@ -226,17 +258,17 @@ export const DEVICE_DEFS = {
   'temp-tx': {
     type: 'temp-tx', name: 'Temperature transmitter', short: 'Temp transmitter', part: 'PT100 → 0–10 V · 0–150 °C', category: 'sensor', sim: 'atx', look: 'temp', zone: 'console', max: 4,
     size: [64, 86, 6],
-    description: 'PT100 temperature transmitter, 24 V DC, 3-wire: BN (+24 V), BU (0 V), BK (0–10 V signal = range). Wire BK to an analog input (DVP-20EX2 V0+ … with AIG to 0 V). Tap to set the temperature.',
-    props: [{ id: 'label', label: 'Label', type: 'text' }, { id: 'min', label: 'Range low (°C)', type: 'number', min: -200, max: 1000 }, { id: 'max', label: 'Range high (°C)', type: 'number', min: -200, max: 1000 }],
-    defaults: { label: 'TEMP', min: 0, max: 150, unit: '°C' }, state: { pos: 0.2 },
+    description: 'PT100 temperature transmitter, 24 V DC, 3-wire: BN (+24 V), BU (0 V), BK (0–10 V signal = range). Wire BK to an analog input (DVP20EX2 V0+ with VI0− to 0 V, MS300 AVI / ACI with ACM). The 4–20 mA version goes to the EX2 I0+ (bridged to V0+) or the MS300 ACI. Tap to set the temperature.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, { id: 'min', label: 'Range low (°C)', type: 'number', min: -200, max: 1000 }, { id: 'max', label: 'Range high (°C)', type: 'number', min: -200, max: 1000 }, { id: 'signal', label: 'Output signal', type: 'select', options: { '0-10V': '0–10 V', '4-20mA': '4–20 mA (current loop)' } }],
+    defaults: { label: 'TEMP', min: 0, max: 150, unit: '°C', signal: '0-10V' }, state: { pos: 0.2 },
     ports: () => sockRow(['BN', 'BU', 'BK'], ['+24', '0V', 'OUT'], 'an'),
   },
   'press-tx': {
     type: 'press-tx', name: 'Pressure transmitter', short: 'Pressure transmitter', part: '0–10 bar → 0–10 V', category: 'sensor', sim: 'atx', look: 'press', zone: 'console', max: 4,
     size: [64, 86, 6],
-    description: 'Pressure transmitter, 24 V DC, 3-wire: BN (+24 V), BU (0 V), BK (0–10 V signal = range). Wire BK to an analog input (DVP-20EX2 V0+ … with AIG to 0 V). Tap to set the pressure.',
-    props: [{ id: 'label', label: 'Label', type: 'text' }, { id: 'min', label: 'Range low (bar)', type: 'number', min: -1, max: 1000 }, { id: 'max', label: 'Range high (bar)', type: 'number', min: -1, max: 1000 }],
-    defaults: { label: 'PRESSURE', min: 0, max: 10, unit: 'bar' }, state: { pos: 0.4 },
+    description: 'Pressure transmitter, 24 V DC, 3-wire: BN (+24 V), BU (0 V), BK (0–10 V signal = range). Wire BK to an analog input (DVP20EX2 V0+ with VI0− to 0 V, MS300 AVI / ACI with ACM). The 4–20 mA version goes to the EX2 I0+ (bridged to V0+) or the MS300 ACI. Tap to set the pressure.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, { id: 'min', label: 'Range low (bar)', type: 'number', min: -1, max: 1000 }, { id: 'max', label: 'Range high (bar)', type: 'number', min: -1, max: 1000 }, { id: 'signal', label: 'Output signal', type: 'select', options: { '0-10V': '0–10 V', '4-20mA': '4–20 mA (current loop)' } }],
+    defaults: { label: 'PRESSURE', min: 0, max: 10, unit: 'bar', signal: '0-10V' }, state: { pos: 0.4 },
     ports: () => sockRow(['BN', 'BU', 'BK'], ['+24', '0V', 'OUT'], 'an'),
   },
 
@@ -325,7 +357,7 @@ function plcDef(type, description) {
   const m = PLC_MODELS[type];
   return {
     type, name: `Delta ${m.short}`, short: m.short, part: m.name, brand: 'Delta', category: 'plc', sim: 'plc', zone: 'rail1', max: 2,
-    size: [m.w, 90, 82], model: m, description,
+    size: [m.w, PLC_GEO.h, PLC_GEO.d], model: m, description,
     props: [], defaults: {}, state: { run: true },
     ports: () => plcPorts(type),
   };

@@ -46,7 +46,7 @@ export class LabSystem {
         rt.m2 = { busy: null, last: -1 };
         rt.yGroup = [];
         let y = 0;
-        rt.model.relayGroups.forEach((n, g) => { for (let i = 0; i < n; i++) rt.yGroup[y++] = g; });
+        (rt.model.relayGroups || []).forEach((n, g) => { for (let i = 0; i < n; i++) rt.yGroup[y++] = g; });
         this.loadProgramInto(rt);
       } else if (rt.kind === 'vfd') {
         rt.vfd = new VfdMS300(dev.state.params || {});
@@ -166,10 +166,17 @@ export class LabSystem {
       switch (rt.kind) {
         case 'psu': unite(node(id, '+V1'), node(id, '+V2')); unite(node(id, '-V1'), node(id, '-V2')); break;
         case 'plc':
-          if (rt.cpu.powered) for (let y = 0; y < rt.model.outputs; y++) if (rt.cpu.Y[y]) unite(node(id, 'C' + rt.yGroup[y]), node(id, 'Y' + y.toString(8)));
+          // relay outputs close Yn to their common Cn; NPN transistor outputs (EX2 "T") pull Yn to ZP
+          if (rt.cpu.powered) for (let y = 0; y < rt.model.outputs; y++) if (rt.cpu.Y[y]) unite(node(id, rt.model.out === 'npn' ? 'ZP' : 'C' + rt.yGroup[y]), node(id, 'Y' + y.toString(8)));
+          // the analog commons of the EX2 are one circuit inside the PLC
+          for (let k = 1; k < rt.model.ai; k++) unite(node(id, 'VI0-'), node(id, `VI${k}-`));
+          if (rt.model.ao) unite(node(id, 'AG0'), node(id, 'AG1'));
           break;
         case 'vfd':
           if (rt.vfd.relay()) unite(node(id, 'RA'), node(id, 'RC')); else unite(node(id, 'RB'), node(id, 'RC'));
+          // MO1 / MO2 open-collector outputs conduct to MCM when ON
+          if (rt.vfd.mo(1)) unite(node(id, 'MO1'), node(id, 'MCM'));
+          if (rt.vfd.mo(2)) unite(node(id, 'MO2'), node(id, 'MCM'));
           break;
         case 'pb': {
           const nc = deviceProps(rt.dev).contact === 'NC';
@@ -235,8 +242,12 @@ export class LabSystem {
         if (on && !rt.cpu.powered) { const st = plcStore(this.project, rt.dev.id); rt.cpu.powerOn(st.plc && st.plc.latched); rt.cpu.switchRun = rt.dev.state.run !== false; if (rt.cpu.switchRun) rt.cpu.setRun(true); }
         if (!on && rt.cpu.powered) { this.saveLatched(rt); rt.cpu.powerOff(); }
         if (on && !rt.short) { add(id, '+24V', id + '/24', 24); add(id, '0V', id + '/24', 0); }
-        if (on && rt.model.ao) for (let k = 0; k < rt.model.ao; k++) { add(id, 'VO' + k, id + '/a', Math.max(0, Math.min(10, rt.cpu.D[1116 + k] / 200))); }
-        if (on && rt.model.ao) add(id, 'AOG', id + '/a', 0);
+        // AO: VOn = 0–10 V, IOn = 0–20 mA (a current is carried as the voltage it makes across a 250 Ω input: 20 mA = 5 V)
+        if (on && rt.model.ao) for (let k = 0; k < rt.model.ao; k++) {
+          const x = Math.max(0, Math.min(2000, rt.cpu.D[1116 + k]));
+          add(id, 'VO' + k, id + '/a', x / 200); add(id, 'IO' + k, id + '/a', x / 400);
+        }
+        if (on && rt.model.ao) add(id, 'AG0', id + '/a', 0);
       } else if (rt.kind === 'vfd') {
         const on = acOn(rt, 'R/L1', 'S/L2');
         if (on && !rt.vfd.powered) rt.vfd.powerOn();
@@ -279,13 +290,15 @@ export class LabSystem {
           if (sup) add(id, 'BK', sup.sys, sup.v);
         }
       } else if (rt.kind === 'atx') {
-        // 0–10 V transmitter: BK = 0 V (BU) + 10 V × the measured value within its range
+        // transmitter: BK = 0 V (BU) + 10 V × the measured value within its range (or 4–20 mA)
         const r = this.diff(id, 'BN', id, 'BU');
         rt.powered = !!(r && !r.ac && r.d >= 18);
         if (rt.powered) {
           const a = src.get(find(node(id, 'BN'))), b = src.get(find(node(id, 'BU')));
           const x = a && a.find((q) => !q.ac && q.v >= 18), y = x && b && b.find((q) => q.sys === x.sys && !q.ac);
-          if (y) add(id, 'BK', x.sys, y.v + Math.max(0, Math.min(1, rt.dev.state.pos ?? 0.5)) * 10);
+          const k = Math.max(0, Math.min(1, rt.dev.state.pos ?? 0.5));
+          // a 4–20 mA loop is carried as the voltage it makes across a 250 Ω input (4 mA = 1 V … 20 mA = 5 V)
+          if (y) add(id, 'BK', x.sys, y.v + (deviceProps(rt.dev).signal === '4-20mA' ? (4 + 16 * k) * 0.25 : k * 10));
         }
       } else if (rt.kind === 'pot') {
         const a = src.get(find(node(id, '1'))), b = src.get(find(node(id, '3')));
@@ -306,8 +319,11 @@ export class LabSystem {
             cpu.Xphys[k] = r && !r.same && !r.ac && Math.abs(r.d) >= 15 ? 1 : 0;
           }
           for (let ch = 0; ch < rt.model.ai; ch++) {
-            const r = diff(id, `V${ch}+`, id, 'AIG');
-            cpu.ai[ch] = r && !r.ac ? Math.max(-2000, Math.min(2000, Math.round(r.d * 200))) : 0;
+            // current mode when In+ is bridged to Vn+ (as in the EX2 manual): ±20 mA → ±2000, else ±10 V → ±2000
+            const vr = diff(id, `V${ch}+`, id, `VI${ch}-`), ir = diff(id, `I${ch}+`, id, `VI${ch}-`);
+            const mA = find(node(id, `I${ch}+`)) === find(node(id, `V${ch}+`)) || (!vr && !!ir);
+            const r = mA ? ir || vr : vr;
+            cpu.ai[ch] = r && !r.ac && !r.same ? Math.max(-2000, Math.min(2000, Math.round(mA ? (r.d / 0.25) * 100 : r.d * 200))) : 0;
           }
           break;
         }
@@ -345,13 +361,15 @@ export class LabSystem {
         }
         case 'vfd': {
           const v = rt.vfd;
-          const mis = ['MI1', 'MI2', 'MI3', 'MI4', 'MI5'];
+          const mis = ['MI1', 'MI2', 'MI3', 'MI4', 'MI5', 'MI6', 'MI7'];
           mis.forEach((m, i) => {
             const r = diff(id, m, id, 'DCM');
             v.MI[i] = r && (r.same || (!r.ac && r.d >= 15)) ? 1 : 0;
           });
           const r = diff(id, 'AVI', id, 'ACM');
           v.avi = r && !r.ac ? Math.max(0, Math.min(10, r.d)) : 0;
+          const rc = diff(id, 'ACI', id, 'ACM');
+          v.aci = rc && !rc.ac ? Math.max(0, Math.min(10, rc.d)) : 0;
           break;
         }
         default: break;

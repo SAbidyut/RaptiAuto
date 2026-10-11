@@ -22,8 +22,8 @@ const norm = (a) => { const l = vlen(a) || 1; return [a[0] / l, a[1] / l, a[2] /
 const dist = (a, b) => vlen(sub(a, b));
 
 // ------------------------------------------------------------------ cable styles
-const CONN_LEN = { rj45: 22, db9: 20, minidin: 18, usba: 32, usbmini: 21, plug3: 14 };
-const CONN_HALF = { rj45: 7, db9: 19, minidin: 6.5, usba: 8, usbmini: 6, plug3: 8 };
+const CONN_LEN = { rj45: 22, db9: 20, minidin: 18, usba: 32, usbmini: 21, plug3: 14, term3: 16 };
+const CONN_HALF = { rj45: 7, db9: 19, minidin: 6.5, usba: 8, usbmini: 6, plug3: 8, term3: 8 };
 /** Length of the fitting (ferrule, banana plug or connector body) along the port direction. */
 export const fitLength = (port) => (port.kind === 'comm' ? CONN_LEN[port.conn] || 14 : port.kind === 'sock' ? 22 : 10);
 const fitHalfWidth = (port, r) => (port.kind === 'comm' ? CONN_HALF[port.conn] || 6 : port.kind === 'sock' ? 3.7 : r + 0.6);
