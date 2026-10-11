@@ -2,7 +2,7 @@
 // wiring (tap pin → tap pin, or drag), selection (tap, or an AutoCAD-style window / crossing box),
 // Google-Maps-style double-tap-and-slide zoom, and live simulation visuals.
 import {
-  getDef, pinsOf, toWorld, toLocal, worldBox, partTransform, partProps, newId, PITCH,
+  getDef, pinsOf, toWorld, toLocal, worldBox, partTransform, partProps, newId, PITCH, textCounterScale,
 } from '../components/registry.js';
 import { SHARED_DEFS } from '../components/draw.js';
 import { pluggedPins } from '../sim/netlist.js';
@@ -26,7 +26,9 @@ function partMarkup(def, props) {
   const key = def.type + '|' + JSON.stringify(props);
   let m = markupCache.get(key);
   if (!m) {
-    m = def.render(props);
+    // every label sits in its own <g class="tf">: on a mirrored part it is mirrored back around its
+    // own centre (see .part.flip .tf in app.css), so the lettering stays readable
+    m = def.render(props).replace(/<text\b[\s\S]*?<\/text>/g, (t) => `<g class="tf">${t}</g>`);
     markupCache.set(key, m);
     if (markupCache.size > 400) markupCache.delete(markupCache.keys().next().value);
   }
@@ -233,6 +235,7 @@ export class CircuitCanvas {
           this.partEls.set(p.id, el);
         }
         el.setAttribute('transform', partTransform(p));
+        this.applyFlip(el, p);
         layer.appendChild(el); // keeps z-order
       }
     }
@@ -241,6 +244,17 @@ export class CircuitCanvas {
     this.buildPinIndex();
     this.renderOverlay();
     this.applyView();
+  }
+
+  /** Mirrored parts: tell the labels how to flip back. */
+  applyFlip(el, part) {
+    const flipped = !!(part.flipX || part.flipY);
+    if (flipped !== el.classList.contains('flip')) el.classList.toggle('flip', flipped);
+    if (flipped) {
+      const [cx, cy] = textCounterScale(part);
+      el.style.setProperty('--cfx', cx);
+      el.style.setProperty('--cfy', cy);
+    }
   }
 
   pinPos(ref) {
@@ -1083,6 +1097,46 @@ export class CircuitCanvas {
     }
   }
 
+  /**
+   * Parts that burnt: a flash, a scorch mark and a few seconds of smoke (once, not for ever), at the
+   * part's own spot (def.burnAt) or, for a board, at each burnt pin.
+   */
+  burnFrame() {
+    const eng = this.ed.engine;
+    if (!eng) return;
+    for (const [id, el] of this.partEls) {
+      const rt = eng.parts.get(id);
+      const v = rt && rt.visual;
+      if (!v || !(v.burnt || (v.burnAt && v.burnAt.length))) continue;
+      const nDead = (v.burnAt || []).length;
+      let fx = el._fx;
+      if (fx && fx.n === nDead && fx.done) continue;
+      const now = performance.now();
+      if (!fx || fx.n !== nDead) {
+        if (fx) fx.g.remove();
+        const def = el._def;
+        const box = typeof def.box === 'function' ? def.box(el._props) : def.box;
+        const spots = (v.burnAt && v.burnAt.length ? v.burnAt : [def.burnAt || [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]]);
+        const r = v.burnAt && v.burnAt.length ? 9 : Math.max(7, Math.min(26, Math.min(box[2] - box[0], box[3] - box[1]) / 3));
+        const g = svgEl('g', { class: 'burn-fx', 'pointer-events': 'none' });
+        let html = '';
+        for (const [x, y] of spots) {
+          html += `<circle class="burn-flash" cx="${x}" cy="${y}" r="${r * 1.6}" fill="#fff6d0"/>` +
+            `<ellipse class="burn-scorch" cx="${x}" cy="${y}" rx="${r}" ry="${r * 0.8}" fill="url(#scorch)"/>` +
+            `<g class="burn-smoke">${[0, 1, 2].map((k) => `<circle class="smoke-puff" cx="${x + (k - 1) * 2}" cy="${y - 2}" r="${3 + k}" fill="#9aa0a6" style="animation-delay:${k * 0.45}s" filter="url(#smoke)"/>`).join('')}</g>`;
+        }
+        g.innerHTML = html;
+        el.appendChild(g);
+        fx = el._fx = { g, t0: now, n: nDead, done: false };
+      }
+      // smoke for about six seconds, then only the scorch mark stays
+      if (!fx.done && now - fx.t0 > 6000) {
+        fx.done = true;
+        for (const sm of fx.g.querySelectorAll('.burn-smoke, .burn-flash')) sm.remove();
+      }
+    }
+  }
+
   /** Called every animation frame while simulating. */
   frame(dt) {
     const eng = this.ed.engine;
@@ -1094,6 +1148,7 @@ export class CircuitCanvas {
       if (!rt || !rt.visual) continue;
       try { def.update(el, rt.visual, el._props, dt); } catch (err) { /* keep animating others */ }
     }
+    this.burnFrame();
     // wire current flow
     if (!this.ed.settings.flow) return;
     const act = eng.nodeActivity;

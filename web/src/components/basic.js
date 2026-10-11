@@ -2,6 +2,7 @@
 import { register, fmtOhms } from './registry.js';
 import { rect, circle, text, line, path, g, lead, pad, esc } from './draw.js';
 import { Resistor, Diode, Switch, VSource, BJT, Mosfet } from '../sim/circuit/solver.js';
+import { Stress, ledStress, resistorStress, bulbStress, sourceStress, burnMessage } from '../sim/damage.js';
 
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
@@ -26,7 +27,7 @@ register({
   render(p) {
     const [b1, b2, b3] = resistorBands(p.value);
     let s = line(0, 0, 40, 0, { stroke: '#b8bcc4', sw: 1.6 });
-    s += path('M8 -4.4 Q8 -5.6 10.5 -5.6 H13 Q14.5 -4.2 16 -4.2 H24 Q25.5 -4.2 27 -5.6 H29.5 Q32 -5.6 32 -4.4 V4.4 Q32 5.6 29.5 5.6 H27 Q25.5 4.2 24 4.2 H16 Q14.5 4.2 13 5.6 H10.5 Q8 5.6 8 4.4Z', { fill: '#d8bf8a', stroke: '#a8905e', sw: 0.5 });
+    s += path('M8 -4.4 Q8 -5.6 10.5 -5.6 H13 Q14.5 -4.2 16 -4.2 H24 Q25.5 -4.2 27 -5.6 H29.5 Q32 -5.6 32 -4.4 V4.4 Q32 5.6 29.5 5.6 H27 Q25.5 4.2 24 4.2 H16 Q14.5 4.2 13 5.6 H10.5 Q8 5.6 8 4.4Z', { fill: '#d8bf8a', stroke: '#a8905e', sw: 0.5, cls: 'res-body' });
     s += rect(11.5, -5.4, 2.2, 10.8, { fill: b1 }) + rect(16, -4.2, 2.2, 8.4, { fill: b2 }) + rect(20, -4.2, 2.2, 8.4, { fill: b3 }) + rect(26.5, -5.4, 2, 10.8, { fill: '#d4af37' });
     s += path('M9 -3.5 H31', { stroke: 'rgba(255,255,255,.35)', sw: 1.2 });
     s += `<g class="smoke"></g>`;
@@ -36,24 +37,41 @@ register({
   sim: {
     create(ctx) {
       const r = ctx.add(new Resistor(ctx.node('1'), ctx.node('2'), ctx.props.value));
+      const stress = new Stress(0.04);
       const rt = {
-        visual: { hot: 0, i: 0 },
+        visual: { hot: 0, i: 0, burnt: false },
         r,
+        stress,
+        // a ¼ W resistor at twice its rating cooks in ~20 s, at four times in about a second
+        accumulate(dt) {
+          if (this.burnt) return;
+          const i = r.iAvg ?? r.i;
+          if (stress.add(resistorStress(i * i * r.r, 0.25), dt) >= 1) {
+            ctx.burn(burnMessage(`Resistor ${fmtOhms(r.r)}`, `it dissipated ${(i * i * r.r).toFixed(2)} W but is rated ¼ W`, 'Use a larger value, or a power resistor'), 'burn');
+          }
+        },
         after() {
           const i = r.iAvg ?? r.i;
           const p = i * i * r.r;
           this.visual.i = i;
           this.visual.p = p;
-          if (p > 0.5) ctx.warn(`Resistor ${fmtOhms(r.r)} is dissipating ${(p).toFixed(2)} W — more than its ¼ W rating. It would get very hot!`, 'pw');
-          this.visual.hot = p > 0.35 ? clamp01((p - 0.35) / 1) : 0;
+          if (p > 0.5 && !this.burnt) ctx.warn(`Resistor ${fmtOhms(r.r)} is dissipating ${(p).toFixed(2)} W — more than its ¼ W rating. It will get very hot and burn!`, 'pw');
+          this.visual.hot = this.burnt ? 0 : Math.max(p > 0.3 ? clamp01((p - 0.3) / 0.7) : 0, stress.level * 1.4);
         },
       };
       return rt;
     },
   },
+  burnAt: [20, -8],
   update(el, v) {
     const sm = el.querySelector('.smoke');
-    if (sm) setSmoke(sm, v.hot, 20, -8);
+    if (sm) setSmoke(sm, v.burnt ? 0 : v.hot, 20, -8);
+    const k = v.burnt ? 'b' : v.hot > 0.35 ? 'h' : '';
+    if (el._k !== k) {
+      el._k = k;
+      const body = el.querySelector('.res-body');
+      if (body) body.setAttribute('fill', k === 'b' ? '#2b1f17' : k === 'h' ? '#c98a45' : '#d8bf8a');
+    }
   },
 });
 
@@ -84,27 +102,28 @@ export function ledBrightness(i) {
 }
 
 function makeLedRuntime(ctx, d, label) {
+  const stress = new Stress(0.03);
   return {
-    visual: { b: 0, burnt: false, i: 0 },
+    visual: { b: 0, burnt: false, i: 0, hot: 0 },
     acc: 0,
-    over: 0,
+    stress,
+    // 20 mA is the LED's current; 60 mA on an Arduino pin lasts ~20 s, a few ms across a 5 V supply
     accumulate(dt) {
       const i = Math.max(0, d.iAvg ?? d.i);
       this.acc += i * dt;
-      if (i > 0.06) this.over += dt; else this.over = Math.max(0, this.over - dt * 0.1);
+      if (this.burnt) return;
+      if (stress.add(ledStress(i), dt) >= 1) {
+        ctx.burn(burnMessage(label, `${(i * 1000).toFixed(0)} mA is far above its 20 mA limit`, 'Put a current-limiting resistor (220 Ω – 1 kΩ) in series with every LED'), 'burn');
+      }
     },
+    onBurn() { d.open = true; },
     endFrame(frameDt) {
       const i = frameDt > 0 ? this.acc / frameDt : Math.max(0, d.iAvg ?? d.i);
       this.acc = 0;
       this.visual.i = i;
       this.visual.b = d.open ? 0 : ledBrightness(i);
       this.visual.over = i > 0.03 ? clamp01((i - 0.03) / 0.05) : 0;
-      if (!d.open && this.over > 60000) {
-        d.open = true;
-        this.visual.burnt = true;
-        ctx.dirty();
-        ctx.warn(`💥 ${label} burned out: ${(i * 1000).toFixed(0)} mA is far above its 20 mA limit. Always use a current-limiting resistor (e.g. 220 Ω).`, 'burn');
-      }
+      this.visual.hot = this.burnt ? 0 : stress.level;
     },
   };
 }
@@ -133,24 +152,28 @@ register({
       return makeLedRuntime(ctx, d, `${ctx.props.color} LED`);
     },
   },
+  burnAt: [5, -34],
   update(el, v, p) {
     const c = LED_COLORS[p.color] || LED_COLORS.red;
     const b = v.b || 0;
-    const body = el.querySelector('.led-body');
-    if (el._b === b && el._burnt === v.burnt) return;
-    el._b = b; el._burnt = v.burnt;
+    const hot = v.hot > 0.12 ? Math.round(v.hot * 10) : 0;
+    if (el._b === b && el._burnt === v.burnt && el._hot === hot) return;
+    el._b = b; el._burnt = v.burnt; el._hot = hot;
+    const glow = el.querySelector('.led-glow');
     if (v.burnt) {
-      body.setAttribute('fill', '#2a1d14');
+      // charred: dark brown dome, no light
+      el.querySelector('.led-body').setAttribute('fill', '#2a1d14');
       el.querySelector('.led-flange').setAttribute('fill', '#2a1d14');
-      el.querySelector('.led-glow').setAttribute('opacity', 0);
+      glow.setAttribute('opacity', 0);
       el.querySelector('.led-core').setAttribute('opacity', 0);
-      setSmoke(el.querySelector('.smoke'), 1, 5, -36);
       return;
     }
-    body.setAttribute('fill', b > 0.02 ? mix(c.off, c.on, Math.min(1, b * 1.4)) : c.off);
+    el.querySelector('.led-body').setAttribute('fill', b > 0.02 ? mix(c.off, c.on, Math.min(1, b * 1.4)) : c.off);
     el.querySelector('.led-flange').setAttribute('fill', b > 0.02 ? mix(c.off, c.on, b) : c.off);
-    el.querySelector('.led-glow').setAttribute('opacity', (b * 0.95).toFixed(3));
-    el.querySelector('.led-core').setAttribute('opacity', (Math.max(0, b - 0.35) * 1.2).toFixed(3));
+    // an overdriven LED glares: bigger, whiter halo and a white-hot core before it goes
+    glow.setAttribute('opacity', Math.min(1, b * 0.95 + hot * 0.04).toFixed(3));
+    glow.setAttribute('r', hot ? (17 + hot * 1.4).toFixed(1) : 17);
+    el.querySelector('.led-core').setAttribute('opacity', (Math.max(0, b - 0.35) * 1.2 + hot * 0.06).toFixed(3));
   },
 });
 
@@ -184,19 +207,32 @@ register({
       const com = ctx.node('COM');
       const mk = (pin, vf, rd) => ctx.add(anode ? new Diode(com, ctx.node(pin), vf, rd) : new Diode(ctx.node(pin), com, vf, rd));
       const ds = [mk('R', 1.9, 12), mk('G', 2.6, 15), mk('B', 2.8, 15)];
+      const stress = ds.map(() => new Stress(0.03));
+      const names = ['red', 'green', 'blue'];
       return {
-        visual: { r: 0, g: 0, b: 0 },
+        visual: { r: 0, g: 0, b: 0, dead: [false, false, false] },
         acc: [0, 0, 0],
-        accumulate(dt) { ds.forEach((d, i) => { this.acc[i] += Math.max(0, d.iAvg ?? d.i) * dt; }); },
+        accumulate(dt) {
+          ds.forEach((d, i) => {
+            const cur = Math.max(0, d.iAvg ?? d.i);
+            this.acc[i] += cur * dt;
+            if (d.open) return;
+            if (stress[i].add(ledStress(cur), dt) >= 1) {
+              d.open = true;
+              this.visual.dead[i] = true;
+              ctx.burn(burnMessage(`RGB LED ${names[i]} channel`, `${(cur * 1000).toFixed(0)} mA is far above its 20 mA limit`, 'Put a resistor (220 Ω) on every colour leg'), 'burn' + i, true);
+            }
+          });
+        },
         endFrame(fd) {
           const v = ds.map((d, i) => (fd > 0 ? this.acc[i] / fd : Math.max(0, d.iAvg ?? d.i)));
           this.acc = [0, 0, 0];
-          this.visual.r = ledBrightness(v[0]); this.visual.g = ledBrightness(v[1]); this.visual.b = ledBrightness(v[2]);
-          if (v.some((x) => x > 0.08)) ctx.warn('RGB LED channel current is too high — add a resistor to every colour leg.', 'rgbover');
+          this.visual.r = ds[0].open ? 0 : ledBrightness(v[0]); this.visual.g = ds[1].open ? 0 : ledBrightness(v[1]); this.visual.b = ds[2].open ? 0 : ledBrightness(v[2]);
         },
       };
     },
   },
+  burnAt: [15, -34],
   update(el, v) {
     const key = `${v.r.toFixed(2)}${v.g.toFixed(2)}${v.b.toFixed(2)}`;
     if (el._k === key) return;
@@ -579,6 +615,21 @@ for (const [type, name, cols, rails, desc] of [
 }
 
 // ------------------------------------------------------------------ power
+/** Battery / supply runtime: a short circuit (far more than its safe current) destroys it, like the real thing. */
+function sourceRuntime(ctx, vs, what, rated, fix) {
+  const stress = new Stress(0.05);
+  return {
+    visual: {},
+    stress,
+    accumulate(dt) {
+      if (this.burnt) return;
+      const i = Math.abs(vs.iAvg ?? vs.i);
+      if (stress.add(sourceStress(i, rated), dt) >= 1) ctx.burn(burnMessage(what, `${i.toFixed(1)} A flowed (safe: ${rated} A)`, fix), 'burn');
+    },
+    after() { const i = Math.abs(vs.iAvg ?? vs.i); if (i > rated && !this.burnt) ctx.warn(`${what}: ${i.toFixed(1)} A — a short circuit! It will overheat and burn in seconds.`, 'short'); },
+  };
+}
+
 register({
   type: 'battery-9v', name: '9V Battery', category: 'power', tags: ['battery', 'power', '9v'],
   description: '9 V PP3 battery (internal resistance ~1.5 Ω).',
@@ -596,7 +647,7 @@ register({
   sim: {
     create(ctx) {
       const vs = ctx.add(new VSource(ctx.node('+'), ctx.node('-'), ctx.props.voltage, 1.5));
-      return { visual: {}, after() { const i = vs.iAvg ?? vs.i; if (i > 2) ctx.warn(`Battery short circuit! ${i.toFixed(1)} A flowing — check the wiring.`, 'short'); } };
+      return sourceRuntime(ctx, vs, '9 V battery', 2, 'Check that + and − are not connected together');
     },
   },
 });
@@ -615,7 +666,7 @@ register({
     s += path('M0 0 V8', { stroke: '#222', sw: 2 }) + path('M10 0 V8', { stroke: '#d32f2f', sw: 2 });
     return s;
   },
-  sim: { create(ctx) { ctx.add(new VSource(ctx.node('+'), ctx.node('-'), 6, 0.6)); return null; } },
+  sim: { create(ctx) { return sourceRuntime(ctx, ctx.add(new VSource(ctx.node('+'), ctx.node('-'), 6, 0.6)), '4×AA battery pack', 3, 'Check that + and − are not connected together'); } },
 });
 
 register({
@@ -631,7 +682,7 @@ register({
     s += lead(0, 0, -12, { color: '#222' }) + lead(20, 0, -12, { color: '#d32f2f' });
     return s;
   },
-  sim: { create(ctx) { ctx.add(new VSource(ctx.node('+'), ctx.node('-'), +ctx.props.voltage, 0.05)); return null; } },
+  sim: { create(ctx) { return sourceRuntime(ctx, ctx.add(new VSource(ctx.node('+'), ctx.node('-'), +ctx.props.voltage, 0.05)), 'DC power supply', 5, 'Its output was shorted or overloaded — check the wiring and the load'); } },
 });
 
 // ------------------------------------------------------------------ meters
@@ -710,17 +761,35 @@ register({
       const rating = { 5: [5, 1], 12: [12, 2], 230: [230, 40] }[ctx.props.rating] || [12, 2];
       const R = rating[0] ** 2 / rating[1];
       const r = ctx.add(new Resistor(ctx.node('1'), ctx.node('2'), R));
+      const stress = new Stress(0.05);
       return {
-        visual: { b: 0 }, acc: 0,
-        accumulate(dt) { const i = r.iAvg ?? r.i; this.acc += i * i * R * dt; },
-        endFrame(fd) { const p = fd > 0 ? this.acc / fd : 0; this.acc = 0; this.visual.b = clamp01(Math.sqrt(p / rating[1])); },
+        visual: { b: 0 }, acc: 0, stress,
+        // a bulb at 1.5× its voltage (≈2.3× the power) lasts a few seconds: the filament blows
+        accumulate(dt) {
+          const i = r.iAvg ?? r.i;
+          this.acc += i * i * R * dt;
+          if (this.burnt) return;
+          if (stress.add(bulbStress(i * i * R / rating[1]), dt) >= 1) {
+            ctx.burn(burnMessage(`${rating[0]} V bulb`, `it received ${(i * i * R).toFixed(1)} W (rated ${rating[1]} W) and the filament blew`, `Use a ${rating[0]} V supply`), 'burn');
+          }
+        },
+        endFrame(fd) { const p = fd > 0 ? this.acc / fd : 0; this.acc = 0; this.visual.b = this.burnt ? 0 : clamp01(Math.sqrt(p / rating[1])); },
       };
     },
   },
+  burnAt: [10, -42],
   update(el, v) {
     const b = v.b;
-    if (el._b === b) return;
-    el._b = b;
+    if (el._b === b && el._burnt === v.burnt) return;
+    el._b = b; el._burnt = v.burnt;
+    if (v.burnt) {
+      el.querySelector('.lamp-glow').setAttribute('opacity', 0);
+      el.querySelector('.lamp-glass').setAttribute('fill', '#6b6258');
+      el.querySelector('.lamp-glass').setAttribute('opacity', 0.7);
+      el.querySelector('.lamp-fil').setAttribute('stroke', '#2c2823');
+      el.querySelector('.lamp-fil').setAttribute('stroke-dasharray', '2 5');
+      return;
+    }
     el.querySelector('.lamp-glow').setAttribute('opacity', (b * 0.95).toFixed(3));
     el.querySelector('.lamp-glass').setAttribute('fill', b > 0.05 ? mix('#fff8e1', '#ffe082', b) : '#fff8e1');
     el.querySelector('.lamp-glass').setAttribute('opacity', (0.35 + b * 0.6).toFixed(2));

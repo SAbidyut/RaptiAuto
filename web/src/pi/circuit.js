@@ -161,6 +161,7 @@ export class PiCircuit extends Editor {
       onWarning: (msg) => this.addWarning(msg),
       onError: (err) => this.runtimeError(err),
       onSound: (id, freq, vol) => this.audio.set(id, freq, this.settings.sound === false ? 0 : vol),
+      onBurn: () => { Native.vibrate(40); if (this.settings.sound !== false) this.audio.pop(); },
     });
     const res = engine.start();
     if (!res.ok) { toast((res.error && res.error.message) || 'The circuit could not start', 'error'); return null; }

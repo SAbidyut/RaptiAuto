@@ -126,6 +126,73 @@ export function pinLabels(pins, o = {}) {
   return s;
 }
 
+// ------------------------------------------------------------------ board detail (SMD parts, silkscreen)
+const SILK = '#eafcff';
+
+/** Silkscreen text: small, light, never mirrored away (see .tf in app.css). */
+export function silk(x, y, str, o = {}) {
+  return text(x, y, str, { size: o.size || 3.6, fill: o.fill || SILK, anchor: o.anchor, rot: o.rot, weight: o.weight || 600, font: o.font });
+}
+
+/** White silkscreen outline of a region. */
+export function silkBox(x, y, w, h, o = {}) {
+  return rect(x, y, w, h, { stroke: o.stroke || 'rgba(234,252,255,.75)', sw: o.sw || 0.5, rx: o.rx ?? 0.8 });
+}
+
+/** SMD resistor / ceramic cap (0805): body with silver ends. vertical = rotated 90°. */
+export function smdRes(x, y, o = {}) {
+  const w = o.vertical ? 3 : 5.2, h = o.vertical ? 5.2 : 3;
+  const body = o.cap ? '#b8975a' : '#222326';
+  return rect(x, y, w, h, { fill: body, rx: 0.4 }) +
+    (o.vertical ? rect(x, y, w, 1.1, { fill: '#cfd2d7' }) + rect(x, y + h - 1.1, w, 1.1, { fill: '#cfd2d7' })
+      : rect(x, y, 1.1, h, { fill: '#cfd2d7' }) + rect(x + w - 1.1, y, 1.1, h, { fill: '#cfd2d7' }));
+}
+
+/** A row / grid of SMD resistors and caps: [[x, y, 'r'|'c'|'rv'|'cv'], …]. */
+export function smdRow(list) {
+  let s = '';
+  for (const [x, y, k = 'r'] of list) s += smdRes(x, y, { cap: k[0] === 'c', vertical: k.endsWith('v') });
+  return s;
+}
+
+/** Surface-mount electrolytic capacitor (can with a dark top and a polarity bar). */
+export function smdElec(x, y, r = 5) {
+  return rect(x - r, y - r, r * 2, r * 2, { fill: '#2a2d33', rx: 1 }) + circle(x, y, r * 0.86, { fill: 'url(#silver)', stroke: '#6f757e', sw: 0.4 }) +
+    path(`M${x - r * 0.55} ${y - r * 0.55} L${x + r * 0.55} ${y + r * 0.55} M${x + r * 0.55} ${y - r * 0.55} L${x - r * 0.55} ${y + r * 0.55}`, { stroke: '#8c929b', sw: 0.5 }) +
+    rect(x + r * 0.55, y - r * 0.9, r * 0.45, r * 1.8, { fill: '#1b1d22' });
+}
+
+/** Voltage regulator in a SOT-223 package with its tab (label above). */
+export function regulator(x, y, label = '') {
+  return rect(x, y, 12, 9, { fill: '#26282d', rx: 0.8 }) + rect(x + 2, y - 4, 8, 4, { fill: '#c5c9cf' }) +
+    [0, 1, 2].map((i) => rect(x + 1.5 + i * 4, y + 9, 2, 3.2, { fill: '#c5c9cf' })).join('') +
+    (label ? text(x + 6, y + 4.6, label, { size: 2.6, fill: '#9ca3af', font: 'monospace' }) : '');
+}
+
+/** Metal can crystal / ceramic resonator with its frequency. */
+export function crystal(x, y, w = 14, label = '') {
+  return rect(x, y, w, 6, { fill: 'url(#silver)', rx: 3, stroke: '#6f757e', sw: 0.5 }) + (label ? text(x + w / 2, y + 3.1, label, { size: 2.8, fill: '#3d4148', font: 'monospace' }) : '');
+}
+
+/** Resettable fuse (yellow box). */
+export function polyfuse(x, y) { return rect(x, y, 9, 5, { fill: '#c9b21f', rx: 0.8, stroke: '#8a7a12', sw: 0.4 }) + rect(x, y, 1.4, 5, { fill: '#cfd2d7' }) + rect(x + 7.6, y, 1.4, 5, { fill: '#cfd2d7' }); }
+
+/** Round gold test pad / via. */
+export function via(x, y, r = 1.3) { return circle(x, y, r, { fill: 'url(#gold)', stroke: '#9c7a2b', sw: 0.3 }) + circle(x, y, r * 0.4, { fill: '#10281c' }); }
+
+/** Faint copper trace lines. */
+export function traces(d, o = {}) { return path(d, { stroke: o.stroke || 'rgba(255,255,255,.16)', sw: o.sw || 1.4, cap: 'round', lj: 'round' }); }
+
+/** Small black chip (SOIC / TSSOP) with its pins and a name. */
+export function smallChip(x, y, w, h, label = '', o = {}) {
+  let s = '';
+  const n = Math.max(2, Math.floor(w / 3.4));
+  for (let i = 0; i < n; i++) { const px = x + 1.2 + i * ((w - 2.4) / (n - 1)); s += rect(px - 0.5, y - 1.6, 1, 1.7, { fill: '#c8ccd2' }) + rect(px - 0.5, y + h - 0.1, 1, 1.7, { fill: '#c8ccd2' }); }
+  s += rect(x, y, w, h, { fill: o.fill || '#1e1f23', rx: 0.8 }) + circle(x + 1.6, y + 1.6, 0.6, { fill: '#45474d' });
+  if (label) s += text(x + w / 2, y + h / 2, label, { size: o.size || 2.6, fill: '#aab0b8', font: 'monospace' });
+  return s;
+}
+
 /** Shared <defs> placed once in the editor SVG. */
 export const SHARED_DEFS = `
 <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e27a"/><stop offset="0.5" stop-color="#d4a83a"/><stop offset="1" stop-color="#a87a1c"/></linearGradient>
@@ -138,5 +205,6 @@ export const SHARED_DEFS = `
 <filter id="glowBig" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="7"/></filter>
 <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/></filter>
 <filter id="smoke" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2"/></filter>
+<radialGradient id="scorch"><stop offset="0" stop-color="#000" stop-opacity=".78"/><stop offset=".55" stop-color="#1c120a" stop-opacity=".5"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
 <pattern id="bbHoles" x="-5" y="-5" width="10" height="10" patternUnits="userSpaceOnUse"><rect x="3.2" y="3.2" width="3.6" height="3.6" rx="0.6" fill="#2b2d31"/></pattern>
 `;

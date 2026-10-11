@@ -879,7 +879,8 @@ export class Compiler {
       // `if (Serial)` / `if (!bme.begin())` -> objects are truthy
       const fn = e.fn;
       if (e.gen) return e;
-      return E(this.T.bool, (f) => (fn(f) ? 1 : 0));
+      // an object may decide for itself (WiFiClient: connected(), DeserializationError: failed)
+      return E(this.T.bool, (f) => { const v = fn(f); return (v && typeof v.truthy === 'function' ? v.truthy() : v) ? 1 : 0; });
     }
     return e;
   }
@@ -1049,6 +1050,7 @@ export class Compiler {
     let elemT;
     if (range.t.k === 'arr') elemT = range.t.of;
     else if (range.t.k === 'String') elemT = this.T.char;
+    else if (range.t.k === 'obj' || range.t.k === 'any') elemT = this.T.any;   // a native collection with iterate() (JsonArray …)
     else throw this.err(`'${typeName(range.t)}' cannot be used in a range-based for loop`, node);
     this.pushScope(ctx);
     const vt = node.varType.name === 'auto' ? elemT : this.resolveType(node.varType, node.decl.ptr, node);
@@ -1067,7 +1069,7 @@ export class Compiler {
       gen: true,
       fn: function* (f) {
         const r = R(f);
-        const arr = isStr ? Array.from(r.s, (ch) => ch.charCodeAt(0)) : r;
+        const arr = isStr ? Array.from(r.s, (ch) => ch.charCodeAt(0)) : (r && typeof r.iterate === 'function' ? r.iterate() : r);
         for (let i = 0; i < arr.length; i++) {
           rt.line = line;
           rt.t += cost;
@@ -1373,7 +1375,7 @@ export class Compiler {
         throw this.err(`invalid array assignment`, node);
       }
       case 'func': return e;
-      case 'any': return e;
+      case 'any': return from.k === 'int' && from.isBool && !e.gen ? this.mapE(e, t, (v) => !!v) : e;   // keeps true/false when stored in a JSON document
       default:
         return e;
     }
@@ -1451,6 +1453,20 @@ export class Compiler {
         return this.lift2(T.bool, l, r, (a, b) => cmp(ls(a), rs(b)));
       }
       throw this.err(`no match for 'operator${op}' (operand types are '${typeName(lt)}' and '${typeName(rt)}')`, node);
+    }
+    // ArduinoJson: doc["x"] | 0 gives the default when the value is missing; == compares a value with a C string
+    if (op === '|' && (lt.k === 'any' || lt.k === 'obj')) {
+      return this.lift2(T.any, l, r, (a, b) => (a && typeof a === 'object' && typeof a.jsonOr === 'function' ? a.jsonOr(b) : ((+a | 0) | (typeof b === 'number' ? b : 0))));
+    }
+    if ((op === '==' || op === '!=') && (lt.k === 'any') !== (rt.k === 'any') && (lt.k === 'ptr' || lt.k === 'arr' || rt.k === 'ptr' || rt.k === 'arr')) {
+      const un = (v) => (v && typeof v === 'object' && typeof v.jsonValue === 'function' ? v.jsonValue() : v);
+      const isNull = (v) => v === null || v === undefined || v === 0;
+      const eq = op === '==';
+      return this.lift2(T.bool, l, r, (a, b) => {
+        const x = un(a), y = un(b);
+        if (isNull(x) || isNull(y)) return (isNull(x) && isNull(y)) === eq ? 1 : 0;
+        return (cstr(x) === cstr(y)) === eq ? 1 : 0;
+      });
     }
     // pointer arithmetic
     const lp = lt.k === 'ptr' || lt.k === 'arr', rp = rt.k === 'ptr' || rt.k === 'arr';
@@ -1633,7 +1649,7 @@ export class Compiler {
     switch (node.op) {
       case '!':
         if (t.k === 'String') throw this.err("no match for 'operator!' (operand type is 'String')", node);
-        return this.lift1(T.bool, a, (v) => (v ? 0 : 1));
+        return this.lift1(T.bool, a, t.k === 'obj' ? (v) => ((v && typeof v.truthy === 'function' ? v.truthy() : v) ? 0 : 1) : (v) => (v ? 0 : 1));
       case '-': {
         if (t.k === 'float' || t.k === 'any') return this.lift1(t, a, (v) => -v);
         if (t.k !== 'int') throw this.err(`wrong type argument to unary minus`, node);
@@ -2232,6 +2248,7 @@ export class Compiler {
         return this.mapE(e, this.T.cstr, toS);
       }
       case 'raw': return e;
+      case 'any': return e.t.k === 'int' && e.t.isBool && !e.gen ? this.mapE(e, e.t, (v) => !!v) : e;
       case 'ref': return e;
       default:
         if (e.t.k === 'String') return this.mapE(e, e.t, (v) => v.s);

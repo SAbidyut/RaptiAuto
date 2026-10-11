@@ -20,7 +20,7 @@ function keys(pid, seq, t0) {
 
 // Per-example expectations (serial substrings, part state after the run, user input during the run).
 const CHECKS = {
-  'burn-demo': { allowWarn: ['burned', 'supplying'] },
+  'burn-demo': { ms: 9000, allowWarn: ['burned', 'supplying'], check: (e) => { const burnt = e.project.parts.filter((p) => p.type === 'led' && e.parts.get(p.id).burnt); return expect(burnt.length === 1, `${burnt.length} LEDs burnt — only the one without a resistor should`); } },
   'ultrasonic': { ms: 1500, serial: ['Distance:', 'cm'] },
   'dht22-monitor': { ms: 4500, serial: ['Temperature', '24.0', 'Humidity', '55.0'] },
   'pir-alarm': { ms: 2500, act: { 900: ['pir', 'motion', true] }, serial: ['Motion detected'] },

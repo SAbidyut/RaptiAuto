@@ -11,6 +11,8 @@ import { h, toast, pushBack, popupMenu, promptDialog, confirmDialog, debounce, d
 import { icon } from './icons.js';
 import { Native } from '../native.js';
 import { AudioEngine } from './audio.js';
+import { VirtualNet } from '../net/network.js';
+import { IotPane } from './iotpane.js';
 
 /** True when the sketch prints to or reads from a serial port (comments and string literals are ignored). */
 export function sketchUsesSerial(code) {
@@ -35,6 +37,7 @@ export class Editor {
     this.fullscreen = false;
     this.warnings = [];
     this.audio = new AudioEngine();
+    this.net = new VirtualNet();   // the simulated Wi-Fi / internet the boards' WiFi libraries use (kept between runs)
     this.save = debounce(() => this.saveNow(), 700);
     this.build();
     this.snapshot = this.serialize();
@@ -55,7 +58,9 @@ export class Editor {
     this.circuitPane = h('section', { class: 'pane pane-circuit' });
     this.codePane = h('section', { class: 'pane pane-code' });
     this.serialPane = h('section', { class: 'pane pane-serial' });
-    this.main = h('main', { class: 'ed-main' }, this.circuitPane, this.codePane, this.serialPane);
+    this.iotHost = h('section', { class: 'pane pane-iot' });
+    this.main = h('main', { class: 'ed-main' }, this.circuitPane, this.codePane, this.serialPane, this.iotHost);
+    this.iot = new IotPane(this.net, this.iotHost, { onActivity: () => { if (this.tab !== 'iot') this.setBadge('iot', true); } });
 
     // circuit canvas
     this.canvasHost = h('div', { class: 'canvas-host' });
@@ -87,7 +92,7 @@ export class Editor {
 
     // bottom nav
     const tab = (id, ic, label) => h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span><i class="badge hidden"></i>` });
-    this.nav = h('nav', { class: 'ed-nav' }, tab('circuit', 'circuit', 'Circuit'), tab('code', 'code', 'Code'), tab('serial', 'terminal', 'Serial'),
+    this.nav = h('nav', { class: 'ed-nav' }, tab('circuit', 'circuit', 'Circuit'), tab('code', 'code', 'Code'), tab('serial', 'terminal', 'Serial'), tab('iot', 'globe', 'IoT'),
       h('button', { class: 'nav-tab split-toggle', title: 'Side by side', onclick: () => this.toggleSplit(), html: `${icon('columns', 22)}<span>Split</span>` }));
 
     // status bar (simulation)
@@ -100,12 +105,14 @@ export class Editor {
       h('button', { class: 'fs-btn', 'data-tab': 'circuit', html: icon('circuit', 20), onclick: () => this.setTab('circuit') }),
       h('button', { class: 'fs-btn', 'data-tab': 'code', html: icon('code', 20), onclick: () => this.setTab('code') }),
       h('button', { class: 'fs-btn', 'data-tab': 'serial', html: icon('terminal', 20), onclick: () => this.setTab('serial') }),
+      h('button', { class: 'fs-btn fs-iot', 'data-tab': 'iot', html: icon('globe', 20), onclick: () => this.setTab('iot') }),
       h('button', { class: 'fs-btn split-toggle', title: 'Side by side', 'aria-label': 'Side by side', html: icon('columns', 20), onclick: () => this.toggleSplit() }));
 
     // full screen hides every menu; this small handle brings them back
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
 
     this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar, this.fsHandle);
+    this.refreshIotTab();
     this.stale = h('div', { class: 'stale-banner hidden', html: `${icon('restart', 16)}<span>Code changed — restart to apply</span>`, onclick: () => this.restart() });
     this.circuitPane.appendChild(this.stale);
     this.updateLayout();
@@ -142,6 +149,7 @@ export class Editor {
 
   unmount() {
     this.stop();
+    this.iot.destroy();
     this.resizeObs.disconnect();
     this.canvas.destroy();
     this.audio.close();
@@ -206,11 +214,13 @@ export class Editor {
   }
 
   setTab(t) {
+    if (t === 'iot' && !this.hasWifi()) t = 'circuit';
     this.tab = t;
-    this.root.classList.remove('tab-circuit', 'tab-code', 'tab-serial');
+    this.root.classList.remove('tab-circuit', 'tab-code', 'tab-serial', 'tab-iot');
     this.root.classList.add('tab-' + t);
     for (const b of this.nav.children) b.classList.toggle('active', b.dataset.tab === t);
     this.updateLayout();
+    if (t === 'iot') { this.setBadge('iot', false); this.iot.shown(); }
     if (t === 'serial') { this.setBadge('serial', false); this.serial.redraw(); if (this.serial.mode === 'plotter') this.serial.drawPlot(); }
     if (t === 'circuit') requestAnimationFrame(() => this.canvas.applyView());
     if (t !== 'code') document.activeElement && document.activeElement.blur && document.activeElement.blur();
@@ -275,6 +285,15 @@ export class Editor {
     const bs = this.boardParts();
     const b = id && bs.indexOf(bs.find((p) => p.id === id)) > 0 ? bs.find((p) => p.id === id) : null;
     if (b) b.code = v; else this.project.code = v;
+  }
+
+  /** Does the circuit have a board with Wi-Fi (ESP32, NodeMCU, Uno R4 WiFi)? Then the IoT tab shows. */
+  hasWifi() { return this.boardParts().some((p) => { const d = getDef(p.type); return d && d.board && d.board.wifi; }); }
+
+  refreshIotTab() {
+    const on = this.hasWifi();
+    for (const b of this.root.querySelectorAll('[data-tab="iot"]')) b.classList.toggle('hidden', !on);
+    if (!on && this.tab === 'iot') this.setTab('circuit');
   }
 
   boardChipText() {
@@ -422,7 +441,7 @@ export class Editor {
     const [x0, y0, x1, y1] = worldBox(part);
     const [sx0, sy0] = this.canvas.worldToScreen(x0, y0), [sx1, sy1] = this.canvas.worldToScreen(x1, y1);
     if (sx0 < r.left || sy0 < r.top || sx1 > r.right || sy1 > r.bottom) this.canvas.fit();
-    if (def.board) this.boardChip.textContent = this.boardChipText();
+    if (def.board) { this.boardChip.textContent = this.boardChipText(); this.refreshIotTab(); }
     this.showHint(def.layer === -1 ? 'Breadboard added. Drag parts onto it — their legs snap into the holes.' : 'Drag to move. Drop legs on breadboard holes or header pins to plug in. Tap a pin to start a wire.');
     Native.vibrate(10);
   }
@@ -441,6 +460,8 @@ export class Editor {
       const what = [parts.length ? `${parts.length} part${parts.length > 1 ? 's' : ''}` : '', wires.length ? `${wires.length} wire${wires.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
       appendAll(bar,
         h('div', { class: 'sel-name' }, `${parts.length + wires.length} selected`, h('small', {}, what)),
+        parts.length ? btn('mirror', 'Mirror', () => this.flipSelected('x')) : null,
+        parts.length ? btn('flipv', 'Flip', () => this.flipSelected('y')) : null,
         parts.length ? btn('copy', 'Copy', () => this.duplicateSelected()) : null,
         wires.length && !parts.length ? btn('eraser', 'Straight', () => { for (const w of this.project.wires) if (wires.includes(w.id)) w.points = []; this.commit('Straighten'); }) : null,
         btn('trash', 'Delete', () => this.deleteSelected(), 'danger'),
@@ -454,6 +475,8 @@ export class Editor {
       appendAll(bar,
         h('div', { class: 'sel-name' }, def.name, def.label ? h('small', {}, def.label(partProps(part))) : null),
         btn('rotate', 'Rotate', () => this.rotateSelected()),
+        btn('mirror', 'Mirror', () => this.flipSelected('x')),
+        btn('flipv', 'Flip', () => this.flipSelected('y')),
         def.props.length ? btn('sliders', 'Edit', () => openPartProps(this, part)) : btn('info', 'Info', () => openPartProps(this, part)),
         btn('copy', 'Copy', () => this.duplicateSelected()),
         btn('trash', 'Delete', () => this.deleteSelected(), 'danger'),
@@ -496,6 +519,8 @@ export class Editor {
       const part = this.project.parts.find((p) => p.id === target.id);
       popupMenu(anchor, [
         { icon: 'rotate', label: 'Rotate', action: () => this.rotateSelected() },
+        { icon: 'mirror', label: 'Mirror (left ↔ right)', action: () => this.flipSelected('x') },
+        { icon: 'flipv', label: 'Flip (up ↕ down)', action: () => this.flipSelected('y') },
         { icon: 'sliders', label: 'Properties', action: () => openPartProps(this, part) },
         { icon: 'copy', label: 'Duplicate', action: () => this.duplicateSelected() },
         { icon: 'wire', label: 'Delete connected wires', action: () => { this.project.wires = this.project.wires.filter((w) => w.from.part !== part.id && w.to.part !== part.id); this.commit('Delete wires'); } },
@@ -524,6 +549,22 @@ export class Editor {
     part.x += Math.round((cx - (nx0 + nx1) / 2) / 10) * 10;
     part.y += Math.round((cy - (ny0 + ny1) / 2) / 10) * 10;
     this.commit('Rotate');
+    Native.vibrate(8);
+  }
+
+  /**
+   * Mirror (axis 'x': left ↔ right) or flip (axis 'y': up ↕ down) the selected part, or a whole
+   * selection about the middle of the group. Pins swap sides, labels stay readable, wires follow.
+   */
+  flipSelected(axis) {
+    const sel = this.canvas.selection;
+    if (this.engine) { toast('Stop the simulation to edit the circuit', 'warn'); return; }
+    if (!sel || (sel.kind !== 'part' && sel.kind !== 'multi')) return;
+    const ids = sel.kind === 'multi' ? sel.parts : [sel.id];
+    const parts = ids.map((id) => this.project.parts.find((p) => p.id === id)).filter(Boolean);
+    if (!parts.length) return;
+    flipParts(this.project, parts, axis, sel.kind === 'multi' ? sel.wires : []);
+    this.commit(axis === 'x' ? 'Mirror' : 'Flip');
     Native.vibrate(8);
   }
 
@@ -673,6 +714,7 @@ export class Editor {
     this.audio.resume();
     const lineStart = new Map();
     const engine = new SimEngine(this.project, {
+      net: this.net,
       onSerial: (port, text, from) => {
         // other boards' Serial output is tagged with the board's name at the start of each line
         if (from) {
@@ -688,6 +730,7 @@ export class Editor {
       onWarning: (msg) => this.addWarning(msg),
       onError: (err) => this.runtimeError(err),
       onSound: (id, freq, vol) => this.audio.set(id, freq, this.settings.sound === false ? 0 : vol),
+      onBurn: () => { Native.vibrate(40); if (this.settings.sound !== false) this.audio.pop(); },
       onEeprom: () => this.save(),
     });
     const res = engine.start();
@@ -810,6 +853,33 @@ export class Editor {
 
   onPause() { if (this.engine) this.engine.paused = true; this.audio.suspend(); this.saveNow(); }
   onResume() { if (this.engine) { this.engine.paused = false; this.engine.lastWall = null; } this.audio.resume(); }
+}
+
+/**
+ * Mirror (axis 'x') or flip (axis 'y') parts about the middle of their joint bounding box. Every part
+ * toggles part.flipX / part.flipY (its pins swap sides) and moves to the mirrored place (rounded to
+ * the 0.1" grid, so pins stay on the grid); wires that run between the parts are mirrored too.
+ */
+export function flipParts(project, parts, axis, wireIds = []) {
+  const k = axis === 'x' ? 0 : 1;
+  const boxes = parts.map((p) => worldBox(p));
+  const lo = Math.min(...boxes.map((b) => b[k])), hi = Math.max(...boxes.map((b) => b[k + 2]));
+  const mid = (lo + hi) / 2;
+  const key = axis === 'x' ? 'flipX' : 'flipY';
+  parts.forEach((part, i) => {
+    const c0 = (boxes[i][k] + boxes[i][k + 2]) / 2;
+    if (part[key]) delete part[key]; else part[key] = true;
+    const nb = worldBox(part);
+    const c1 = (nb[k] + nb[k + 2]) / 2;
+    const shift = Math.round((2 * mid - c0 - c1) / 10) * 10;
+    if (axis === 'x') part.x += shift; else part.y += shift;
+  });
+  const ids = new Set(parts.map((p) => p.id));
+  const sel = new Set(wireIds);
+  for (const w of project.wires) {
+    if (!(ids.has(w.from.part) && ids.has(w.to.part)) && !sel.has(w.id)) continue;
+    w.points = w.points.map(([x, y]) => (axis === 'x' ? [Math.round((2 * mid - x) / 5) * 5, y] : [x, Math.round((2 * mid - y) / 5) * 5]));
+  }
 }
 
 function fmtTime(s) {

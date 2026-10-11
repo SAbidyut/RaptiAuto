@@ -2,6 +2,7 @@
 // (MicroPython). Each lists the parts it expects on the header; opening one wires them up.
 
 import { bbTrafficLights, bbDoorbell, piI2cMaster, piUartMaster } from './bb-examples.js';
+import { PI_MORE, PICO_MORE } from './examples-more.js';
 
 const L = (pin, color = 'red') => ({ type: 'led', pins: { a: pin }, props: { color } });
 const B = (pin) => ({ type: 'button', pins: { a: pin } });
@@ -546,3 +547,7 @@ while True:
     time.sleep(0.05)
 ` },
 ];
+
+// displays and IoT (examples-more.js)
+PI_EXAMPLES.push(...PI_MORE);
+PICO_EXAMPLES.push(...PICO_MORE);

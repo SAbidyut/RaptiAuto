@@ -3,7 +3,7 @@ import { CompileError } from './lexer.js';
 
 const TYPE_WORDS = new Set([
   'void', 'bool', 'boolean', 'char', 'short', 'int', 'long', 'float', 'double', 'signed', 'unsigned',
-  'byte', 'word', 'size_t', 'String', 'auto',
+  'byte', 'word', 'size_t', 'time_t', 'String', 'auto',
   'int8_t', 'uint8_t', 'int16_t', 'uint16_t', 'int32_t', 'uint32_t', 'int64_t', 'uint64_t',
   'uint_fast8_t', 'uint_least8_t', 'int_fast8_t', 'uint_fast16_t', 'uint_fast32_t', 'uintptr_t', 'intptr_t',
   'u8', 'u16', 'u32', 's8', 's16', 's32', 'prog_char', 'prog_uchar', 'wchar_t', 'char16_t', 'char32_t',
@@ -169,6 +169,7 @@ export class Parser {
     else if (name === 'byte') name = 'u8';
     else if (name === 'word') name = 'uint';
     else if (name === 'size_t') name = 'uint';
+    else if (name === 'time_t') name = 'long';
     else if (FIXED[name]) name = FIXED[name];
     return { name, isConst: s.isConst, isStatic: s.isStatic, ptr: 0, line: s.line };
   }
@@ -226,7 +227,42 @@ export class Parser {
       if (Array.isArray(d)) body.push(...d);
       else if (d) body.push(d);
     }
+    // lambdas found inside functions became ordinary functions of their own
+    if (this.hoisted && this.hoisted.length) body.push(...this.hoisted);
     return { kind: 'Program', body };
+  }
+
+  /**
+   * Lambda expression  [captures](params) -> type { body }  as a callback (server.on("/", []() { … })):
+   * it becomes a function of its own (__lambda_N) and the expression is a reference to it. The body sees
+   * the sketch's global variables; captured locals are not supported (a lambda has no state of its own).
+   */
+  parseLambda() {
+    const line = this.cur.line;
+    this.expect('[');
+    while (!this.isOp(']') && this.cur.t !== 'eof') this.p++;
+    this.expect(']');
+    const params = this.isOp('(') ? this.parseParams() : [];
+    while (this.cur.t === 'id' && (this.cur.v === 'mutable' || this.cur.v === 'noexcept' || this.cur.v === 'constexpr')) this.p++;
+    let ret = null;
+    if (this.accept('->')) {
+      const spec = this.parseTypeSpec();
+      let ptr = 0;
+      while (this.accept('*')) ptr++;
+      ret = { ...spec, ptr };
+    }
+    const from = this.p;
+    const body = this.parseBlock();
+    if (!ret) {
+      // no declared type: void, or int when the body returns a value (`return x;`)
+      let value = false;
+      for (let i = from; i < this.p; i++) if (this.toks[i].t === 'id' && this.toks[i].v === 'return' && !(this.toks[i + 1].t === 'op' && this.toks[i + 1].v === ';')) value = true;
+      ret = { name: value ? 'int' : 'void', isConst: false, isStatic: false, ptr: 0, line };
+    }
+    this.hoisted = this.hoisted || [];
+    const name = '__lambda_' + this.hoisted.length;
+    this.hoisted.push({ kind: 'Func', name, ret, params, body, line });
+    return { kind: 'Ident', name, line };
   }
 
   parseTopLevel() {
@@ -834,7 +870,13 @@ export class Parser {
         e = { kind: 'Index', obj: e, idx, line: t.line };
       } else if (t.v === '.' || t.v === '->') {
         this.p++;
-        const name = this.ident('member name');
+        let name = this.ident('member name');
+        // doc.as<JsonObject>() / to<JsonArray>() / is<int>() / as<const char*>(): the type becomes part of the method name (as_JsonObject …)
+        if (this.isOp('<') && (name === 'as' || name === 'to' || name === 'is')) {
+          let q = this.p + 1, tn = '';
+          while (this.toks[q] && this.toks[q].t !== 'eof' && !(this.toks[q].t === 'op' && this.toks[q].v === '>')) { const k = this.toks[q]; tn += k.v === '*' ? 'Ptr' : String(k.v); q++; }
+          if (this.toks[q] && this.toks[q + 1] && this.toks[q + 1].t === 'op' && this.toks[q + 1].v === '(') { name = `${name}_${tn}`; this.p = q + 1; }
+        }
         e = { kind: 'Member', obj: e, name, arrow: t.v === '->', line: t.line };
       } else if (t.v === '++' || t.v === '--') {
         this.p++;
@@ -867,7 +909,7 @@ export class Parser {
         }
         if (t.v === '{') return this.parseInitList();
         if (t.v === '::') { this.p++; return this.parsePrimary(); }
-        if (t.v === '[') throw this.err('lambda expressions are not supported by the simulator');
+        if (t.v === '[') return this.parseLambda();
         throw this.err(`expected expression before '${t.v}' token`);
       case 'id': {
         // static_cast<T>(x) & friends

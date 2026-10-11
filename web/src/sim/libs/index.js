@@ -5,3 +5,8 @@ import './neopixel.js';
 import './displays.js';
 import './sensors.js';
 import './steppers.js';
+import './iot.js';
+import './iot-services.js';
+import './json.js';
+export { IOT_MACROS as libMacros } from './iot-services.js';
+export { checkIncludes } from './headers.js';

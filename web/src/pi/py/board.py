@@ -10,3 +10,13 @@ CE0 = 8
 CE1 = 7
 TXD = 14
 RXD = 15
+
+
+def I2C():
+    import busio
+    return busio.I2C(SCL, SDA)
+
+
+def SPI():
+    import busio
+    return busio.SPI(SCLK, MOSI, MISO)

@@ -26,7 +26,7 @@ class DHT11(DHTBase):
 
 class DHT22(DHTBase):
     def temperature(self):
-        return round(self._t, 1)
+        return round(float(self._t), 1)
 
     def humidity(self):
-        return round(self._h, 1)
+        return round(float(self._h), 1)

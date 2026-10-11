@@ -6,6 +6,7 @@ import { VFS } from './vfs.js';
 import { BOARDS } from './boards.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from './examples.js';
 import { newPart } from './parts.js';
+import { VirtualNet } from '../net/network.js';
 
 const PI_SEED = () => ({
   dirs: ['/home/pi/Desktop', '/home/pi/Documents', '/home/pi/Downloads', '/home/pi/Music', '/home/pi/Pictures', '/home/pi/Videos', '/home/pi/Public', '/home/pi/Templates', '/home/pi/projects', '/etc', '/boot/firmware', '/tmp', '/usr/bin', '/var/log'],
@@ -32,6 +33,7 @@ export class PiSystem {
     this.proc = null;
     this.owner = null;
     this.gpio = new GpioSim(board);
+    this.net = new VirtualNet();
     this.piFs = new VFS('rapti.pi.fs.v1', PI_SEED());
     this.picoFs = new VFS('rapti.pico.fs.v1', PICO_SEED());
     this.setBoard(board, true);
@@ -51,10 +53,23 @@ export class PiSystem {
   setBoard(board, first = false) {
     if (!first) this.killProcess();
     this.gpio.setBoard(board);
+    this.initNet(board);
     this.gpio.parts = this.loadParts(board);
     this.gpio.inputsChanged();
     try { localStorage.setItem('rapti.pi.board', board); } catch (e) { /* ignore */ }
     if (!first) this.emit('board');
+  }
+
+  /** The board's network device: a Raspberry Pi is on Wi-Fi from boot; a Pico W joins from code; a Pico has none. */
+  initNet(board) {
+    const info = BOARDS[board];
+    const isPi = info.kind === 'pi';
+    if (this.netDev) { this.net.dropServers(this.netDev); this.net.mqtt.dropDevice(this.netDev); this.net.leave(this.netDev); this.net.devices.delete(this.netDev.id); }
+    this.netDev = this.net.registerDevice({ id: 'pi', name: isPi ? 'Raspberry Pi' : info.name, kind: isPi ? 'pi' : 'pico', hostname: isPi ? 'raspberrypi' : 'picow', broker: isPi });
+    const wifi = isPi || info.wifi;
+    this.gpio.net = wifi ? this.net : null;
+    this.gpio.netDev = wifi ? this.netDev : null;
+    if (isPi) this.net.join(this.netDev, 'RaptiNet', 'rapti1234');
   }
 
   partsKey(board = this.board) { return 'rapti.pi.parts.' + (BOARDS[board].kind === 'pico' ? 'pico' : 'pi'); }
@@ -128,6 +143,7 @@ export class PiSystem {
     p.kill();
     this.proc = null;
     this.owner = null;
+    if (this.netDev) { this.net.dropServers(this.netDev); this.net.mqtt.dropDevice(this.netDev); }
     this.gpio.stopProcess();
     if (this.isPico) this.gpio.reset();
     this.emit('proc');

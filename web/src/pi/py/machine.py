@@ -264,6 +264,11 @@ class I2C:
         J.i2c_write(addr, bytes(buf).hex())
         return len(buf)
 
+    def writevto(self, addr, vector, stop=True):
+        data = b''.join(bytes(v) for v in vector)
+        J.i2c_write(addr, data.hex())
+        return len(data)
+
     def readfrom(self, addr, n, stop=True):
         return bytes.fromhex(J.i2c_read(addr, n))
 
@@ -287,32 +292,55 @@ SoftI2C = I2C
 
 
 class SPI:
+    """SPI bus: the bytes reach a MAX7219 chain (or an MCP3008) wired to the SCK / MOSI pins."""
     MSB = 0
     LSB = 1
+    _DEFAULT = {0: (18, 19, 16), 1: (10, 11, 12)}   # id -> (sck, mosi, miso) on the Pico
 
-    def __init__(self, id=0, baudrate=1000000, **kw):
+    def __init__(self, id=0, baudrate=1000000, *, polarity=0, phase=0, bits=8, firstbit=0, sck=None, mosi=None, miso=None):
         self._id = id
+        d = SPI._DEFAULT.get(id, (18, 19, 16))
+        self._sck = _pid(sck) if sck is not None else d[0]
+        self._mosi = _pid(mosi) if mosi is not None else d[1]
+        self._miso = _pid(miso) if miso is not None else d[2]
+        self._baud = baudrate
 
-    def init(self, **kw):
-        pass
+    def init(self, baudrate=1000000, **kw):
+        self._baud = baudrate
+        for k in ('sck', 'mosi', 'miso'):
+            if kw.get(k) is not None:
+                setattr(self, '_' + k, _pid(kw[k]))
+
+    def _xfer(self, data):
+        r = J.spi_xfer(self._sck, self._mosi, bytes(data).hex())
+        return bytes.fromhex(r)
 
     def write(self, buf):
-        pass
+        self._xfer(buf)
 
     def read(self, n, write=0):
-        return bytes(n)
+        return self._xfer(bytes([write]) * n)
 
     def readinto(self, buf, write=0):
-        pass
+        r = self.read(len(buf), write)
+        for i in range(len(buf)):
+            buf[i] = r[i]
 
     def write_readinto(self, wbuf, rbuf):
-        pass
+        r = self._xfer(wbuf)
+        for i in range(len(rbuf)):
+            rbuf[i] = r[i]
 
     def deinit(self):
         pass
 
+    def __repr__(self):
+        return 'SPI(%d, baudrate=%d, sck=%d, mosi=%d, miso=%d)' % (self._id, self._baud, self._sck, self._mosi, self._miso)
 
-SoftSPI = SPI
+
+class SoftSPI(SPI):
+    def __init__(self, baudrate=500000, *, polarity=0, phase=0, bits=8, firstbit=0, sck, mosi, miso):
+        SPI.__init__(self, -1, baudrate, sck=sck, mosi=mosi, miso=miso)
 
 
 class UART:

@@ -15,6 +15,8 @@ export class GpioSim {
     this.bgTimer = null;
     this.bootsel = 0;
     this.wifiState = { state: 0, ssid: '' };
+    this.net = null;      // the virtual network (src/net) when this board has Wi-Fi / Ethernet
+    this.netDev = null;   // this board's device on it
     this.uartLog = [];
     this.lastYield = now();
     this.quietEnd = 0;
@@ -78,6 +80,7 @@ export class GpioSim {
     this.events = [];
     this.evArg = 0;
     this.bg.clear();
+    if (this.net && this.netDev) { this.net.dropServers(this.netDev); this.net.mqtt.dropDevice(this.netDev); }
     if (this.pins) {
       for (const p of this.pins.values()) {
         p.watch = null; p.cbs = []; p.detected = false;
@@ -373,6 +376,18 @@ export class GpioSim {
     const bytes = [];
     for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
     this.hw.i2cWrite(addr, bytes);
+  }
+
+  spiXfer(sck, mosi, hex) {
+    const bytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+    const out = this.hw ? this.hw.spiXfer(sck, mosi, bytes) : new Array(bytes.length).fill(0);
+    return out.map((b) => (b & 255).toString(16).padStart(2, '0')).join('');
+  }
+  dispTm1637(clk, dio, hex, bright, on) {
+    const bytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+    return this.hw ? this.hw.dispTm1637(clk, dio, bytes, bright, on) : 0;
   }
 
   // ---------------------------------------------------------------- yielding

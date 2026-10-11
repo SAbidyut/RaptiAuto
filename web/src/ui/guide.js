@@ -21,6 +21,7 @@ export const GUIDE = [
       '<b>Drag</b> a part to move it. Its legs snap into breadboard holes and header pins like a magnet, which connects them.',
       '<b>Tap</b> a part to select it. The bar at the bottom lets you <b>Rotate</b>, <b>Edit</b> its value (resistance, LED colour…), <b>Copy</b> or <b>Delete</b> it.',
       '<b>Long-press</b> a part or wire for more options.',
+      '<b>Mirror</b> and <b>Flip</b> turn a part (or a whole selection, board included) left–right or upside-down; <b>Rotate</b> turns it in 90° steps. Labels stay readable.',
       '<b>Pinch</b> with two fingers to zoom, drag the empty canvas to pan. <b>Undo</b>, <b>redo</b>, zoom and <b>fit to screen</b> are in the side toolbar.',
     ),
   },
@@ -83,12 +84,24 @@ export const GUIDE = [
   {
     icon: 'warning', title: 'Real electronics lessons',
     html: ul(
-      'An LED without a resistor draws too much current and <b>burns out</b> 💥. Use 220 Ω – 1 kΩ.',
+      'An LED without a resistor draws too much current and <b>burns out</b> 💥: it glares for a few seconds, flashes, smokes once and stays black (stop and run again = a new LED). Use 220 Ω – 1 kΩ.',
+      'Heat builds up like in real life: an LED at 20 mA lives for ever, at 60 mA it lasts seconds; a ¼ W resistor at twice its rating cooks after a while; a pin that is shorted or fed 5 V on a 3.3 V board dies.',
       'A pin that supplies more than <b>40 mA</b> shows a warning. Use a transistor, MOSFET, relay or driver for motors and lamps.',
       'Connecting 5V straight to GND is a <b>short circuit</b>; the simulation stops and tells you.',
       'An input pin connected to nothing reads random values. Use <code>INPUT_PULLUP</code> or a pull-down resistor.',
       'Sensors and modules only work when their <b>VCC and GND</b> are connected.',
     ),
+  },
+  {
+    icon: 'globe', title: 'IoT & Wi-Fi (ESP32, ESP8266, Uno R4 WiFi)',
+    html: ol(
+      'Open <b>Examples → IoT & Wi-Fi</b> (or add an <b>ESP32 / NodeMCU / Uno R4 WiFi</b> board) and press <b>Run</b>. The board joins the simulated router <code>RaptiNet</code> (password <code>rapti1234</code>) and gets an IP address like <code>192.168.1.50</code>.',
+      'Open the <b>IoT</b> tab: it is the phone on the same Wi-Fi. Tap the board\'s address to see its web page, open the <b>Dashboard</b> for the devices, the MQTT topics (with a publish box), ThingSpeak charts, Blynk pins, Telegram chat and a Bluetooth terminal.',
+      'The dashboard has switches for the <b>Router</b> and the <b>Internet</b> — turn them off to see how your sketch copes. <b>Strict Wi-Fi</b> makes a wrong network name fail like a real router.',
+    ) + ul(
+      'Libraries: <code>WiFi</code>, <code>WiFiClient</code> / <code>WiFiClientSecure</code>, <code>WiFiServer</code>, <code>WebServer</code> / <code>ESP8266WebServer</code>, <code>HTTPClient</code>, <code>PubSubClient</code> (MQTT), <code>ArduinoJson</code>, <code>ThingSpeak</code>, <code>Blynk</code>, <code>UniversalTelegramBot</code>, <code>NTPClient</code>, <code>ESPmDNS</code>, <code>Preferences</code>, <code>BluetoothSerial</code>, <code>WiFiMulti</code>, <code>time.h</code>.',
+      'Mistakes fail like on real hardware: <code>#include &lt;WiFi.h&gt;</code> on an Uno, HTTPS without <code>setInsecure()</code>, a forgotten <code>server.handleClient()</code>, MQTT messages bigger than the 256-byte buffer, 5 V on a 3.3 V pin.',
+    ) + tip('The Raspberry Pi Lab uses the same simulated internet and IoT dashboard (Chromium, <code>requests</code>, MQTT, Flask), so Python programs can call the same weather, ThingSpeak and Telegram services.'),
   },
   {
     icon: 'cpu', title: 'Delta PLC Lab (3D)',
@@ -116,6 +129,7 @@ export const GUIDE = [
       'Servo', 'LiquidCrystal', 'LiquidCrystal_I2C', 'Wire', 'Adafruit_SSD1306', 'Adafruit_GFX', 'Adafruit_NeoPixel', 'TM1637Display', 'LedControl',
       'Arduino_LED_Matrix', 'DHT', 'DHTesp', 'NewPing', 'OneWire', 'DallasTemperature', 'Adafruit_MPU6050', 'MPU6050', 'RTClib', 'Keypad', 'IRremote',
       'Stepper', 'AccelStepper', 'EEPROM',
+      'WiFi', 'WiFiClient', 'WebServer', 'HTTPClient', 'PubSubClient', 'ArduinoJson', 'ThingSpeak', 'Blynk', 'UniversalTelegramBot', 'NTPClient', 'Preferences', 'BluetoothSerial', 'ESPmDNS', 'WiFiMulti',
     ].map((l) => `<span>${l}</span>`).join('')}</div>`,
   },
 ];

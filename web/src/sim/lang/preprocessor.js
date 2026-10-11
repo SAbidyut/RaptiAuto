@@ -50,6 +50,8 @@ export class Preprocessor {
     this.macros = new Map();
     this.includes = [];
     for (const [k, v] of Object.entries(predefined)) {
+      // a function-like macro of a library (Blynk's BLYNK_WRITE): { params: ['pin'], body: '…' }
+      if (v && typeof v === 'object') { this.macros.set(k, { params: v.params, variadic: !!v.variadic, body: lexInline(v.body, 0) }); continue; }
       this.macros.set(k, { params: null, body: v === '' ? [] : lexInline(String(v), 0) });
     }
   }

@@ -163,6 +163,22 @@ const DEFS = `<defs>
   <filter id="glow" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="6"/></filter>
 </defs>`;
 
+/** SMD passives (0805: 2 × 1.2 mm; a vertical one is rotated): [[x, y, 'h'|'v'|'ch'|'cv'], …]. */
+function passives(list) {
+  return list.map(([x, y, k = 'h']) => {
+    const v = k.endsWith('v'), cap = k[0] === 'c';
+    const w = v ? 12 : 20, h = v ? 20 : 12, body = cap ? '#b58f4e' : '#1d1f24', end = '#cfd2d7';
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1.5" fill="${body}"/>` + (v
+      ? `<rect x="${x}" y="${y}" width="${w}" height="4" fill="${end}"/><rect x="${x}" y="${y + h - 4}" width="${w}" height="4" fill="${end}"/>`
+      : `<rect x="${x}" y="${y}" width="4" height="${h}" fill="${end}"/><rect x="${x + w - 4}" y="${y}" width="4" height="${h}" fill="${end}"/>`);
+  }).join('');
+}
+
+/** Inductors / power chips (dark squares with a lighter top). */
+function coils(list) { return list.map(([x, y, w = 30]) => `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="3" fill="#2a2d33"/><rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${w - 8}" rx="2" fill="#3b3f47"/>`).join(''); }
+
+function crystalSmd(x, y, label) { return `<rect x="${x}" y="${y}" width="46" height="22" rx="9" fill="url(#metal)" stroke="#9aa3ad"/><text x="${x + 23}" y="${y + 15}" fill="#4b5563" font-size="9" text-anchor="middle" font-family="monospace">${label}</text>`; }
+
 function hole(x, y) {
   return `<circle cx="${x}" cy="${y}" r="30" fill="url(#gold)" opacity=".9"/><circle cx="${x}" cy="${y}" r="14" fill="#0b1020"/>`;
 }
@@ -175,7 +191,7 @@ function piHeaderArt() {
       <rect x="${x - 7}" y="${y - 7}" width="14" height="14" rx="${p.phys === 1 ? 0 : 7}" fill="url(#gold)"/>
       <circle class="pst" cx="${x}" cy="${y}" r="9.5"/><circle class="hit" cx="${x}" cy="${y}" r="12.7" fill="transparent"/></g>`;
   }
-  return s + '<text x="66" y="56" class="silk" text-anchor="end">1</text><text x="586" y="27" class="silk">40</text>';
+  return s + '<text x="62" y="76" class="silk" text-anchor="middle">1</text><text x="592" y="36" class="silk">40</text>';
 }
 
 function piArt(board) {
@@ -184,7 +200,7 @@ function piArt(board) {
   <rect x="-14" y="${pi5 ? 228 : 228}" width="26" height="108" rx="4" fill="#4b5563"/>
   <rect x="0" y="0" width="850" height="560" rx="30" fill="url(#pcb)" stroke="#0c5a2c" stroke-width="3"/>
   <path d="M40 520 L330 520 M600 40 L640 40" stroke="#2a9a54" stroke-width="2" opacity=".5"/>
-  ${hole(35, 35)}${hole(615, 35)}${hole(35, 525)}${hole(615, 525)}`;
+  ${hole(35, 35)}${hole(pi5 ? 660 : 634, 35)}${hole(35, 525)}${hole(615, 525)}`;
   // traces
   s += '<g stroke="#2aa25a" stroke-width="2.2" fill="none" opacity=".45"><path d="M300 330 C300 380 250 420 210 470"/><path d="M330 330 C340 400 380 440 395 470"/><path d="M370 250 H560 V320"/><path d="M250 175 V120 H180"/><path d="M380 176 V100 H560"/><path d="M240 330 V400 H160"/></g>';
   s += piHeaderArt();
@@ -194,19 +210,22 @@ function piArt(board) {
     s += fpc(452, 470, 78, 26, 'CAM/DISP 0') + fpc(548, 470, 78, 26, 'CAM/DISP 1');
     s += fpc(14, 140, 30, 170, 'PCIe', true);
     s += '<rect x="300" y="458" width="34" height="18" rx="2" fill="#f3f4f6"/><text x="317" y="450" class="silk" text-anchor="middle">UART</text>';
-    s += '<rect x="590" y="70" width="52" height="22" rx="2" fill="#f3f4f6"/><text x="616" y="108" class="silk" text-anchor="middle">FAN</text>';
-    s += '<g fill="url(#gold)"><circle cx="602" cy="22" r="6"/><circle cx="627" cy="22" r="6"/><circle cx="602" cy="47" r="6"/><circle cx="627" cy="47" r="6"/></g>';
+    s += '<rect x="610" y="78" width="52" height="22" rx="2" fill="#f3f4f6"/><text x="636" y="116" class="silk" text-anchor="middle">FAN</text>';
     s += '<rect x="130" y="440" width="30" height="16" rx="2" fill="#f3f4f6"/><text x="145" y="432" class="silk" text-anchor="middle">BAT</text>';
     s += `<g class="pwr-btn"><rect x="-12" y="440" width="42" height="44" rx="6" fill="#2b2f36"/><circle cx="8" cy="462" r="13" fill="#4b5563" stroke="#111" stroke-width="2"/></g>`;
     s += '<rect class="led-pwr" x="40" y="400" width="20" height="12" rx="3"/><text x="70" y="410" class="silk">PWR/ACT</text>';
     s += '<rect x="235" y="165" width="150" height="150" rx="10" fill="url(#lid)" stroke="#8b929b" stroke-width="2"/>';
     s += '<text x="310" y="232" fill="#4b5563" font-size="14" font-weight="700" text-anchor="middle" font-family="sans-serif">BROADCOM</text><text x="310" y="254" fill="#4b5563" font-size="12" text-anchor="middle" font-family="monospace">BCM2712</text>';
     s += chip(410, 185, 112, 112, '#16181d', ['MICRON', 'LPDDR4X', '8GB']);
-    s += chip(552, 290, 88, 88, '#16181d', ['RP1'], '#d1d5db', 16) + RPI_LOGO(596, 352, 0.9, '#d1d5db', 0.5);
+    s += chip(552, 290, 88, 88, '#16181d', ['RP1'], '#d1d5db', 16).replace(/(<text[^>]*) y="(\d+(?:\.\d+)?)"/, (m, a, y) => `${a} y="${Number(y) - 14}"`) + RPI_LOGO(596, 358, 0.6, '#d1d5db', 0.5);
     s += `<rect x="50" y="85" width="140" height="92" rx="5" fill="url(#lid)" stroke="#8b929b"/>${RPI_LOGO(120, 128, 1.4, '#9aa3ad', 0.8)}`;
     s += chip(95, 330, 60, 60, '#16181d', ['PMIC']);
     s += `<text x="250" y="400" class="silk-big">Raspberry Pi 5</text><text x="250" y="425" class="silk">© Raspberry Pi Ltd 2023</text>`;
     s += RPI_LOGO(470, 405, 1.6, '#eaf3ec', 0.85);
+    // decoupling capacitors, inductors and the crystal around the chips
+    s += passives([[205, 330, 'v'], [225, 330, 'cv'], [245, 330, 'v'], [265, 330, 'cv'], [285, 330, 'v'], [305, 330, 'cv'], [325, 330, 'v'], [345, 330, 'cv'], [395, 330, 'h'], [395, 346, 'ch'], [525, 190, 'cv'], [545, 190, 'v'], [525, 245, 'v'], [545, 245, 'cv'], [405, 140, 'h'], [405, 156, 'ch'], [530, 140, 'h'], [530, 156, 'ch'],
+      [170, 400, 'v'], [190, 400, 'cv'], [100, 262, 'h'], [100, 278, 'ch'], [150, 262, 'ch'], [150, 278, 'h']]);
+    s += coils([[170, 335, 34], [95, 262, 28]]) + crystalSmd(160, 232, '54.000') + crystalSmd(560, 240, '25.000').replace('560', '560');
   } else {
     s += ethernet(660, 25) + usbStack(695, 223, false) + usbStack(695, 403, true);
     s += usbc(77, 497) + hdmi(225, 505, 'HDMI0') + hdmi(360, 505, 'HDMI1');
@@ -220,7 +239,9 @@ function piArt(board) {
     s += chip(560, 300, 60, 60, '#16181d', ['VL805']);
     s += `<rect x="60" y="88" width="132" height="92" rx="5" fill="url(#lid)" stroke="#8b929b"/>${RPI_LOGO(126, 130, 1.4, '#9aa3ad', 0.8)}`;
     s += chip(110, 360, 56, 56, '#16181d', ['PMIC']);
-    s += `<text x="230" y="400" class="silk-big">Raspberry Pi 4 Model B</text><text x="230" y="425" class="silk">© Raspberry Pi 2018</text>`;
+    s += `<text x="230" y="395" class="silk-big">Raspberry Pi 4</text><text x="230" y="421" class="silk-big" style="font-size:19px">Model B</text><text x="230" y="446" class="silk">© Raspberry Pi 2018</text>`;
+    s += passives([[205, 340, 'v'], [225, 340, 'cv'], [245, 340, 'v'], [265, 340, 'cv'], [285, 340, 'v'], [305, 340, 'cv'], [330, 340, 'h'], [330, 356, 'ch'], [380, 140, 'cv'], [380, 160, 'v'], [520, 150, 'h'], [520, 166, 'ch'], [530, 210, 'v'], [550, 210, 'cv'], [75, 300, 'h'], [75, 316, 'ch'], [180, 430, 'v'], [200, 430, 'cv'], [140, 250, 'ch'], [140, 266, 'h']]);
+    s += coils([[170, 345, 34], [100, 270, 28]]) + crystalSmd(160, 232, '19.200') + crystalSmd(555, 380, '25.000');
   }
   s += '<g class="act-glow"></g></svg>';
   return s;
