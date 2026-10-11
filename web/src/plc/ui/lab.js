@@ -3,7 +3,8 @@ import { h, toast, pushBack, popupMenu, promptDialog, confirmDialog, debounce, d
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
 import { AudioEngine } from '../../ui/audio.js';
-import { saveLab, exportLab, saveLabThumb } from '../store.js';
+import { saveLab, exportLab, saveLabThumb, plcDevices, activePlcId, switchPlc, plcName, makeConn } from '../store.js';
+import { normalizeProgram } from '../sim/ladder.js';
 import { LabSystem } from '../sim/system.js';
 import { DEVICE_DEFS, deviceProps, devicePorts, hasLabel } from '../devices/defs.js';
 import { renderHmi } from './hmi-render.js';
@@ -41,6 +42,7 @@ export class LabScreen {
     this.laptopCanvas = document.createElement('canvas');
     this.laptopCanvas.width = 1024; this.laptopCanvas.height = 640;
     this.snapshot = this.hwSerialize();
+    this.activeId = activePlcId(project);
     this.tasks = LAB_TASKS[project.fromExample] || null;
     if (this.tasks) project.tasksDone = Array.isArray(project.tasksDone) ? project.tasksDone : [];
     this.taskMemo = {};
@@ -52,7 +54,7 @@ export class LabScreen {
     this.root = h('div', { class: 'screen lab tab-panel' });
     const back = h('button', { class: 'icon-btn', 'aria-label': 'Back', html: icon('back'), onclick: () => this.leave() });
     this.titleEl = h('button', { class: 'ed-title', onclick: () => this.rename() }, h('span', {}, this.project.name));
-    this.subEl = h('button', { class: 'board-chip', onclick: () => this.setTab('panel') });
+    this.subEl = h('button', { class: 'board-chip', onclick: () => this.onSubTap() });
     this.runBtn = h('button', { class: 'run-btn', onclick: () => this.toggleSim(), html: `${icon('play', 20)}<span>Simulate</span>` });
     const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu', html: icon('dots'), onclick: (e) => this.menu(e.currentTarget) });
     this.top = h('header', { class: 'ed-top lab-top' }, back, h('div', { class: 'ed-titles' }, this.titleEl, this.subEl), this.runBtn, menuBtn);
@@ -171,11 +173,75 @@ export class LabScreen {
   }
 
   updateSub() {
-    const plc = this.project.devices.find((d) => DEVICE_DEFS[d.type].category === 'plc');
+    const plc = this.plcDevice();
+    const plcs = plcDevices(this.project);
+    if (plcs.length > 1) { this.subEl.textContent = `${plcName(this.project, plc)} ▾`; this.subEl.classList.add('multi-plc'); return; }
     const parts = [plc ? DEVICE_DEFS[plc.type].short : 'No PLC'];
     if (this.project.devices.some((d) => d.type === 'ms300')) parts.push('MS300');
     if (this.project.devices.some((d) => d.type === 'dop-107bv')) parts.push('DOP-107');
     this.subEl.textContent = 'Delta ' + parts.join(' · ');
+    this.subEl.classList.remove('multi-plc');
+  }
+
+  /** Tap on the top chip: with two PLCs it picks the one to program, otherwise it shows the lab. */
+  onSubTap() {
+    const plcs = plcDevices(this.project);
+    if (plcs.length < 2) { this.setTab('panel'); return; }
+    popupMenu(this.subEl, plcs.map((d) => ({
+      icon: d.id === this.activeId ? 'check' : 'cpu',
+      label: plcName(this.project, d),
+      hint: DEVICE_DEFS[d.type].short,
+      action: () => this.selectPlc(d.id),
+    })));
+  }
+
+  /** Program another PLC: its ladder opens and the laptop's USB cable moves over to it. */
+  selectPlc(id) {
+    const P = this.project;
+    if (this.sys) { const rt = this.sys.plc; if (rt && rt.cpu.powered) this.sys.saveLatched(rt); }
+    if (!switchPlc(P, id)) return;
+    this.activeId = id;
+    const pc = P.devices.find((d) => d.type === 'laptop');
+    let moved = false;
+    if (pc) {
+      const usb = P.conns.find((c) => (c.a.dev === pc.id && c.a.port === 'USB') || (c.b.dev === pc.id && c.b.port === 'USB'));
+      const other = usb && (usb.a.dev === pc.id ? usb.b : usb.a);
+      if (!usb || other.dev !== id) {
+        if (usb) P.conns = P.conns.filter((c) => c !== usb);
+        try { P.conns.push(makeConn(P.devices, pc.id, 'USB', id, 'USB')); moved = true; } catch (e) { /* no USB port */ }
+      }
+    }
+    this.onPlcSwitched();
+    if (moved) this.commitHardware('Move USB cable', { devices: false });
+    else this.save();
+    const dev = P.devices.find((d) => d.id === id);
+    toast(`Now programming ${plcName(P, dev)}${moved ? ' — the laptop USB cable is plugged into it' : ''}`);
+  }
+
+  onPlcSwitched() {
+    this.updateSub();
+    this.laptopDirty = true;
+    for (const v of Object.values(this.views)) if (v.onPlcSwitched) v.onPlcSwitched();
+  }
+
+  /** After devices change: if the PLC being programmed was removed, open the other PLC's program. */
+  fixActivePlc() {
+    const P = this.project;
+    const ids = plcDevices(P).map((d) => d.id);
+    const was = this.activeId;
+    if (was && !ids.includes(was) && ids.length) {
+      P.plcs = P.plcs || {};
+      P.plcs[was] = { program: P.program, plc: P.plc };
+      const next = ids[0], st = P.plcs[next];
+      delete P.plcs[next];
+      if (st) { P.program = normalizeProgram(st.program); P.plc = st.plc || { downloaded: null, latched: null }; }
+      P.activePlc = next;
+      this.activeId = next;
+      this.onPlcSwitched();
+      return;
+    }
+    this.activeId = activePlcId(P);
+    if (ids.length > 1) P.activePlc = this.activeId;
   }
 
   // ------------------------------------------------------------------ project / undo
@@ -184,6 +250,7 @@ export class LabScreen {
   /** Commit a hardware change (devices / wiring). */
   commitHardware(label, { devices = true } = {}) {
     this.pruneConns();
+    if (devices) this.fixActivePlc();
     const snap = this.hwSerialize();
     if (snap !== this.snapshot) {
       this.history.push(this.snapshot);
@@ -225,6 +292,7 @@ export class LabScreen {
     this.project.devices = s.devices;
     this.project.conns = s.conns;
     this.snapshot = snap;
+    this.fixActivePlc();
     this.scene.syncDevices();
     if (this.sys) this.sys.sync();
     this.views.panel.refresh();
@@ -531,7 +599,7 @@ export class LabScreen {
   }
 
   // ------------------------------------------------------------------ helpers for the views
-  plcDevice() { return this.project.devices.find((d) => DEVICE_DEFS[d.type].category === 'plc') || null; }
+  plcDevice() { const id = activePlcId(this.project); return id ? this.project.devices.find((d) => d.id === id) : null; }
   plcModel() { const d = this.plcDevice(); return d ? DEVICE_DEFS[d.type].model : null; }
   deviceName(dev) {
     const def = DEVICE_DEFS[dev.type];

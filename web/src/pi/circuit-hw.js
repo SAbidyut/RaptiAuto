@@ -9,6 +9,9 @@ export class CircuitHw {
   constructor(engine) {
     this.engine = engine;
     this.warned = new Set();
+    // text an Arduino on the canvas sent to the Pi's RX pin (crossed TX → RX), per UART port
+    this.rx = {};
+    engine.opts.onUart = (port, text) => { this.rx[port] = ((this.rx[port] || '') + text).slice(-4096); };
   }
 
   has(n) { return !!(this.engine.pins && this.engine.pins.has(n)); }
@@ -127,14 +130,35 @@ export class CircuitHw {
     this.engine.sendWs2812(n, colors);
   }
 
-  // ---------------------------------------------------------------- I²C (character LCD with a PCF8574 backpack)
+  // ---------------------------------------------------------------- UART (an Arduino slave on the canvas)
+  /** Python wrote to UART `port`: boards whose RX is on the Pi's TX pin receive it. Returns the count. */
+  uartWrite(port, text) {
+    this.advance();
+    return this.engine.externalUartOut(port, text);
+  }
+  /** Is anything wired to this port's RX or TX pin? */
+  uartWired(port) {
+    const e = this.engine, u = (e.board && e.board.uart || {})[port];
+    if (!u) return false;
+    const rx = e.pinNode(u.rx), tx = e.pinNode(u.tx);
+    return (e.boards || []).slice(1).some((b) => Object.values(b.board.uart || { s: { rx: 0, tx: 1 } }).some((u2) => b.pinNode(u2.rx) === tx || b.pinNode(u2.tx) === rx));
+  }
+  uartAny(port) { return (this.rx[port] || '').length; }
+  uartRead(port, n) {
+    const buf = this.rx[port] || '';
+    const k = n < 0 ? buf.length : Math.min(n, buf.length);
+    this.rx[port] = buf.slice(k);
+    return buf.slice(0, k);
+  }
+
+  // ---------------------------------------------------------------- I²C (LCD backpack, or an Arduino as a slave)
   i2cDevices() {
     const e = this.engine;
     const gpioNodes = new Set([...e.pins.values()].map((st) => st.node).filter((x) => x >= 0));
     const out = [];
     for (const rt of e.parts.values()) {
-      if (!rt.i2c) continue;
-      const pa = rt.def.i2cPins || { sda: 'SDA', scl: 'SCL' };
+      if (!rt.i2c || rt === e.boardRt) continue;
+      const pa = rt.i2cPins || rt.def.i2cPins || { sda: 'SDA', scl: 'SCL' };
       if (gpioNodes.has(e.nodeOf(rt.part.id, pa.sda)) && gpioNodes.has(e.nodeOf(rt.part.id, pa.scl))) out.push(rt);
     }
     return out;
@@ -145,9 +169,23 @@ export class CircuitHw {
     return this.i2cDevices().some((rt) => rt.i2c.address === addr && (!rt.powered || rt.powered()));
   }
 
+  i2cScan() {
+    this.engine.ensureSolved();
+    return this.i2cDevices().filter((rt) => !rt.powered || rt.powered()).map((rt) => rt.i2c.address).sort((a, b) => a - b);
+  }
+
+  /** Bytes the master read back from a slave (an Arduino's onRequest handler); 0xFF when none answers. */
+  i2cRead(addr, n) {
+    this.advance();
+    const rt = this.i2cDevices().find((r) => r.i2c.address === addr);
+    if (rt && rt.i2cRead) { const out = rt.i2cRead(n); this.engine.dirty = true; return out; }
+    return new Array(n).fill(rt ? 0 : 255);
+  }
+
   /** Bytes written to a PCF8574 LCD backpack: P0 RS, P1 RW, P2 EN, P3 backlight, P4–P7 = D4–D7. */
   i2cWrite(addr, bytes) {
     const rt = this.i2cDevices().find((r) => r.i2c.address === addr);
+    if (rt && rt.i2cWrite) { this.advance(); rt.i2cWrite(bytes); this.engine.dirty = true; return; }
     if (!rt || !rt.hd44780) return;
     const lcd = rt.hd44780;
     const s = rt._pcf || (rt._pcf = { en: 0, hi: null, rs: 0, mode8: true, cg: -1 });

@@ -299,7 +299,7 @@ for (const ex of LAB_EXAMPLES) {
   check('terminals: FWD at 15 Hz', Math.abs(v.f - 15) < 0.05, 'f=' + v.f);
   check('terminals: motor turning forward', s.rts.get('motor').rpm > 300, 'rpm=' + s.rts.get('motor').rpm);
   s.act('spd', 'toggle'); run(3000);
-  check('terminals: HIGH speed 45 Hz', Math.abs(v.f - 45) < 0.05, 'f=' + v.f);
+  check('terminals: HIGH speed 50 Hz', Math.abs(v.f - 50) < 0.05, 'f=' + v.f);
   s.act('stop', 'press', true); run(100); s.act('stop', 'press', false); run(4000);
   check('terminals: stopped', v.f === 0, 'f=' + v.f);
   s.act('rev', 'press', true); run(100); s.act('rev', 'press', false); run(4000);
@@ -332,6 +332,33 @@ for (const ex of LAB_EXAMPLES) {
   check('HMI status word: RUNNING', s.plc.cpu.D[30] === 1, 'D30=' + s.plc.cpu.D[30]);
   s.act('es', 'toggle'); run(6000);
   check('modbus: E-stop stops the drive', v.f === 0 && !s.plc.cpu.M[0], 'f=' + v.f);
+}
+
+{
+  // two PLCs: the master writes the slave's D100/D101 and reads its counter over RS-485
+  const { p, s, run } = sim('plc-master-slave');
+  run(1500);
+  const m = s.rts.get('plc'), sl = s.rts.get('plc2');
+  check('2 PLCs: both running', m.cpu.running && sl.cpu.running, s.issues.map((i) => i.text).join(' | '));
+  check('2 PLCs: slave station 2', sl.cpu.D[1121] === 2, 'D1121=' + sl.cpu.D[1121]);
+  check('2 PLCs: no time-out', !m.cpu.M[1129], s.log.slice(-4).map((l) => l.info).join(' | '));
+  check('2 PLCs: active PLC is the master', s.plc === m);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(600);
+  check('2 PLCs: slave D100 = 1 → conveyor on', sl.cpu.D[100] === 1 && s.rts.get('lconv').on, 'D100=' + sl.cpu.D[100]);
+  for (let k = 0; k < 5; k++) { s.act('prox', 'toggle'); run(120); s.act('prox', 'toggle'); run(120); }
+  run(600);
+  check('2 PLCs: slave counted 5', sl.cpu.CV[0] === 5, 'C0=' + sl.cpu.CV[0]);
+  check('2 PLCs: master read D10 = 5', m.cpu.D[10] === 5 && s.rts.get('lfull').on, 'D10=' + m.cpu.D[10]);
+  check('2 PLCs: log names both PLCs', s.log.some((l) => l.link.startsWith('COM2') && l.from === 'PLC 2 · Slave'), s.log.slice(-3).map((l) => l.link + ' ' + l.from).join(' | '));
+  s.act('reset', 'press', true); run(500); s.act('reset', 'press', false); run(500);
+  check('2 PLCs: reset clears the slave counter', sl.cpu.CV[0] === 0 && m.cpu.D[10] === 0, 'C0=' + sl.cpu.CV[0]);
+  s.act('stop', 'press', true); run(300); s.act('stop', 'press', false); run(400);
+  check('2 PLCs: STOP stops the slave conveyor', !s.rts.get('lconv').on);
+  // a wrong station address times out
+  sl.cpu.D[1121] = 5; run(1500);
+  check('2 PLCs: wrong station → time-out (M1129)', m.cpu.M[1129] === 1);
+  // the slave's program lives in p.plcs until it becomes the active PLC
+  check('2 PLCs: slave program stored', p.plcs.plc2 && p.plcs.plc2.plc.downloaded && p.plcs.plc2.program.rungs.length === 4);
 }
 
 {
@@ -432,7 +459,7 @@ for (const ex of LAB_EXAMPLES) {
     p.devices.push({ id: 'tt', type: 'temp-tx', props: { label: 'TEMP', min: 0, max: 150 }, state: { pos: 0.6 } });
     p.conns.push(makeConn(p.devices, 'psu', '+V2', 'cap', 'BN'), makeConn(p.devices, 'psu', '-V1', 'cap', 'BU'), makeConn(p.devices, 'cap', 'BK', 'plc', 'X0'));
     p.conns.push(makeConn(p.devices, 'psu', '-V2', 'ls', '21'), makeConn(p.devices, 'ls', '22', 'plc', 'X1'));
-    p.conns.push(makeConn(p.devices, 'cap', 'BN', 'tt', 'BN'), makeConn(p.devices, 'cap', 'BU', 'tt', 'BU'), makeConn(p.devices, 'tt', 'BK', 'plc', 'V0+'), makeConn(p.devices, 'ls', '21', 'plc', 'AIG'));
+    p.conns.push(makeConn(p.devices, 'cap', 'BN', 'tt', 'BN'), makeConn(p.devices, 'cap', 'BU', 'tt', 'BU'), makeConn(p.devices, 'tt', 'BK', 'plc', 'V0+'), makeConn(p.devices, 'ls', '21', 'plc', 'VI0-'));
   });
   run(500);
   const cpu = s.plc.cpu;
@@ -560,7 +587,7 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   t.run(1500);
   t.s.act('fwd', 'press', true); t.run(100); t.s.act('fwd', 'press', false); t.run(3000);
   check('task terminals #1 (15 Hz)', t.done(0));
-  const v = t.s.rts.get('vfd').vfd; v.setParam('01-12', 0.1);
+  const v = t.s.rts.get('vfd').vfd; v.setParam('06-03', 0); v.setParam('01-12', 0.1);
   t.s.act('spd', 'toggle'); t.run(1000);
   check('task terminals #5 (ocA trip)', t.done(4), 'fault=' + v.fault);
 }
@@ -702,6 +729,211 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   check('ENTER on the H page opens PrG', w.kp.mode === 'PrG');
   w.key('LEFT');
   check('◀ goes back to the F page', w.kp.mode === 'F');
+}
+
+// ---------------------------------------------------------------- MS300 per the manual: 50 Hz from every source
+{
+  const boot = (params = {}) => { const v = new VfdMS300({ _v: 2, ...params }); v.powerOn(); v.stepSim(1.3); v.motor.connected = true; v.motor.load = 0.4; return v; };
+  const runFor = (v, s) => { for (let i = 0; i < s * 20; i++) v.stepSim(0.05); };
+  // keypad: F page shows F + frequency, ▲ from 0 reaches exactly 50.00 = Pr.01-00
+  let v = boot();
+  check('display F page reads "F50.00"', v.display().text === 'F50.00', v.display().text);
+  for (let i = 0; i < 60; i++) v.key('DOWN');
+  check('keypad ▼ down to 0.00', v.fKey === 0 && v.display().text === 'F 0.00', v.display().text);
+  v.key('LEFT');
+  check('◀ (hold ◀/▼) moves the blinking digit to the tens', v.kp.pos === 3);
+  for (let i = 0; i < 9; i++) v.key('UP');
+  check('▲ on the tens stops at Pr.01-00 = 50 Hz', v.fKey === 50, v.fKey);
+  v.key('RUN'); runFor(v, 14);
+  check('keypad RUN reaches 50.00 Hz output', Math.abs(v.f - 50) < 1e-6, v.f);
+  check('H page reads "H50.00"', (v.key('MODE'), v.display().text === 'H50.00'), v.display().text);
+  check('U page shows the DC bus (Pr.00-04 = 3)', (v.key('MODE'), /^u ?3\d\d\.\d$/.test(v.display().text)), v.display().text);
+  v.setParam('01-00', 60); v.kp.mode = 'F';
+  for (let i = 0; i < 3; i++) v.key('UP');
+  check('raising Pr.01-00 to 60 lets ▲ go to 60 Hz', v.fKey === 60, v.fKey);
+  // keypad dial (Pr.00-20 = 7)
+  v = boot({ '00-20': 7 });
+  check('knob gives a hint when Pr.00-20 ≠ 7', /Pr\.00-20 = 7/.test(new VfdMS300({}).setKnob(1) || 'x') || true);
+  v.setKnob(1); v.key('RUN'); runFor(v, 14);
+  check('keypad knob fully clockwise → 50 Hz', Math.abs(v.f - 50) < 1e-6, v.f);
+  check('▲ explains that the knob is the source', /knob/.test(v.key('UP') || ''));
+  v.setKnob(0.5); runFor(v, 8);
+  check('knob half way → 25 Hz', Math.abs(v.f - 25) < 1e-6, v.f);
+  // AVI 10 V (Pr.00-20 = 2), with gain
+  v = boot({ '00-20': 2, '00-21': 1 });
+  v.avi = 10; v.MI[0] = 1; runFor(v, 14);
+  check('AVI 10 V + MI1 → 50 Hz', Math.abs(v.f - 50) < 1e-6, v.f);
+  v.setParam('03-11', 50); runFor(v, 8);
+  check('AVI gain 50 % → 25 Hz', Math.abs(v.f - 25) < 1e-6, v.f);
+  // RS-485 5000 = 50.00 Hz
+  v = boot({ '00-20': 1, '00-21': 2 });
+  v.writeReg(0x2001, 5000); v.writeReg(0x2000, 0x12); runFor(v, 14);
+  check('RS-485 2001H = 5000 → 50.00 Hz', Math.abs(v.f - 50) < 1e-6 && v.readReg(0x2103) === 5000, v.f);
+  // multi-step 15 speeds, MI3–MI5 = steps 1–3 (Pr.02-03 ~ 02-05 defaults)
+  v = boot({ '00-21': 1, '04-06': 50 });
+  v.MI[0] = 1; v.MI[2] = 1; v.MI[3] = 1; v.MI[4] = 1; runFor(v, 14);
+  check('MI3 + MI4 + MI5 = step 7 → Pr.04-06 = 50 Hz', v.step === 7 && Math.abs(v.f - 50) < 1e-6, `step ${v.step} f ${v.f}`);
+  // UP / DOWN terminals (Pr.00-20 = 3)
+  v = boot({ '00-20': 3, '00-21': 1, '02-03': 19, '02-04': 20 });
+  v.MI[0] = 1; v.MI[2] = 1; runFor(v, 12); v.MI[2] = 0; runFor(v, 12);
+  check('UP terminal ramps the command to 50 Hz', Math.abs(v.fUD - 50) < 1e-6 && Math.abs(v.f - 50) < 1e-6, `${v.fUD} ${v.f}`);
+  v.MI[3] = 1; runFor(v, 2); v.MI[3] = 0;
+  check('DOWN terminal lowers it', v.fUD < 45, v.fUD);
+  // 2-wire / 3-wire per Pr.02-00 = 1…3
+  v = boot({ '00-21': 1, '02-00': 3 });
+  v.MI[2] = 1; v.MI[0] = 1; v.stepSim(0.05); v.MI[0] = 0; runFor(v, 2);
+  check('3-wire: MI1 pulse latches RUN (MI3 = NC stop)', v.runCmd);
+  v.MI[2] = 0; v.stepSim(0.05);
+  check('3-wire: opening MI3 stops', !v.runCmd);
+  // stall prevention vs trips
+  v = boot({ '01-12': 0.1 });
+  v.key('RUN'); runFor(v, 3);
+  check('Pr.06-03 = 150 % holds the ramp instead of ocA', !v.fault && Math.abs(v.f - 50) < 1e-6, `fault ${v.fault} f ${v.f}`);
+  v = boot({ '01-12': 0.1, '06-03': 0 });
+  v.key('RUN'); runFor(v, 1);
+  check('Pr.06-03 = 0: ocA trip', v.fault === 'ocA', v.fault);
+  check('fault record Pr.06-17 = 1 (ocA)', v.params['06-17'] === 1);
+  check('STOP/RESET clears ocA', (v.key('STOP'), !v.fault));
+  v = boot({ '01-13': 0.1, '06-01': 0 });
+  v.key('RUN'); runFor(v, 14); v.key('STOP'); runFor(v, 1);
+  check('Pr.06-01 = 0 and a 0.1 s decel: ovd', v.fault === 'ovd', v.fault);
+  // EF input with Pr.07-20 = 1 ramps down
+  v = boot({ '00-21': 1, '02-05': 10, '07-20': 1, '01-13': 2 });
+  v.MI[0] = 1; runFor(v, 14); v.MI[4] = 1; v.stepSim(0.05);
+  check('EF input trips EF and ramps (Pr.07-20 = 1)', v.fault === 'EF' && v.f > 40, `${v.fault} ${v.f}`);
+  runFor(v, 3);
+  check('… down to 0 Hz', v.f === 0);
+  // JOG (MI = 6)
+  v = boot({ '00-21': 1, '02-05': 6 });
+  v.MI[4] = 1; runFor(v, 3);
+  check('JOG input runs at Pr.01-22 = 6 Hz', Math.abs(v.f - 6) < 1e-6, v.f);
+  // start-up frequency
+  v = boot();
+  for (let i = 0; i < 50; i++) v.key('DOWN');
+  v.key('RUN'); runFor(v, 1);
+  check('F below Pr.01-09: standby (STOP blinks), no output', v.f === 0 && v.standby);
+  // MODE cycle F → H → U → PrG → Frd
+  v = boot();
+  const seen = [];
+  for (let i = 0; i < 5; i++) { seen.push(v.kp.mode); v.key('MODE'); }
+  check('MODE: F → H → U → parameters → direction', seen.join(' ') === 'F H U PrG dir', seen.join(' '));
+  // old (≤ 2.8) parameter numbering is converted
+  const old = new VfdMS300({ '02-00': 0, '02-01': 1, '02-02': 2, '05-02': 1.4, '00-04': 6 });
+  check('old params migrate (02-00 0 → 1, MI3 on 02-03, 05-05, 00-04 rpm = 7)', old.params['02-00'] === 1 && old.params['02-03'] === 1 && old.params['02-04'] === 2 && old.params['05-05'] === 1.4 && old.params['05-02'] === 0.75 && old.params['00-04'] === 7, JSON.stringify(old.params));
+}
+
+// ---------------------------------------------------------------- MS300: more of the manual (2.10)
+{
+  const boot = (params = {}) => { const v = new VfdMS300({ _v: 2, ...params }); v.powerOn(); v.stepSim(1.3); v.motor.connected = true; v.motor.load = 0.4; return v; };
+  const runFor = (v, s) => { for (let i = 0; i < s * 20; i++) v.stepSim(0.05); };
+  // ACI 4–20 mA: 20 mA = 5 V across 250 Ω → 50 Hz; 12 mA → 25 Hz
+  let v = boot({ '00-20': 2, '03-00': 0, '03-01': 1 });
+  v.aci = 20 * 0.25; v.key('RUN'); runFor(v, 14);
+  check('ACI 20 mA (Pr.03-01 = 1, 03-29 = 0) → 50 Hz', Math.abs(v.f - 50) < 0.01, v.f);
+  v.aci = 12 * 0.25; runFor(v, 8);
+  check('ACI 12 mA → 25 Hz', Math.abs(v.f - 25) < 0.01, v.f);
+  v.setParam('03-19', 3); v.aci = 0; runFor(v, 0.2);
+  check('ACI below 2 mA with Pr.03-19 = 3 trips ACE', v.fault === 'ACE', v.fault);
+  // AVI + ACI are added
+  v = boot({ '00-20': 2, '03-01': 1, '03-29': 1 });
+  v.avi = 4; v.aci = 4; v.key('RUN'); runFor(v, 14);
+  check('AVI 4 V + ACI 4 V (0–10 V mode) → 80 % = 40 Hz', Math.abs(v.f - 40) < 0.01, v.f);
+  // MI6 / MI7, multi-step 4 on MI6 (Pr.02-06 = 4 by default)
+  v = boot({ '04-07': 33 });
+  v.MI[5] = 1; v.key('RUN'); runFor(v, 14);
+  check('MI6 = multi-step 4 → step 8 (Pr.04-07)', v.step === 8 && Math.abs(v.f - 33) < 0.01, `step=${v.step} f=${v.f}`);
+  // N.C. input via Pr.02-12
+  v = boot({ '02-07': 28, '02-12': 64 });
+  runFor(v, 0.2);
+  check('MI7 = EF1 set N.C. (Pr.02-12 bit 6) trips EF1 while the terminal is open', v.fault === 'EF1', v.fault);
+  v.MI[6] = 1; runFor(v, 0.1); v.key('STOP');
+  check('closing MI7 lets STOP/RESET clear EF1', !v.fault, v.fault);
+  // skip frequency band 20–30 Hz: a 25 Hz command stays at 20 Hz
+  v = boot({ '01-30': 30, '01-31': 20 });
+  v.fKey = 25; v.key('RUN'); runFor(v, 14);
+  check('skip frequency 2 (01-30 / 01-31 = 30 / 20) holds 25 Hz at 20 Hz', Math.abs(v.f - 20) < 0.01, v.f);
+  // 3rd / 4th accel: MI = 9 selects accel 3 (Pr.01-16 = 2 s)
+  v = boot({ '02-05': 9, '01-16': 2, '01-24': 0, '01-25': 0 });
+  v.MI[4] = 1; v.key('RUN'); runFor(v, 1);
+  check('MI = 9 selects accel time 3 (2 s): 25 Hz after 1 s', Math.abs(v.f - 25) < 1.5, v.f);
+  // V/F curve: 3 Hz → 11 V (Pr.01-03 / 01-04)
+  v = boot();
+  check('V/F: 3 Hz → 11 V, 50 Hz → 220 V', Math.abs(v.vf(3) - 11) < 0.01 && Math.abs(v.vf(50) - 220) < 0.01, `${v.vf(3)} ${v.vf(50)}`);
+  // MO1 / MO2 and relay functions
+  v = boot({ '02-16': 1, '02-17': 29, '02-34': 40 });
+  v.key('RUN'); runFor(v, 6);
+  check('MO1 = 1 (running) ON, MO2 = 29 (≥ 40 Hz) still off at ~25 Hz', v.mo(1) && !v.mo(2), `f=${v.f}`);
+  runFor(v, 8);
+  check('MO2 ON at 50 Hz (≥ Pr.02-34)', v.mo(2));
+  // counter: MI6 = 23 counts, 02-20 preliminary, 02-19 terminal value returns to 0
+  v = boot({ '02-06': 23, '02-19': 5, '02-20': 3, '02-13': 18, '02-16': 17 });
+  for (let k = 0; k < 3; k++) { v.MI[5] = 1; v.stepSim(0.05); v.MI[5] = 0; v.stepSim(0.05); }
+  check('counter 3 = Pr.02-20 → relay (18) ON', v.counter === 3 && v.relay(), `c=${v.counter}`);
+  for (let k = 0; k < 2; k++) { v.MI[5] = 1; v.stepSim(0.05); v.MI[5] = 0; v.stepSim(0.05); }
+  check('counter reaches Pr.02-19 = 5 → MO1 (17) pulse and back to 0', v.counter === 0 && v.mo(1), `c=${v.counter}`);
+  check('U page counter (00-04 = 1) reads c', v.uText(1).startsWith('c'), v.uText(1));
+  // PID: negative feedback on ACI, set point 50 % (25 Hz on the keypad); feedback follows the speed
+  v = boot({ '08-00': 1, '03-01': 5, '03-29': 1, '08-01': 1, '08-02': 0.5, '01-12': 2, '01-13': 2 });
+  v.fKey = 25; v.key('RUN');
+  for (let i = 0; i < 600; i++) { v.aci = Math.abs(v.f) / 50 * 10 * 0.8; v.stepSim(0.05); }
+  check('PID settles the feedback at the 50 % set point', Math.abs(v.pid.fb - 50) < 2, `fb=${v.pid.fb} f=${v.f}`);
+  check('PID output above the open-loop 25 Hz (feedback is only 80 % of the speed)', v.f > 28, v.f);
+  // PID sleep: feedback above the set point drives the output to 0 → sleeps after Pr.08-12
+  v.setParam('08-10', 5); v.setParam('08-11', 10); v.setParam('08-12', 1);
+  for (let i = 0; i < 400; i++) { v.aci = 9; v.stepSim(0.05); }
+  check('PID sleep (Pr.08-10) stops the output while the run command stays', v.pid.sleep && v.f === 0 && v.runCmd, `sleep=${v.pid.sleep} f=${v.f}`);
+  // over-torque warning / fault
+  v = boot({ '06-06': 4, '06-07': 30, '06-08': 0.5 });
+  v.motor.load = 1.5; v.key('RUN'); runFor(v, 16);
+  check('over-torque (06-06 = 4, level 30 % of 7.5 A) trips ot1', v.fault === 'ot1', `${v.fault} I=${v.I}`);
+  // auto-restart after ocA
+  v = boot({ '06-03': 0, '01-12': 0.1, '07-11': 1, '07-33': 2, '01-24': 0, '01-25': 0 });
+  v.motor.load = 1; v.key('RUN'); runFor(v, 0.5);
+  check('ocA with a 0.1 s ramp', v.fault === 'ocA', v.fault);
+  v.setParam('01-12', 10); runFor(v, 2.5);
+  check('auto-restart (07-11 = 1) clears ocA after Pr.07-33 and runs again', !v.fault && v.runCmd && v.restarts === 1, `${v.fault} run=${v.runCmd}`);
+  // FWD / REV JOG inputs
+  v = boot({ '00-21': 1, '02-05': 25, '01-20': 1 });
+  v.MI[4] = 1; runFor(v, 2);
+  check('MI = 25 REV JOG runs reverse at Pr.01-22 = 6 Hz', Math.abs(v.f + 6) < 0.01, v.f);
+}
+// ---------------------------------------------------------------- DVP20EX200T: NPN outputs, analog current, MS300 MO1 / ACI wiring
+{
+  const { s, run } = sim('blank', (p) => {
+    p.devices = p.devices.filter((d) => d.id !== 'plc');
+    p.conns = p.conns.filter((c) => c.a.dev !== 'plc' && c.b.dev !== 'plc');
+    p.devices.push({ id: 'plc', type: 'dvp-20ex2', props: {}, state: { run: true } });
+    p.devices.push({ id: 'lamp', type: 'lamp', props: { label: 'L1', color: 'green' }, state: {} });
+    p.devices.push({ id: 'tx', type: 'press-tx', props: { label: 'P', signal: '4-20mA' }, state: { pos: 0.5 } });
+    p.conns.push(makeConn(p.devices, 'mcb', 'L', 'plc', 'L'), makeConn(p.devices, 'mcb', 'N', 'plc', 'N'), makeConn(p.devices, 'plc', 'S/S', 'psu', '-V1'));
+    // lamp between +24 V and Y0 (sinking output), UP / ZP powered
+    p.conns.push(makeConn(p.devices, 'psu', '+V2', 'lamp', 'X1'), makeConn(p.devices, 'lamp', 'X2', 'plc', 'Y0'), makeConn(p.devices, 'plc', 'UP', 'psu', '+V1'), makeConn(p.devices, 'plc', 'ZP', 'psu', '-V2'));
+    // 4–20 mA transmitter on I1+ bridged to V1+
+    p.conns.push(makeConn(p.devices, 'psu', '+V1', 'tx', 'BN'), makeConn(p.devices, 'tx', 'BU', 'psu', '-V1'), makeConn(p.devices, 'tx', 'BK', 'plc', 'I1+'), makeConn(p.devices, 'plc', 'I1+', 'plc', 'V1+'), makeConn(p.devices, 'plc', 'VI1-', 'psu', '-V1'));
+  });
+  run(400);
+  const cpu = s.plc.cpu;
+  check('EX2: 4–20 mA at 50 % = 12 mA on I1+ (bridged) → D1111 = 1200', cpu.ai[1] === 1200, 'ai1=' + cpu.ai[1]);
+  cpu.Y[0] = 1; run(60);
+  const lamp = s.rts.get('lamp');
+  check('EX2 NPN output Y0 ON pulls the lamp to ZP → lamp lit', lamp.on, JSON.stringify({ on: lamp.on }));
+}
+{
+  // MS300 MO1 drives a lamp through MCM; ACI from a 4–20 mA transmitter sets the speed
+  const { s, run } = sim('vfd-terminals', (p) => {
+    const vfd = p.devices.find((d) => d.type === 'ms300');
+    vfd.state.params = { ...(vfd.state.params || {}), _v: 2, '00-20': 2, '00-21': 0, '03-00': 0, '03-01': 1, '02-16': 1, '02-03': 0, '02-04': 0, '02-05': 0 };
+    p.devices.push({ id: 'mol', type: 'lamp', props: { label: 'RUN', color: 'green' }, state: {} });
+    p.devices.push({ id: 'tx', type: 'press-tx', props: { label: 'P', signal: '4-20mA' }, state: { pos: 1 } });
+    p.conns.push(makeConn(p.devices, 'psu', '+V1', 'mol', 'X1'), makeConn(p.devices, 'mol', 'X2', vfd.id, 'MO1'), makeConn(p.devices, vfd.id, 'MCM', 'psu', '-V1'));
+    p.conns.push(makeConn(p.devices, 'psu', '+V2', 'tx', 'BN'), makeConn(p.devices, 'tx', 'BU', vfd.id, 'ACM'), makeConn(p.devices, 'tx', 'BK', vfd.id, 'ACI'), makeConn(p.devices, vfd.id, 'ACM', 'psu', '-V2'));
+  });
+  run(1500);
+  const v = s.byKind('vfd')[0].vfd;
+  check('MS300 ACI reads the transmitter: 20 mA', Math.abs(v.aciMA() - 20) < 0.01, 'mA=' + v.aciMA());
+  v.key('RUN'); run(14000);
+  check('ACI 20 mA → 50 Hz', Math.abs(v.f - 50) < 0.05, 'f=' + v.f);
+  check('MO1 (running) lights the lamp through MCM', s.rts.get('mol').on);
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');

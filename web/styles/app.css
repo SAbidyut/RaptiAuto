@@ -695,3 +695,24 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .editor.fs:not(.fs-clean) .side-tools, .lab.fs:not(.fs-clean) .lab-tools { top: calc(52px + var(--safe-t)) !important; }
 .editor.fs.fs-clean .fs-bar, .editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar, .editor.fs.fs-clean:not(.runsplit) .serial-toolbar { display: none !important; }
 .lab.fs.fs-clean .lab-fs-bar, .lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
+
+/* several boards in one project: one code tab per board */
+.code-tabs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.code-tabs::-webkit-scrollbar { display: none; }
+.code-tab { flex: none; display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 4px 11px; border-radius: 10px; background: rgba(148, 163, 184, .08); color: var(--muted); border: 1px solid transparent; line-height: 1.15; }
+.code-tab b { font-size: 12.5px; font-weight: 700; color: #cbd5e1; white-space: nowrap; }
+.code-tab small { font-size: 10.5px; white-space: nowrap; }
+.code-tab.active { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .4); }
+.code-tab.active b { color: #a5f3fc; }
+.code-tab-edit { flex: none; }
+
+/* PLC / Pi lab pages: Examples | My projects switch, Pi example cards */
+.seg-wrap { padding: 0 14px 12px; }
+.seg-wrap .segmented { display: flex; width: 100%; }
+.seg-wrap .seg { flex: 1; justify-content: center; height: 38px; font-size: 14px; }
+.seg-wrap .seg .chip-n { margin-left: 2px; }
+.small-empty { margin: 0 14px; padding: 22px 16px; }
+.pi-ex-thumb { display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #12224a, #0a1124); }
+.pi-ex-thumb > svg { width: 100%; height: 100%; }
+.pi-cont-thumb > svg, .pi-bi-thumb > svg { width: 100%; height: 100%; }
+.pi-continue { width: 100%; text-align: left; }

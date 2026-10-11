@@ -3,11 +3,12 @@
 import { h, toast, Sheet } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
-import { VFD_PARAMS, PARAM_GROUPS, GROUP_NAMES, VfdMS300, FAULTS, paramAddr, defaultParams } from '../sim/vfd.js';
+import { VFD_PARAMS, PARAM_GROUPS, GROUP_NAMES, VfdMS300, FAULTS, paramAddr, defaultParams, faultName } from '../sim/vfd.js';
 import { drawSegDisplay } from '../three/sevenseg.js';
 import { deviceProps } from '../devices/defs.js';
 
-const KEYS = [['MODE', 'MODE'], ['UP', '▲'], ['ENTER', 'ENTER'], ['LEFT', '◀'], ['DOWN', '▼'], ['RUN', 'RUN'], ['STOP', 'STOP / RESET']];
+// the six keys of the MS300 keypad, in the drive's order (◀/▼ is one key: tap ▼, hold ◀)
+const KEYS = [['RUN', 'RUN'], ['UP', '▲'], ['MODE', 'MODE'], ['STOP', 'STOP<br>RESET'], ['LD', '&lt;/▼'], ['ENTER', 'ENTER']];
 
 export class VfdView {
   constructor(lab) {
@@ -26,19 +27,30 @@ export class VfdView {
   build() {
     this.picker = h('div', { class: 'vv-pick' });
     this.disp = document.createElement('canvas');
-    this.disp.width = 360; this.disp.height = 100;
+    this.disp.width = 400; this.disp.height = 120;
     this.disp.className = 'vv-disp';
-    this.leds = h('div', { class: 'vv-leds' }, ...['RUN', 'STOP', 'FWD', 'REV'].map((t) => h('span', { 'data-led': t }, h('i'), t)));
-    this.ind = h('div', { class: 'vv-ind' }, ...['F', 'H', 'A', 'U'].map((t) => h('b', { 'data-i': t }, t)));
+    const ledEl = (t) => h('span', { 'data-led': t }, h('i'), t);
+    this.leds = h('div', { class: 'vv-leds-l' }, ...['RUN', 'FWD', 'REV'].map(ledEl));
+    this.leds2 = h('div', { class: 'vv-leds-r' }, ...['STOP', 'PLC'].map(ledEl));
+    this.knob = h('div', { class: 'vv-knob', title: 'Speed dial (Pr.00-20 = 7)' }, h('i'));
+    this.knobVal = h('small', { class: 'vv-knob-val' }, '');
+    this.bindKnob();
     const keys = h('div', { class: 'vv-keys' });
     for (const [k, label] of KEYS) {
-      keys.appendChild(h('button', { class: 'vv-key k-' + k.toLowerCase(), onpointerdown: (e) => { e.preventDefault(); this.press(k); } }, label));
+      const b = h('button', { class: 'vv-key k-' + k.toLowerCase(), html: label });
+      this.bindKey(b, k);
+      keys.appendChild(b);
     }
     this.pad = h('div', { class: 'vv-pad' },
-      h('div', { class: 'vv-brand', html: '<b>▲ DELTA</b><span>MS300</span>' }),
-      h('div', { class: 'vv-window' }, this.disp, this.ind), this.leds, keys,
-      h('div', { class: 'vv-model' }, 'VFD7A5MS21ANSAA · 1.5 kW · 230 V'),
-      h('div', { class: 'vv-help', html: '<b>MODE</b> F → H → A → U → Frd/rEv → PrG · <b>▲ ▼</b> frequency, direction or value · <b>◀</b> next digit / back · <b>ENTER</b> confirm / parameters · <b>RUN</b> / <b>STOP</b> need Pr.00-21 = 0 (keypad); STOP also stops terminal or RS-485 control (Pr.00-32)' }));
+      h('div', { class: 'vv-face' },
+        h('div', { class: 'vv-logo', html: '<svg viewBox="0 0 20 18" width="15" height="13"><path d="M10 1 19 17H1Z" fill="currentColor"/><path d="M10 7 13.6 13.6H6.4Z" fill="#101114"/></svg><b>DELTA</b>' }),
+        h('div', { class: 'vv-top' }, this.leds, h('div', { class: 'vv-window' }, this.disp), this.leds2, h('div', { class: 'vv-dial' }, this.knob, this.knobVal)),
+        keys),
+      h('div', { class: 'vv-cover' },
+        h('div', { class: 'vv-cover-logo', html: '<svg viewBox="0 0 20 18" width="22" height="20"><path d="M10 1 19 17H1Z" fill="currentColor"/><path d="M10 7 13.6 13.6H6.4Z" fill="#45484e"/></svg><b>DELTA</b>' }),
+        h('div', { class: 'vv-cover-model' }, 'MS300'),
+        h('div', { class: 'vv-model' }, 'VFD7A5MS21ANSAA · 1.5 kW · 1~230 V')),
+      h('div', { class: 'vv-help', html: '<b>MODE</b> F → H → U → parameters → Frd/rEv · <b>▲</b> / <b>▼</b> (tap &lt;/▼) frequency, value or direction · hold <b>&lt;/▼</b> = ◀ next digit · <b>ENTER</b> confirm / open parameters · <b>RUN</b> / <b>STOP</b> work when Pr.00-21 = 0; STOP also stops terminal / RS-485 control (Pr.00-32) and resets a fault · the <b>dial</b> sets the speed when Pr.00-20 = 7' }));
     this.cards = h('div', { class: 'vv-cards' });
     this.chart = document.createElement('canvas');
     this.chart.className = 'vv-chart';
@@ -49,7 +61,8 @@ export class VfdView {
       this.cards,
       h('div', { class: 'vv-sec' }, h('h4', {}, 'Live trend · output Hz & current'), this.chart),
       h('div', { class: 'vv-sec' }, h('h4', {}, 'Parameters'), h('div', { class: 'search-box', html: icon('search', 18) }, this.search), this.paramsEl),
-      h('div', { class: 'vv-sec' }, h('h4', {}, 'Modbus registers (RS-485)'), modbusRef()));
+      h('div', { class: 'vv-sec' }, h('h4', {}, 'Modbus registers (RS-485)'), modbusRef()),
+      h('div', { class: 'vv-sec' }, h('h4', {}, 'Fault codes (Pr.06-17 ~ 06-22)'), faultRef()));
     this.empty = h('div', { class: 'empty-state vv-empty hidden' },
       h('div', { class: 'empty-ic big', html: icon('gauge', 36) }), h('h2', {}, 'No VFD in this lab'),
       h('p', {}, 'Add a Delta MS300 drive and a motor from the Lab tab (＋).'),
@@ -76,17 +89,74 @@ export class VfdView {
     this.drawChart();
   }
 
-  press(k) {
+  /** Touch behaviour of a key: ▲ repeats while held, ◀/▼ is ▼ on a tap and ◀ when held. */
+  bindKey(b, k) {
+    let timer = null, held = false;
+    const stop = (fire) => {
+      clearTimeout(timer); timer = null;
+      if (k === 'LD' && fire && !held) this.press('DOWN');
+      b.classList.remove('down');
+    };
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { b.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      held = false;
+      b.classList.add('down');
+      if (k === 'LD') { timer = setTimeout(() => { held = true; this.press('LEFT'); }, 550); return; }
+      this.press(k);
+      if (k === 'UP') {
+        const rep = () => { this.press('UP', true); timer = setTimeout(rep, 90); };
+        timer = setTimeout(rep, 450);
+      }
+    });
+    b.addEventListener('pointerup', () => stop(true));
+    b.addEventListener('pointercancel', () => stop(false));
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** Drag the dial round (−135° … +135° = 0 … Pr.01-00). */
+  bindKnob() {
+    let hinted = false;
+    const setFrom = (e) => {
+      const r = this.knob.getBoundingClientRect();
+      const a = Math.atan2(e.clientX - (r.left + r.width / 2), -(e.clientY - (r.top + r.height / 2))) * 180 / Math.PI;
+      const v = Math.max(0, Math.min(1, (a + 135) / 270));
+      const dev = this.dev();
+      if (!dev) return;
+      const rt = this.rt();
+      let hint = null;
+      if (rt) hint = this.lab.sys.act(dev.id, 'vfdKnob', v); else dev.state.knob = v;
+      if (hint && !hinted) { hinted = true; toast(hint, 'info', 4200); }
+      this.drawKnob();
+      if (this.lab.scene) this.lab.scene.dirty = true;
+    };
+    this.knob.addEventListener('pointerdown', (e) => { e.preventDefault(); hinted = false; try { this.knob.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } this.knobDrag = true; setFrom(e); });
+    this.knob.addEventListener('pointermove', (e) => { if (this.knobDrag) setFrom(e); });
+    const end = () => { if (this.knobDrag) { this.knobDrag = false; this.lab.save(); } };
+    this.knob.addEventListener('pointerup', end);
+    this.knob.addEventListener('pointercancel', end);
+  }
+
+  drawKnob() {
+    const dev = this.dev();
+    if (!dev) return;
+    const k = Math.max(0, Math.min(1, dev.state.knob ?? 0));
+    this.knob.style.setProperty('--a', (-135 + 270 * k).toFixed(1) + 'deg');
+    const rt = this.rt();
+    const P = rt ? rt.vfd.params : { ...defaultParams(), ...(dev.state.params || {}) };
+    this.knobVal.textContent = (k * P['01-00']).toFixed(1) + ' Hz' + (P['00-20'] === 7 ? '' : ' ·off');
+    this.knobVal.classList.toggle('off', P['00-20'] !== 7);
+  }
+
+  press(k, quiet = false) {
     const rt = this.rt();
     if (!rt) { toast(this.lab.sys ? 'The drive has no power — check R/L1 and S/L2' : 'Press Simulate to power the drive', 'info'); return; }
     if (!rt.vfd.powered) { toast('The drive has no power — check R/L1 and S/L2', 'warn'); return; }
     const hint = this.lab.sys.act(rt.dev.id, 'vfdKey', k);
     const m = this.lab.scene && this.lab.scene.modelOf(rt.dev.id);
     if (m && m.press) m.press(k);
-    Native.vibrate(8);
-    const b = this.pad.querySelector('.k-' + k.toLowerCase());
-    if (b) { b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 130); }
-    if (hint) toast(hint, 'info', 4200);
+    if (!quiet) Native.vibrate(8);
+    if (hint && !quiet) toast(hint, 'info', 4200);
     this.drawDisplay();
     this.drawCards();
     this.drawParams();
@@ -97,10 +167,10 @@ export class VfdView {
     const g = this.disp.getContext('2d');
     g.fillStyle = '#0b0303'; g.fillRect(0, 0, this.disp.width, this.disp.height);
     const d = rt ? rt.vfd.display(rt.vfd.time) : { off: true, leds: {} };
-    if (!d.off) drawSegDisplay(g, 360, 100, d.text, { n: 5, cursor: d.editing || (rt.vfd.kp.mode === 'F') ? d.cursor ?? -1 : -1, blink: Math.floor(performance.now() / 330) % 2 === 0 });
-    for (const b of this.ind.children) b.classList.toggle('on', !!d.leds[b.dataset.i]);
-    for (const s of this.leds.children) s.classList.toggle('on', !!d.leds[s.dataset.led]);
+    if (!d.off) drawSegDisplay(g, this.disp.width, this.disp.height, d.text, { n: 5, cursor: d.cursor ?? -1, blink: Math.floor(performance.now() / 330) % 2 === 0 });
+    for (const s of [...this.leds.children, ...this.leds2.children]) s.classList.toggle('on', !!d.leds[s.dataset.led]);
     this.pad.classList.toggle('off', !!d.off);
+    this.drawKnob();
   }
 
   drawCards() {
@@ -120,8 +190,23 @@ export class VfdView {
       card('Output current', v && v.powered ? v.I.toFixed(2) : '—', 'A'),
       card('Motor speed', motor ? Math.round(Math.abs(motor.rpm)) + (motor.rpm < -1 ? ' ⟲' : '') : '—', 'rpm'),
       card('DC bus / output', v && v.powered ? `${v.dc.toFixed(0)} / ${v.V.toFixed(0)}` : '—', 'V'),
+      card('Max. frequency Pr.01-00', Number(P['01-00']).toFixed(2), 'Hz'),
+      card('Accel / decel time', `${P['01-12']} / ${P['01-13']}`, 's'),
       card('Run command from', src('00-21'), '', 'wide'),
       card('Frequency from', src('00-20'), '', 'wide'));
+    if (v && v.powered) {
+      const dot = (on) => (on ? '●' : '○');
+      this.cards.appendChild(h('div', { class: 'vv-note io' },
+        `MI1–MI7 ${v.MIL.map(dot).join('')}  ·  RA–RC ${v.relay() ? 'closed' : 'open'}  ·  MO1 ${v.mo(1) ? 'ON' : 'off'}  ·  MO2 ${v.mo(2) ? 'ON' : 'off'}  ·  AVI ${v.avi.toFixed(2)} V  ·  ACI ${P['03-29'] === 1 ? v.aci.toFixed(2) + ' V' : v.aciMA().toFixed(1) + ' mA'}  ·  AFM ${v.afm().toFixed(2)} V`));
+      if (v.pidOn()) this.cards.appendChild(h('div', { class: 'vv-note' }, `PID (Pr.08-00 = ${P['08-00']}): set point ${v.pid.sp.toFixed(1)} %, feedback ${v.pid.fb.toFixed(1)} %, output ${v.pid.f.toFixed(2)} Hz${v.pid.sleep ? ' · sleeping (Pr.08-10)' : ''}${v.pid.lost ? ' · feedback lost (AFE)' : ''}`));
+      if (v.miHas(23) || P['02-19'] || P['02-20']) this.cards.appendChild(h('div', { class: 'vv-note' }, `Counter (MI = 23): ${v.counter}  ·  terminal value Pr.02-19 = ${P['02-19']}, preliminary Pr.02-20 = ${P['02-20']}`));
+      if (v.warning) this.cards.appendChild(h('div', { class: 'vv-note' }, `Warning ${v.warning} blinking on the display${v.warning === 'AnL' ? ': ACI 4–20 mA signal lost (Pr.03-19)' : v.warning === 'ot1' ? ': over-torque (Pr.06-06 ~ 06-08)' : v.warning === 'oH1' ? ': heat sink above Pr.06-15' : v.warning === 'AFE' ? ': PID feedback lost (Pr.08-08)' : ''}.`));
+      if (v.autoT > 0 && v.fault) this.cards.appendChild(h('div', { class: 'vv-note' }, `Auto-restart ${v.restarts + 1} of ${P['07-11']} in ${v.autoT.toFixed(0)} s (Pr.07-11 / 07-33).`));
+    }
+    if (v && v.stall) this.cards.appendChild(h('div', { class: 'vv-note' }, v.stall === 'oc' ? 'Over-current stall prevention (Pr.06-03): the drive holds its frequency until the current drops, so the acceleration takes longer.' : 'Over-voltage stall prevention (Pr.06-01): the drive slows its deceleration to keep the DC bus below the limit.'));
+    if (v && v.standby) this.cards.appendChild(h('div', { class: 'vv-note' }, `Standby: the frequency command is below the start-up frequency Pr.01-09 (${P['01-09']} Hz).`));
+    const rec = ['06-17', '06-18', '06-19'].map((id) => P[id]).filter(Boolean);
+    if (rec.length) this.cards.appendChild(h('div', { class: 'vv-note' }, 'Fault record (newest first): ' + rec.map(faultName).join(', ')));
     if (v && v.fault) this.cards.appendChild(h('div', { class: 'vv-fault' }, h('b', {}, v.fault), FAULTS[v.fault].text, ' — press STOP/RESET.'));
   }
 
@@ -239,15 +324,22 @@ function modbusRef() {
     ['2000H', 'W', 'Command: H1 = STOP, H12 = RUN FWD, H22 = RUN REV'],
     ['2001H', 'W', 'Frequency command, 0.01 Hz (5000 = 50.00 Hz)'],
     ['2002H', 'W', 'bit0 = EF (external fault), bit1 = fault reset'],
-    ['2100H', 'R', 'Fault code (0 = none, 1 = ocA, 8 = ovd, 49 = EF …)'],
+    ['2100H', 'R', 'Low byte: fault code (0 = none, 1 = ocA, 8 = ovd, 49 = EF …), high byte: warning (58 = CE10)'],
     ['2101H', 'R', 'Status: bit0–1 run state, bit3–4 direction'],
     ['2102H', 'R', 'Frequency command (0.01 Hz)'],
     ['2103H', 'R', 'Output frequency (0.01 Hz)'],
     ['2104H', 'R', 'Output current (0.01 A)'],
     ['2105H', 'R', 'DC bus voltage (0.1 V)'],
     ['2106H', 'R', 'Output voltage (0.1 V)'],
+    ['2107H', 'R', 'Multi-step speed step in use'],
+    ['210CH', 'R', 'Motor speed (rpm)'],
     ['GGnnH', 'R/W', 'Parameter GG-nn, e.g. 010CH = Pr.01-12'],
   ];
   return h('div', { class: 'mb-ref' }, ...rows.map(([a, rw, t]) => h('div', { class: 'mb-row' }, h('code', {}, a), h('span', { class: 'mb-rw' }, rw), h('span', {}, t))),
     h('p', { class: 'muted small' }, 'Set Pr.00-21 = 2 (run) and Pr.00-20 = 1 (frequency) so the drive obeys RS-485. Match Pr.09-01 / 09-04 with the PLC (D1120, M1143).'));
+}
+
+function faultRef() {
+  return h('div', { class: 'mb-ref' }, ...Object.entries(FAULTS).map(([k, f]) => h('div', { class: 'mb-row' + (f.sim ? ' sim' : '') }, h('code', {}, k), h('span', { class: 'mb-rw' }, String(f.n)), h('span', {}, f.text, f.sim ? h('em', {}, ' · simulated') : null))),
+    h('p', { class: 'muted small' }, 'The drive shows the code blinking; STOP/RESET (or an MI set to 5, or 2002H bit 1) clears it. Codes marked "simulated" can happen in this lab.'));
 }

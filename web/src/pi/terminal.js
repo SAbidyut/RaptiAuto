@@ -759,7 +759,7 @@ function ipText(ipCmd) {
 }
 
 function pipText(args) {
-  if (args[0] === 'install') return 'error: externally-managed-environment\n\n× This environment is externally managed\n╰─> To install Python packages system-wide, try apt install\n    python3-xyz, where xyz is the package you are trying to\n    install.\n\n(RaptiAuto: the virtual Pi is offline. Built in: gpiozero, RPi.GPIO, neopixel, adafruit_dht, board.)';
-  if (args[0] === 'list') return 'Package    Version\n---------- -------\ngpiozero   2.0.1\nRPi.GPIO   0.7.1\nadafruit-circuitpython-dht 4.0.4\nadafruit-circuitpython-neopixel 6.3.12';
+  if (args[0] === 'install') return 'error: externally-managed-environment\n\n× This environment is externally managed\n╰─> To install Python packages system-wide, try apt install\n    python3-xyz, where xyz is the package you are trying to\n    install.\n\n(RaptiAuto: the virtual Pi is offline. Built in: gpiozero, RPi.GPIO, smbus2, pyserial, neopixel, adafruit_dht, board.)';
+  if (args[0] === 'list') return 'Package    Version\n---------- -------\ngpiozero   2.0.1\nRPi.GPIO   0.7.1\nadafruit-circuitpython-dht 4.0.4\nadafruit-circuitpython-neopixel 6.3.12\npyserial   3.5\nsmbus2     0.4.3';
   return 'pip 23.0.1 from /usr/lib/python3/dist-packages/pip (python 3.11)';
 }

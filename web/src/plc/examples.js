@@ -32,6 +32,9 @@ function finish(meta, b, prog, extra = {}) {
     devices: b.devices, conns: b.conns, program: prog,
     plc: { downloaded: extra.noDownload ? null : JSON.parse(JSON.stringify(prog)), latched: null },
     hmi: extra.hmi, fromExample: meta.id,
+    // a second PLC's program (already downloaded into it)
+    plcs: extra.plcs ? Object.fromEntries(Object.entries(extra.plcs).map(([id, pr]) => [id, { program: pr, plc: { downloaded: JSON.parse(JSON.stringify(pr)), latched: null } }])) : undefined,
+    activePlc: extra.plcs ? 'plc' : undefined,
   });
   return p;
 }
@@ -114,7 +117,7 @@ export const LAB_EXAMPLES = [
         screens: [{
           id: 's1', name: 'Counter', bg: '#0b1630', elements: [
             E('rect', 16, 14, 768, 64, { fill: '#10224a', stroke: '#2b4470', radius: 14, title: '' }),
-            E('text', 36, 28, 600, 40, { text: 'PART COUNTER · DVP-16ES2', size: 28, color: '#e2e8f0', align: 'left', bold: true }),
+            E('text', 36, 28, 600, 40, { text: 'PART COUNTER · DVP16ES2', size: 28, color: '#e2e8f0', align: 'left', bold: true }),
             E('rect', 16, 94, 380, 370, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'PRODUCTION' }),
             E('num', 40, 140, 330, 90, { word: 'C0', dec: 0, unit: 'pcs', label: 'COUNT' }),
             E('input', 40, 250, 330, 80, { word: 'D0', dec: 0, unit: 'pcs', label: 'TARGET', min: 1, max: 999 }),
@@ -132,11 +135,11 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'vfd-terminals', name: 'VFD forward / reverse, 2 speeds', level: 'intermediate', tags: ['VFD', 'MS300', 'Interlock'],
-    description: 'Interlocked FWD / REV control of a Delta MS300 through its terminals: PLC relays drive MI1 (FWD), MI2 (REV) and MI3 / MI4 (multi-step speeds 15 Hz / 45 Hz).',
+    description: 'Interlocked FWD / REV control of a Delta MS300 through its terminals: PLC relays drive MI1 (FWD), MI2 (REV) and MI3 / MI4 (multi-step speeds 15 Hz / 50 Hz).',
     build() {
       const b = builder();
       base(b);
-      b.dev('vfd', 'ms300', {}, { params: { '00-21': 1, '00-20': 0, '02-00': 0, '01-12': 3, '01-13': 3, '04-00': 15, '04-01': 45 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-21': 1, '00-20': 0, '02-00': 1, '01-12': 3, '01-13': 3, '04-00': 15, '04-01': 50 } });
       b.dev('motor', 'motor', { load: 40 });
       b.dev('fwd', 'pb', { label: 'FWD', color: 'green', contact: 'NO' });
       b.dev('rev', 'pb', { label: 'REV', color: 'yellow', contact: 'NO' });
@@ -158,7 +161,7 @@ export const LAB_EXAMPLES = [
         rung('Forward: MI1 (Y4) + FWD lamp (Y0)', ['M0 =>| OUT Y4', '=> OUT Y0']),
         rung('Reverse: MI2 (Y5) + REV lamp (Y1)', ['M1 =>| OUT Y5', '=> OUT Y1']),
         rung('LOW speed → MI3 (multi-step 1 = Pr.04-00 = 15 Hz)', ['/X3 => OUT Y6']),
-        rung('HIGH speed → MI4 (multi-step 2 = Pr.04-01 = 45 Hz)', ['X3 => OUT Y7']),
+        rung('HIGH speed → MI4 (multi-step 2 = Pr.04-01 = 50 Hz)', ['X3 => OUT Y7']),
       ], { X0: 'FWD button', X1: 'REV button', X2: 'STOP button (NC)', X3: 'SPEED selector', Y4: 'VFD MI1 (FWD)', Y5: 'VFD MI2 (REV)', Y6: 'VFD MI3 (step 1)', Y7: 'VFD MI4 (step 2)', M0: 'Forward run', M1: 'Reverse run' });
       return finish(this, b, prog);
     },
@@ -169,7 +172,7 @@ export const LAB_EXAMPLES = [
     build() {
       const b = builder();
       base(b);
-      b.dev('vfd', 'ms300', {}, { params: { '00-21': 1, '00-20': 0, '02-00': 0, '01-12': 2, '01-13': 1, '04-00': 40 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-21': 1, '00-20': 0, '02-00': 1, '01-12': 2, '01-13': 1, '04-00': 40 } });
       b.dev('km1', 'contactor', { label: 'KM1', coil: '24DC' });
       b.dev('f1', 'olr', { label: 'F1' }, { tripped: false });
       b.dev('motor', 'motor', { load: 40 });
@@ -212,7 +215,7 @@ export const LAB_EXAMPLES = [
       const b = builder();
       base(b);
       b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
-      b.dev('vfd', 'ms300', {}, { params: { '00-20': 1, '00-21': 2, '09-00': 1, '09-01': 9.6, '09-04': 14, '01-12': 5, '01-13': 5 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-20': 1, '00-21': 2, '09-00': 1, '09-01': 9.6, '09-04': 14, '01-12': 5, '01-13': 5 } });
       b.dev('motor', 'motor', { load: 40 });
       b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
       b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
@@ -291,12 +294,60 @@ export const LAB_EXAMPLES = [
     },
   },
   {
+    id: 'plc-master-slave', name: 'Two PLCs: Master → Slave over RS-485', level: 'advanced', tags: ['MODRW', 'RS-485', '2 PLCs'], featured: true,
+    description: 'PLC 1 (master) sends START / STOP and RESET to PLC 2 (slave, station 2) with MODRW and reads its part counter back. The slave runs the conveyor and counts parts. Tap the PLC chip at the top to program either PLC.',
+    build() {
+      const b = builder();
+      base(b);
+      b.devices.find((d) => d.id === 'plc').props.name = 'PLC 1 · Master';
+      b.dev('plc2', 'dvp-32es2', { name: 'PLC 2 · Slave' }, { run: true });
+      b.w('mcb', 'L', 'plc2', 'L'); b.w('mcb', 'N', 'plc2', 'N'); b.w('mcb', 'PE', 'plc2', 'PE');
+      b.w('plc2', 'S/S', 'psu', '-V1');
+      // the RS-485 link: COM2 to COM2 (D+ / D- / SG)
+      b.w('plc', 'COM2', 'plc2', 'COM2');
+      // master: buttons and lamps
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('reset', 'pb', { label: 'RESET', color: 'blue', contact: 'NO' });
+      b.dev('lrun', 'lamp', { label: 'LINE ON', color: 'green' });
+      b.dev('lfull', 'lamp', { label: 'BATCH OK', color: 'yellow' });
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626'); b.w('stop', '11', 'reset', '13', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1'); b.w('reset', '14', 'plc', 'X2');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lfull', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lfull', 'X2', '#1e3a8a');
+      // slave: part sensor and the conveyor contactor lamp
+      b.dev('prox', 'prox', { label: 'PART' });
+      b.dev('lconv', 'lamp', { label: 'CONVEYOR', color: 'white' });
+      b.w('psu', '+V1', 'prox', 'BN'); b.w('prox', 'BU', 'psu', '-V1'); b.w('prox', 'BK', 'plc2', 'X0');
+      b.w('plc2', 'C0', 'psu', '+V2');
+      b.w('plc2', 'Y0', 'lconv', 'X1'); b.w('lconv', 'X2', 'lfull', 'X2', '#1e3a8a');
+      const master = program([
+        rung('First scan: COM2 = 9600 bps 8E1 (H87), Modbus RTU (M1143) — the slave uses the same settings', ['M1002 =>| MOV H87 D1120', '=>| SET M1120', '=> SET M1143']),
+        rung('Line latch: START (X0) turns it on, the NC STOP button (X1) turns it off', ['X0| X1 => OUT M0', 'M0']),
+        rung('D0 = run command for the slave (1 = run, 0 = stop)', ['M0 => MOV K1 D0', '/M0 => MOV K0 D0']),
+        rung('D1 = reset command for the slave (1 while RESET is held)', ['X2 => MOV K1 D1', '/X2 => MOV K0 D1']),
+        rung('Write D0, D1 to the slave\'s D100, D101 (station 2, function 16, 1064H = D100)', ['M1000 => MODRW K2 K16 H1064 D0 K2']),
+        rung('Read the slave\'s counter C0 (0E00H) into D10', ['M1000 => MODRW K2 K3 H0E00 D10 K1']),
+        rung('LINE ON lamp', ['M0 => OUT Y0']),
+        rung('BATCH OK lamp when the slave has counted 5 parts; flashes if the slave does not answer (M1129)', ['D10>=K5 -| => OUT Y1', 'M1129 M1013']),
+      ], { X0: 'START', X1: 'STOP (NC)', X2: 'RESET', Y0: 'LINE ON lamp', Y1: 'BATCH OK lamp', M0: 'Line running', D0: 'Run command → slave D100', D1: 'Reset command → slave D101', D10: 'Parts counted by the slave' });
+      const slave = program([
+        rung('First scan: station address 2 (D1121) and the same COM2 format as the master', ['M1002 =>| MOV K2 D1121', '=>| MOV H87 D1120', '=>| SET M1120', '=> SET M1143']),
+        rung('The master writes D100 = 1 to run the conveyor', ['D100=K1 => OUT Y0']),
+        rung('Count parts while the conveyor runs', ['X0 Y0 => CNT C0 K999']),
+        rung('The master writes D101 = 1 to reset the counter', ['D101=K1 => RST C0']),
+      ], { X0: 'Part sensor', Y0: 'Conveyor', C0: 'Part counter (read by the master)', D100: 'Run command from the master', D101: 'Reset command from the master' });
+      return finish(this, b, master, { plcs: { plc2: slave } });
+    },
+  },
+  {
     id: 'analog-speed', name: 'Analog speed: pot → EX2 → VFD', level: 'advanced', tags: ['Analog', 'EX2', 'AVI'],
-    description: 'A DVP-20EX2 reads a speed pot on AI channel 0 (D1110) and drives the MS300 AVI input from AO channel 0 (D1116). START/STOP run the drive through MI1.',
+    description: 'A DVP20EX2 reads a speed pot on AI channel 0 (D1110) and drives the MS300 AVI input from AO channel 0 (D1116). START/STOP run the drive through MI1.',
     build() {
       const b = builder();
       base(b, 'dvp-20ex2');
-      b.dev('vfd', 'ms300', {}, { params: { '00-20': 2, '00-21': 1, '01-12': 4, '01-13': 4 } });
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-20': 2, '00-21': 1, '01-12': 4, '01-13': 4 } });
       b.dev('motor', 'motor', { load: 30 });
       b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
       b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
@@ -306,9 +357,10 @@ export const LAB_EXAMPLES = [
       b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
       b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
       b.w('vfd', '+10V', 'pot', '1'); b.w('pot', '3', 'vfd', 'ACM'); b.w('pot', '2', 'plc', 'V0+');
-      b.w('plc', 'AIG', 'vfd', 'ACM');
-      b.w('plc', 'VO0', 'vfd', 'AVI'); b.w('plc', 'AOG', 'vfd', 'ACM');
-      b.w('plc', 'C0', 'vfd', 'DCM'); b.w('plc', 'Y0', 'vfd', 'MI1');
+      b.w('plc', 'VI0-', 'vfd', 'ACM');
+      b.w('plc', 'VO0', 'vfd', 'AVI'); b.w('plc', 'AG0', 'vfd', 'ACM');
+      // DVP20EX200T: NPN transistor outputs powered from UP / ZP; Y0 pulls MI1 to DCM (sink mode)
+      b.w('plc', 'UP', 'psu', '+V2'); b.w('plc', 'ZP', 'psu', '-V2'); b.w('plc', 'ZP', 'vfd', 'DCM'); b.w('plc', 'Y0', 'vfd', 'MI1');
       const prog = program([
         rung('Run latch → Y0 drives MI1 (FWD)', ['X0| X1 => OUT Y0', 'Y0']),
         rung('Analog pass-through: AI CH0 (D1110, 0–2000) → AO CH0 (D1116, 0–2000 = 0–10 V)', ['M1000 => MOV D1110 D1116']),
@@ -319,7 +371,7 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'blank', name: 'Blank lab (PLC + power)', level: 'beginner', tags: ['Empty'],
-    description: 'A powered DVP-16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
+    description: 'A powered DVP16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
     build() {
       const b = builder();
       base(b);

@@ -4,7 +4,7 @@
 import { loadMicroPython } from '../../vendor/micropython/micropython.mjs';
 import { PICO_W_LED } from './gpio.js';
 
-const PI_ONLY = ['RPi/__init__.py', 'RPi/GPIO.py', 'gpiozero.py', 'board.py', 'adafruit_dht.py', 'signal.py'];
+const PI_ONLY = ['RPi/__init__.py', 'RPi/GPIO.py', 'gpiozero.py', 'board.py', 'adafruit_dht.py', 'signal.py', 'smbus2.py', 'smbus.py', 'serial.py'];
 const PICO_ONLY = ['machine.py', 'rp2.py', 'network.py', 'dht.py'];
 
 let wasmModule = null;
@@ -55,9 +55,17 @@ function bridge(gpio, proc) {
     bootsel: () => gpio.bootsel,
     cpu_temp: () => gpio.cpuTemp(),
     wifi: (state, ssid) => { gpio.wifiState = { state, ssid }; gpio.changed(); },
-    uart_write: (id, s) => proc.write(s),
+    // a UART wired to an Arduino on the canvas talks to it; otherwise the text shows in the shell
+    uart_write: (id, s) => { if (!gpio.uartWrite(id, s) && !gpio.uartWired(id)) proc.write(s); },
+    uart_wired: (id) => gpio.uartWired(id),
+    uart_any: (id) => gpio.uartAny(id),
+    uart_read: (id, n) => gpio.uartRead(id, n),
+    uart_readline: (id, partial) => gpio.uartReadLine(id, partial),
+    uart_has_line: (id) => (gpio.uartHasLine(id) ? 1 : 0),
     i2c_has: (addr) => gpio.i2cHas(addr),
+    i2c_scan: () => gpio.i2cScan(),
     i2c_write: (addr, hex) => gpio.i2cWrite(addr, hex),
+    i2c_read: (addr, n) => gpio.i2cRead(addr, n),
   };
 }
 

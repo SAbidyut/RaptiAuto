@@ -15,11 +15,15 @@ import { Native } from '../native.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
 import { LAB_EXAMPLES, buildExample } from '../plc/examples.js';
 import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
+import { PI_EXAMPLES, PICO_EXAMPLES } from '../pi/examples.js';
+import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } from '../pi/boards.js';
+import { autowire } from '../pi/autowire.js';
 
 export const PAGES = {
   home: { title: 'Home', icon: 'home' },
   projects: { title: 'My Projects', icon: 'folder' },
   plclab: { title: 'Delta PLC Lab', icon: 'cpu' },
+  pilab: { title: 'Raspberry Pi Lab', icon: 'terminal' },
   examples: { title: 'Examples', icon: 'book' },
   boards: { title: 'Boards', icon: 'chip' },
   components: { title: 'Components', icon: 'layers' },
@@ -27,7 +31,7 @@ export const PAGES = {
   settings: { title: 'Settings', icon: 'settings' },
   about: { title: 'About RAPTI', icon: 'graduation' },
 };
-const TABS = [['home', 'Home'], ['projects', 'Projects'], ['plclab', 'PLC Lab'], ['examples', 'Examples']];
+const TABS = [['home', 'Home'], ['projects', 'Arduino'], ['plclab', 'PLC'], ['pilab', 'Pi'], ['examples', 'Examples']];
 
 export class Shell {
   constructor(app) {
@@ -88,7 +92,7 @@ export class Shell {
     this.titleEl.innerHTML = '';
     if (this.page === 'home') this.titleEl.appendChild(h('div', { class: 'brand', html: `${logoMark(34, 'tb')}${wordmark()}` }));
     else this.titleEl.appendChild(h('h1', {}, PAGES[this.page].title));
-    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
+    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, pilab: this.pagePi, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
     fill.call(this, pageEl);
     this.host.innerHTML = '';
     this.host.append(pageEl, ...this.extras);
@@ -123,8 +127,7 @@ export class Shell {
         group('Industrial automation'),
         item('plclab', 'Delta PLC Lab', 'cpu', h('span', { class: 'dr-new-badge' }, '3D')),
         group('Raspberry Pi'),
-        h('button', { class: 'dr-item', onclick: () => { this.closeDrawer(); this.app.openPi(); } },
-          h('span', { class: 'dr-ic', html: icon('terminal', 20) }), h('span', { class: 'dr-label' }, 'Raspberry Pi Lab'), h('span', { class: 'dr-new-badge' }, 'NEW')),
+        item('pilab', 'Raspberry Pi Lab', 'terminal', h('span', { class: 'dr-new-badge' }, 'NEW')),
         group('Library'),
         item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
         item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
@@ -204,7 +207,7 @@ export class Shell {
         tile('projects', 'My Projects', `${listProjects().length} saved`, 'folder', 'cyan'),
         tile('examples', 'Examples', `${EXAMPLES.length} projects`, 'book', 'violet'),
         tile('plclab', 'PLC Lab', 'Delta · 3D', 'cpu', 'blue'),
-        tile(null, 'Raspberry Pi', 'Pi 5 · Pi 4 · Pico', 'terminal', 'pink', () => this.app.openPi()),
+        tile('pilab', 'Raspberry Pi', 'Pi 5 · Pi 4 · Pico', 'terminal', 'pink'),
         tile('components', 'Components', `${partCount()}+ parts`, 'layers', 'green'),
         tile('guide', 'Guide', 'How to use', 'help', 'amber'),
         tile('about', 'About RAPTI', 'Courses · contact', 'graduation', 'pink'))));
@@ -406,50 +409,156 @@ export class Shell {
         h('h2', {}, 'Delta PLC Lab ', h('span', { class: 'grad' }, 'in 3D')),
         h('p', {}, 'DVP PLC, DOP-107 HMI and MS300 VFD on a real 3D trainer. Plug in cables, draw ladder, simulate live.'),
         h('div', { class: 'hero-actions' },
-          h('button', { class: 'btn btn-primary', html: `${icon('play', 18)}<span>Open the lab</span>`, onclick: (e) => { e.stopPropagation(); this.openLabExample('vfd-modbus-hmi'); } }),
-          h('button', { class: 'btn btn-glass', html: `${icon('cpu', 18)}<span>All labs</span>`, onclick: (e) => { e.stopPropagation(); this.go('plclab'); } }))));
+          h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: (e) => { e.stopPropagation(); this.newLab(); } }),
+          h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: (e) => { e.stopPropagation(); this.labSeg = 'examples'; this.go('plclab'); } }))));
   }
 
   // ---------------------------------------------------------------- Raspberry Pi lab
   piBanner() {
-    return h('section', { class: 'lab-banner pi-banner', onclick: () => this.app.openPi() },
+    return h('section', { class: 'lab-banner pi-banner', onclick: () => this.go('pilab') },
       h('div', { class: 'lb-art', html: piArt() }),
       h('div', { class: 'lb-content' },
         h('div', { class: 'hero-kicker', html: `${icon('sparkles', 15)}<span>NEW · Raspberry Pi</span>` }),
         h('h2', {}, 'Virtual ', h('span', { class: 'grad' }, 'Raspberry Pi')),
-        h('p', {}, 'Pi 5, Pi 4 and Pico boards: wire LEDs, buttons, sensors and motors on the circuit canvas, then run Python from Thonny — with a Pi OS desktop and terminal. Real MicroPython runs your code.'),
+        h('p', {}, 'Pi 5, Pi 4 and Pico boards: wire LEDs, buttons, sensors and an Arduino on a breadboard, then run Python from Thonny — with a Pi OS desktop and terminal.'),
         h('div', { class: 'hero-actions' },
-          h('button', { class: 'btn btn-primary', html: `${icon('play', 18)}<span>Open the Pi lab</span>`, onclick: (e) => { e.stopPropagation(); this.app.openPi(); } }))));
+          h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: (e) => { e.stopPropagation(); this.newPiProject(); } }),
+          h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: (e) => { e.stopPropagation(); this.go('pilab', { anchor: 'pi-examples' }); } }))));
   }
 
   pageLab(el) {
     this.action('upload', 'Open / import file', () => this.importProject());
     this.action('help', 'About the lab', () => this.labInfo());
+    const labs = listLabs();
     el.appendChild(h('section', { class: 'lab-intro' },
       h('div', { class: 'lb-art', html: labArt() }),
       h('div', { class: 'li-text' },
         h('h2', {}, 'Delta automation trainer'),
         h('p', {}, 'Wire a Delta DVP PLC, DOP-107 touch panel and MS300 drive in 3D, program it like ISPSoft and watch the motor turn.'),
-        h('div', { class: 'li-feats' }, ...['3D wiring', 'Ladder + IL', 'HMI designer', 'VFD keypad', 'Modbus RTU', 'Live monitor'].map((t) => h('span', { class: 'pill' }, t))),
+        h('div', { class: 'li-feats' }, ...['3D wiring', 'Ladder + IL', 'HMI designer', 'VFD keypad', 'Modbus RTU', '2 PLCs · RS-485'].map((t) => h('span', { class: 'pill' }, t))),
         h('div', { class: 'hero-actions' },
-          h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New lab</span>`, onclick: () => this.newLab() }),
-          h('button', { class: 'btn btn-glass', html: `${icon('play', 18)}<span>Full demo</span>`, onclick: () => this.openLabExample('vfd-modbus-hmi') })))));
-    const labs = listLabs();
-    if (labs.length) {
-      const list = h('div', { class: 'proj-list' });
-      for (const m of labs) list.appendChild(this.labCard(m));
-      el.appendChild(h('section', { class: 'home-sec' }, secHead('My labs', `${labs.length} saved on this phone`, 'folder'), list));
+          h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: () => this.newLab() }),
+          h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: () => { this.labSeg = 'examples'; draw(true); } })))));
+    // Examples | My projects
+    if (!this.labSeg) this.labSeg = labs.length ? 'mine' : 'examples';
+    const seg = h('div', { class: 'segmented sec-seg', id: 'lab-examples' });
+    const body = h('div', { class: 'seg-body' });
+    const draw = (scroll) => {
+      seg.innerHTML = '';
+      for (const [id, label, n] of [['examples', 'Examples', LAB_EXAMPLES.length], ['mine', 'My projects', labs.length]]) {
+        seg.appendChild(h('button', { class: 'seg' + (this.labSeg === id ? ' active' : ''), onclick: () => { this.labSeg = id; draw(); } }, label, h('span', { class: 'chip-n' }, String(n))));
+      }
+      body.innerHTML = '';
+      if (this.labSeg === 'mine') {
+        if (!labs.length) {
+          body.appendChild(h('div', { class: 'empty-state small-empty' },
+            h('div', { class: 'empty-ic', html: icon('folder', 30) }),
+            h('p', {}, 'No PLC projects yet. Start a new one, or open an example — it is saved here when you open it.'),
+            h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: () => this.newLab() })));
+        } else {
+          const list = h('div', { class: 'proj-list' });
+          for (const m of labs) list.appendChild(this.labCard(m));
+          body.appendChild(list);
+        }
+      } else {
+        const grid = h('div', { class: 'ex-grid lab-ex-grid' });
+        for (const ex of LAB_EXAMPLES) {
+          grid.appendChild(h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
+            h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
+            h('div', { class: 'ex-body' },
+              h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
+              h('div', { class: 'ex-name' }, ex.name),
+              h('div', { class: 'ex-desc' }, ex.description))));
+        }
+        body.appendChild(grid);
+      }
+      if (scroll) requestAnimationFrame(() => seg.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    };
+    el.appendChild(h('section', { class: 'home-sec seg-sec' }, h('div', { class: 'seg-wrap' }, seg), body));
+    draw();
+  }
+
+  // ---------------------------------------------------------------- Raspberry Pi lab page
+  pagePi(el) {
+    let last = 'pi5';
+    try { last = localStorage.getItem('rapti.pi.board') || 'pi5'; } catch (e) { /* ignore */ }
+    if (!PI_BOARDS[last]) last = 'pi5';
+    el.appendChild(h('section', { class: 'lab-intro pi-intro' },
+      h('div', { class: 'lb-art', html: piArt() }),
+      h('div', { class: 'li-text' },
+        h('h2', {}, 'Virtual Raspberry Pi'),
+        h('p', {}, 'Raspberry Pi 5 / 4 and Pico: build circuits on a breadboard, run real Python and MicroPython, use the Pi OS desktop and terminal.'),
+        h('div', { class: 'li-feats' }, ...['Breadboard', 'GPIO', 'Thonny', 'Terminal', 'I²C · UART', 'Arduino slave'].map((t) => h('span', { class: 'pill' }, t))),
+        h('div', { class: 'hero-actions' },
+          h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: () => this.newPiProject() }),
+          h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: () => { const t = el.querySelector('#pi-examples'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } })))));
+    el.appendChild(h('section', { class: 'home-sec' }, secHead('Continue', 'Your circuit, files and programs stay on this phone', 'clock'),
+      h('div', { class: 'proj-list' },
+        h('button', { class: 'proj-card pi-continue', onclick: () => this.app.openPi() },
+          h('div', { class: 'proj-thumb pi-cont-thumb', html: piBoardSVG(last, 'pc-') }),
+          h('div', { class: 'proj-body' },
+            h('div', { class: 'proj-name' }, 'Open my Pi workspace'),
+            h('div', { class: 'proj-meta' }, `${PI_BOARDS[last].name} · where you left off`)),
+          h('span', { class: 'icon-btn sm', html: icon('forward', 20) })))));
+    // examples: Raspberry Pi 4 / 5 and Pico, by topic
+    const all = [...PI_EXAMPLES.map((e) => ({ ...e, kind: 'pi' })), ...PICO_EXAMPLES.map((e) => ({ ...e, kind: 'pico' }))];
+    const cats = [['all', 'All'], ['pi', 'Pi 4 / 5'], ['pico', 'Pico'], ['breadboard', 'Breadboard'], ['master-slave', 'Master–Slave']];
+    const match = (e, c) => c === 'all' || e.kind === c || e.tags.includes(c);
+    if (!this.piCat) this.piCat = 'all';
+    const chips = h('div', { class: 'chips-row' });
+    const grid = h('div', { class: 'ex-grid pi-ex-grid' });
+    const thumbs = [];
+    const draw = () => {
+      grid.innerHTML = '';
+      thumbs.length = 0;
+      for (const e of all.filter((x) => match(x, this.piCat))) {
+        const th = h('div', { class: 'ex-thumb pi-ex-thumb' });
+        thumbs.push([th, e]);
+        const desc = (e.code.split('\n')[0] || '').replace(/^#\s*/, '');
+        grid.appendChild(h('button', { class: 'ex-card pi-ex', onclick: () => this.openPiExample(e, last) },
+          th,
+          h('div', { class: 'ex-body' },
+            h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + (e.kind === 'pi' ? 'intermediate' : 'beginner') }, e.kind === 'pi' ? 'Pi 4 / 5' : 'Pico'), ...e.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
+            h('div', { class: 'ex-name' }, e.title),
+            h('div', { class: 'ex-desc' }, desc))));
+      }
+      // circuit thumbnails are drawn a few at a time so the page opens at once
+      const job = ++this.piThumbJob;
+      const next = () => {
+        if (job !== this.piThumbJob || !thumbs.length) return;
+        const [th, e] = thumbs.shift();
+        try { th.innerHTML = piExampleThumb(e, last); } catch (err) { th.innerHTML = piArt(); }
+        setTimeout(next, 0);
+      };
+      setTimeout(next, 60);
+    };
+    this.piThumbJob = (this.piThumbJob || 0) + 1;
+    for (const [id, label] of cats) {
+      const n = all.filter((e) => match(e, id)).length;
+      chips.appendChild(h('button', { class: 'chip' + (id === this.piCat ? ' active' : ''), onclick: (ev) => { this.piCat = id; for (const x of chips.children) x.classList.remove('active'); ev.currentTarget.classList.add('active'); draw(); } }, label, h('span', { class: 'chip-n' }, String(n))));
     }
-    const grid = h('div', { class: 'ex-grid lab-ex-grid' });
-    for (const ex of LAB_EXAMPLES) {
-      grid.appendChild(h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
-        h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
-        h('div', { class: 'ex-body' },
-          h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
-          h('div', { class: 'ex-name' }, ex.name),
-          h('div', { class: 'ex-desc' }, ex.description))));
+    el.appendChild(h('section', { class: 'home-sec', id: 'pi-examples' }, secHead('Examples', 'Opens the circuit and the program — press Run', 'book'), chips, grid));
+    draw();
+  }
+
+  /** New Pi project: choose the board; the lab opens with an empty circuit and a new .py file. */
+  newPiProject() {
+    const content = h('div', { class: 'board-list pi-new' });
+    for (const id of PI_ORDER) {
+      const b = PI_BOARDS[id];
+      content.appendChild(h('button', { class: 'board-item', onclick: () => { sheet.close(); this.app.openPi({ board: id, newProject: true }); } },
+        h('div', { class: 'bi-thumb pi-bi-thumb', html: piBoardSVG(id, 'np-' + id + '-') }),
+        h('div', { class: 'bi-body' }, h('b', {}, b.name), h('p', {}, b.kind === 'pico' ? 'MicroPython · Thonny · machine.Pin, PWM, ADC, I²C' : 'Python 3 · gpiozero · RPi.GPIO · desktop and terminal'),
+          h('div', { class: 'bi-specs' }, h('span', { class: 'tag' }, b.cpu), h('span', { class: 'tag' }, b.ram)))));
     }
-    el.appendChild(h('section', { class: 'home-sec' }, secHead('Lab exercises', 'Ready-wired, programmed — press Simulate', 'book'), grid));
+    const sheet = new Sheet({ title: 'New Raspberry Pi project', content, cls: 'sheet-tall', icon: 'terminal' });
+    sheet.open();
+  }
+
+  openPiExample(e, last) {
+    let board = e.kind === 'pi' ? (PI_BOARDS[last].kind === 'pi' ? last : 'pi5') : (PI_BOARDS[last].kind === 'pico' ? last : 'pico');
+    if (e.boards && !e.boards.includes(board)) board = e.boards[0];
+    this.app.openPi({ board, example: e.file });
   }
 
   /** Card from the saved-lab index (the full lab is only loaded when it is opened). */
@@ -691,6 +800,13 @@ function labExampleArt(ex) {
     <path d="M8 178 L40 112 H280 L312 178Z" fill="#c9cdc9"/>
     ${items.map((it, i) => { const x = 160 + (i - (items.length - 1) / 2) * 50; return `<g transform="translate(${x} 146)"><rect x="-20" y="-26" width="40" height="50" rx="4" fill="#252b35"/>${it.t === 'b' ? `<circle r="12" fill="#e6e9ee"/><circle r="9.5" fill="${it.c}"/>` : `<circle r="16" fill="${it.c}" opacity=".35"/><circle r="10" fill="${it.c}"/>`}</g>`; }).join('')}
   </svg>`;
+}
+
+/** A Pi example's circuit as a thumbnail (its breadboard layout, or the auto-wired parts). */
+function piExampleThumb(e, last) {
+  const board = e.kind === 'pi' ? (PI_BOARDS[last].kind === 'pi' ? last : 'pi5') : (e.boards ? e.boards[0] : 'pico');
+  const c = e.circuit ? e.circuit(board) : autowire(board, e.parts || []);
+  return projectPreview({ id: 'piex-' + e.kind + '-' + e.file, parts: c.parts, wires: c.wires });
 }
 
 function piArt() {

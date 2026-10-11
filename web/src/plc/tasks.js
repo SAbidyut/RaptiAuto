@@ -27,10 +27,10 @@ export const LAB_TASKS = {
   ],
   'vfd-terminals': [
     { text: 'Press FWD — the drive runs forward at LOW speed (15 Hz)', check: (c) => near(hz(c), 15) },
-    { text: 'Turn SPEED to HIGH — 45 Hz (multi-step 2)', check: (c) => near(hz(c), 45) },
+    { text: 'Turn SPEED to HIGH — 50 Hz (multi-step 2)', check: (c) => near(hz(c), 50) },
     { text: 'Press STOP, then REV — the motor turns backwards', check: (c) => hz(c) < -1 },
     { text: 'Change Pr.04-00 (step 1) to 20 Hz in the VFD tab or with the keypad', check: (c) => !!(c.vfd && c.vfd.params['04-00'] === 20) },
-    { text: 'Make it trip: set Pr.01-12 to 0.10 s and start — fault ocA', hint: 'Then press STOP/RESET and set the time back', check: (c) => !!(c.vfd && c.vfd.fault === 'ocA') },
+    { text: 'Make it trip: switch stall prevention off (Pr.06-03 = 0), set Pr.01-12 to 0.10 s and start — fault ocA', hint: 'With Pr.06-03 = 150 % the drive just accelerates slower. Then press STOP/RESET and put both back', check: (c) => !!(c.vfd && c.vfd.fault === 'ocA') },
   ],
   'contactor-starter': [
     { text: 'Press START — KM1 pulls in, the RUN lamp lights and the conveyor motor turns', check: (c) => !!(c.rt('km1') && c.rt('km1').closed && c.motor && Math.abs(c.motor.rpm) > 300) },
@@ -46,6 +46,13 @@ export const LAB_TASKS = {
     { text: 'Press the E-STOP — the drive ramps down', check: (c) => !!(c.dev('es') && c.dev('es').state.pressed && c.vfd && c.vfd.powered && hz(c) === 0) },
     { text: 'Break the link: set VFD Pr.09-04 to 1 (7N2 ASCII) — the FAULT lamp lights', hint: 'Release the E-STOP first; put 14 back afterwards', check: (c) => !!(c.vfd && c.vfd.params['09-04'] !== 14 && c.cpu && c.cpu.M[1129] && c.rt('lflt') && c.rt('lflt').on) },
     { text: 'Swap two motor wires (e.g. V ↔ W) and run — the motor turns the other way', check: (c) => !!(c.motor && c.motor.rpm < -50 && hz(c) > 1) },
+  ],
+  'plc-master-slave': [
+    { text: 'Simulate and press START on the master — the slave turns the CONVEYOR on', check: (c) => !!(c.rt('lconv') && c.rt('lconv').on) },
+    { text: 'Tap the PART sensor 5 times — the master reads the slave\'s count and lights BATCH OK', check: (c) => { const ok = !!(c.rt('lfull') && c.rt('lfull').on && c.rt('plc') && c.rt('plc').cpu.D[10] >= 5); if (ok) c.memo.full = true; return ok; } },
+    { text: 'Press RESET — the master writes D101 = 1 and the slave clears its counter', check: (c) => !!(c.memo.full && c.rt('plc2') && c.rt('plc2').cpu.CV[0] === 0) },
+    { text: 'Find the “Write D100…” and “Read C0” frames in Monitor → Comm log', check: (c) => c.lab.tab === 'monitor' && c.lab.views.monitor.sub === 'log' && !!(c.cpu && c.cpu.running) },
+    { text: 'Tap the PLC chip at the top and open PLC 2 · Slave in the Ladder tab', check: (c) => c.P.activePlc === 'plc2' && c.lab.tab === 'ladder' },
   ],
   'analog-speed': [
     { text: 'Press START and turn the SPEED pot to 80 % — the drive runs at 40 Hz', check: (c) => near(hz(c), 40, 0.6) },

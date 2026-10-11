@@ -51,6 +51,9 @@ const CHECKS = {
   'buzzer-melody': { ms: 3000 },
   'ir-remote': { ms: 2000, act: { 600: ['ir', 'ir', 0x0c] }, serial: ['Button'] },
   'rotary-encoder': { ms: 1500, act: { 300: ['enc', 'rotate', 1], 500: ['enc', 'rotate', 1], 700: ['enc', 'rotate', -1] }, serial: ['Position: 2', 'Position: 1'] },
+  'i2c-master-slave': { ms: 2500, act: { 100: ['pot', 'knob', 0.5], 900: ['btn', 'press', true] }, serial: ['Master ready', 'Slave #8 listening', 'slave: ', 'servo 89'],
+    check: (e) => expect(Math.abs(part(e, 'servo').visual.angle - 90) < 4 && lit(e, 'led'), `servo=${part(e, 'servo').visual.angle} led=${part(e, 'led').visual.b}`) },
+  'uart-master-slave': { ms: 2500, act: { 100: ['pot', 'knob', 1] }, serial: ['Master: turn the knob', 'slave says: OK 255'], check: (e) => expect(lit(e, 'led'), 'led b=' + part(e, 'led').visual.b) },
   'rtc-clock': { ms: 2500, check: (e) => expect(/^\w{3} \d\d\/\d\d\/20\d\d$/.test(lcdRow(e, 'lcd', 0)) && /^ {4}\d\d:\d\d:\d\d$/.test(lcdRow(e, 'lcd', 1)), `lcd=${JSON.stringify(lcdRow(e, 'lcd', 0) + '|' + lcdRow(e, 'lcd', 1))}`) },
 };
 

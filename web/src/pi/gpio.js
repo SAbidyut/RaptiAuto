@@ -342,6 +342,32 @@ export class GpioSim {
   }
 
   i2cHas(addr) { return this.hw ? (this.hw.i2cHas(addr) ? 1 : 0) : 0; }
+  i2cScan() { return this.hw ? this.hw.i2cScan().join(',') : ''; }
+  i2cRead(addr, n) {
+    const bytes = this.hw ? this.hw.i2cRead(addr, n) : new Array(n).fill(255);
+    return bytes.map((b) => (b & 255).toString(16).padStart(2, '0')).join('');
+  }
+
+  /** UART names: machine.UART(0) → UART0, '/dev/serial0' or '/dev/ttyAMA0' → serial0. */
+  uartPort(id) {
+    if (typeof id === 'number') return 'UART' + id;
+    const s = String(id);
+    if (/^\d+$/.test(s)) return 'UART' + s;
+    return /serial0|ttyAMA0|ttyS0/.test(s) ? 'serial0' : s;
+  }
+  uartWrite(id, text) { return this.hw ? this.hw.uartWrite(this.uartPort(id), text) : 0; }
+  uartWired(id) { return this.hw ? (this.hw.uartWired(this.uartPort(id)) ? 1 : 0) : 0; }
+  uartAny(id) { return this.hw ? this.hw.uartAny(this.uartPort(id)) : 0; }
+  uartRead(id, n) { return this.hw ? this.hw.uartRead(this.uartPort(id), n) : ''; }
+  uartHasLine(id) { return !!this.hw && (this.hw.rx[this.uartPort(id)] || '').includes('\n'); }
+  /** One line including its '\n'; '' if no full line has arrived (partial: return what there is). */
+  uartReadLine(id, partial) {
+    if (!this.hw) return '';
+    const port = this.uartPort(id), buf = this.hw.rx[port] || '';
+    const i = buf.indexOf('\n');
+    if (i < 0) return partial ? this.hw.uartRead(port, -1) : '';
+    return this.hw.uartRead(port, i + 1);
+  }
   i2cWrite(addr, hex) {
     if (!this.hw) return;
     const bytes = [];

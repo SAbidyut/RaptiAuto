@@ -158,17 +158,23 @@ class DallasTemperature {
 // ------------------------------------------------------------------ Wire (I2C)
 class TwoWire {
   constructor(rt, hw) { this.rt = rt; this.hw = hw; this.tx = []; this.rx = []; this.addr = 0; this.begun = false; this.clock = 100000; }
-  begin() { this.begun = true; }
+  begin(addr) {
+    this.begun = true;
+    // Wire.begin(address): this board is an I²C slave at that address
+    if (typeof addr === 'number' && this.hw.i2cSlave) { this.slaveAddr = addr & 127; this.hw.i2cSlave(addr, this); }
+  }
   end() { this.begun = false; }
   setClock(hz) { this.clock = hz; }
   setPins() { return 1; }
   byteTime() { return 9e6 / this.clock; }
   beginTransmission(a) { this.addr = a & 127; this.tx = []; }
   write(v, len) {
-    if (typeof v === 'number') { this.tx.push(v & 255); return 1; }
-    if (len !== undefined) { const a = v instanceof Ptr ? v.a : v; const o = v instanceof Ptr ? v.i : 0; for (let i = 0; i < len; i++) this.tx.push((typeof a === 'string' ? a.charCodeAt(o + i) : a[o + i]) & 255); return len; }
+    // inside an onRequest handler the bytes are the slave's answer to the master
+    const out = this.slaveTx || this.tx;
+    if (typeof v === 'number') { out.push(v & 255); return 1; }
+    if (len !== undefined) { const a = v instanceof Ptr ? v.a : v; const o = v instanceof Ptr ? v.i : 0; for (let i = 0; i < len; i++) out.push((typeof a === 'string' ? a.charCodeAt(o + i) : a[o + i]) & 255); return len; }
     const s = cstr(v);
-    for (let i = 0; i < s.length; i++) this.tx.push(s.charCodeAt(i) & 255);
+    for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 255);
     return s.length;
   }
   dev() { return this.hw.i2cDevice(this.addr); }
@@ -191,8 +197,8 @@ class TwoWire {
   available() { return this.rx.length; }
   read() { return this.rx.length ? this.rx.shift() : -1; }
   peek() { return this.rx.length ? this.rx[0] : -1; }
-  onReceive() {}
-  onRequest() {}
+  onReceive(fn) { this.onRecv = fn; }
+  onRequest(fn) { this.onReq = fn; }
   flush() {}
 }
 
@@ -403,7 +409,7 @@ addLibrary((natives, rt, hw) => {
   defineClass(natives, 'TwoWire', {
     create: () => wire,
     methods: {
-      begin: { ret: 'void' }, end: { ret: 'void' }, setClock: { ret: 'void' }, setPins: { ret: 'bool' }, beginTransmission: { ret: 'void' },
+      begin: { ret: 'void', args: ['num'] }, end: { ret: 'void' }, setClock: { ret: 'void' }, setPins: { ret: 'bool' }, beginTransmission: { ret: 'void' },
       write: { ret: 'uint', args: ['raw', 'num'] }, endTransmission: { ret: 'u8' }, requestFrom: { ret: 'u8' }, available: { ret: 'int' },
       read: { ret: 'int' }, peek: { ret: 'int' }, onReceive: { ret: 'void', args: ['raw'] }, onRequest: { ret: 'void', args: ['raw'] }, flush: { ret: 'void' },
     },

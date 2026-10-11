@@ -43,8 +43,10 @@ export class SimEngine {
     this.netlist = buildNetlist(project);
     const { nets, netOf } = this.netlist;
     this.netOf = netOf;
-    // pick the programmable board
-    this.boardPart = project.parts.find((p) => getDef(p.type) && getDef(p.type).board);
+    // the programmable boards: the first one runs project.code (or, in the Raspberry Pi Lab,
+    // Python); every other board (a second Arduino, a slave …) runs its own sketch, part.code
+    const boardParts = project.parts.filter((p) => getDef(p.type) && getDef(p.type).board);
+    this.boardPart = boardParts[0] || null;
     this.board = this.boardPart ? getDef(this.boardPart.type).board : null;
 
     // node allocation: nets that touch at least one electrical (non connector-only) pin
@@ -66,10 +68,16 @@ export class SimEngine {
     this.netPins = nets;
 
     // board runtime first (it owns ground reference)
+    this.boards = [this];
     if (this.boardPart) this.buildBoard();
+    for (const bp of boardParts.slice(1)) {
+      const sub = subBoard(this, bp);
+      sub.buildBoard();
+      this.boards.push(sub);
+    }
     for (const part of project.parts) {
       const def = getDef(part.type);
-      if (!def || !def.sim || part === this.boardPart) continue;
+      if (!def || !def.sim || def.board) continue;
       const ctx = this.makeCtx(part);
       const rt = def.sim.create(ctx);
       if (rt) {
@@ -183,13 +191,24 @@ export class SimEngine {
         this.visual.rx = t < this.rxUntil ? 1 : 0;
       },
     };
+    // another board can be this one's I²C slave (Wire.begin(address) in its sketch)
+    if (b.i2c && b.pinMap[b.i2c.sda] && b.pinMap[b.i2c.scl]) brt.i2cPins = { sda: b.pinMap[b.i2c.sda], scl: b.pinMap[b.i2c.scl] };
+    brt.boardCtx = this;
     this.boardRt = brt;
     this.parts.set(bp.id, brt);
   }
 
+  /** Name of a board in messages: its title ("Master", "Slave") or its type name. */
+  get label() { return (this.boardPart && (this.boardPart.title || (this.boards.length > 1 ? 'Board ' + (this.boards.indexOf(this) + 1) : ''))) || (this.board ? this.board.name : ''); }
+
   // ------------------------------------------------------------------ lifecycle
   start() {
     this.build();
+    // every other board compiles its own sketch first: an error names the board
+    for (const sub of this.boards.slice(1)) {
+      const res = sub.startSketch(sub.boardPart.code || '');
+      if (!res.ok) return { ...res, boardId: sub.boardPart.id, boardLabel: sub.label };
+    }
     if (!this.board || this.opts.external) {
       // electronics-only circuit, or a board whose program runs elsewhere (the Raspberry Pi Lab's
       // Python drives the pins through pinMode / digitalWrite …): the circuit in (virtual) real time
@@ -204,24 +223,8 @@ export class SimEngine {
       for (const p of this.parts.values()) if (p.started) p.started();
       return { ok: true, noBoard: !this.board, external: !!this.opts.external, warnings: [] };
     }
-    const engine = this;
-    const board = this.board;
-    this.runner = new SketchRunner({
-      code: this.project.code,
-      board,
-      macros: { ...board.macros, ...timeMacros() },
-      natives: (rt) => {
-        const n = makeCore(rt, engine, board);
-        makeLibraries(n, rt, engine, board);
-        engine.natives = n;
-        return n;
-      },
-      onWarning: (m) => this.warn(m, null),
-    });
-    const res = this.runner.compile();
+    const res = this.startSketch(this.project.code);
     if (!res.ok) return res;
-    this.rt = this.runner.rt;
-    this.runner.start();
     this.running = true;
     this.paused = false;
     this.simStartWall = now();
@@ -232,6 +235,30 @@ export class SimEngine {
     this.ensureSolved();
     for (const p of this.parts.values()) if (p.started) p.started();
     return { ok: true, warnings: res.warnings, includes: res.includes };
+  }
+
+  /** Compile and start this board's sketch (the main board, or one of the others). */
+  startSketch(code) {
+    const engine = this;
+    const board = this.board;
+    const many = this.boards.length > 1;
+    this.runner = new SketchRunner({
+      code,
+      board,
+      macros: { ...board.macros, ...timeMacros() },
+      natives: (rt) => {
+        const n = makeCore(rt, engine, board);
+        makeLibraries(n, rt, engine, board);
+        engine.natives = n;
+        return n;
+      },
+      onWarning: (m) => this.warn(many ? `${this.label}: ${m}` : m, null),
+    });
+    const res = this.runner.compile();
+    if (!res.ok) return res;
+    this.rt = this.runner.rt;
+    this.runner.start();
+    return res;
   }
 
   /**
@@ -269,8 +296,13 @@ export class SimEngine {
     this.processEvents();
     const t0 = now();
     let status = 'ok';
-    if (this.runner) status = this.runner.step(target, 14);
+    if (this.runner) status = this.runner.step(target, this.boards.length > 1 ? 9 : 14);
     else rt.t = target;
+    for (let i = 1; i < this.boards.length && status !== 'error'; i++) {
+      const sub = this.boards[i];
+      const st = sub.runner.step(target, 6);
+      if (st === 'error') { this.stop(); if (this.opts.onError) this.opts.onError({ ...sub.runner.error, boardId: sub.boardPart.id, boardLabel: sub.label }); return 'error'; }
+    }
     const busy = now() - t0;
     this.processEvents();
     this.integrateTo(rt.t);
@@ -374,8 +406,7 @@ export class SimEngine {
       if (again) this.dirty = true;
     }
     this.dirty = false;
-    this.checkPinCurrents();
-    this.checkInterrupts();
+    for (const b of this.boards || [this]) { b.checkPinCurrents(); b.checkInterrupts(); }
   }
 
   applyPinState(st, level) {
@@ -399,8 +430,9 @@ export class SimEngine {
     this.stats.solves++;
     for (const p of this.parts.values()) if (p.prepare) p.prepare();
     const pwm = [];
-    if (this.pins) {
-      for (const st of this.pins.values()) {
+    for (const b of this.boards) {
+      if (!b.pins) continue;
+      for (const st of b.pins.values()) {
         if (st.node < 0) continue;
         let duty = null;
         if (st.mode === 1) {
@@ -457,8 +489,9 @@ export class SimEngine {
   /** Logic level of a node: direct MCU driver if any, otherwise solved voltage. */
   logicLevel(node) {
     if (node < 0) return 0;
-    if (this.pins) {
-      for (const st of this.pins.values()) {
+    for (const b of this.boards || [this]) {
+      if (!b.pins) continue;
+      for (const st of b.pins.values()) {
         if (st.node === node && st.mode === 1 && st.pwm === null && !st.tone) return st.out;
       }
     }
@@ -699,7 +732,24 @@ export class SimEngine {
 
   serialOut(port, text) {
     if (this.boardRt) this.boardRt.txUntil = this.time() + 40000;
-    if (this.opts.onSerial) this.opts.onSerial(port, text);
+    const sub = this.boards.indexOf(this) > 0;
+    // TX wired to another board's RX: board-to-board UART (crossed TX → RX, common GND)
+    const u = uartPins(this.board)[port];
+    const tx = u ? this.pinNode(u.tx) : -1;
+    let linked = false;
+    if (tx >= 0) {
+      for (const b of this.boards) {
+        if (b === this) continue;
+        for (const [p2, u2] of Object.entries(uartPins(b.board))) {
+          if (b.pinNode(u2.rx) !== tx) continue;
+          linked = true;
+          if (b.natives) b.serialIn(text, p2);
+          else if (this.opts.onUart) this.opts.onUart(p2, text);   // an external program's UART (Raspberry Pi)
+        }
+      }
+    }
+    // the Serial Monitor shows the USB port (Serial) and ports that are not wired to another board
+    if (this.opts.onSerial && (port === 'Serial' || !linked)) this.opts.onSerial(port, text, sub ? this.label : null);
   }
 
   serialIn(text, port = 'Serial') {
@@ -707,6 +757,40 @@ export class SimEngine {
     const s = this.natives.serials.find((x) => x.port === port) || this.natives.serials[0];
     if (s) s.feed(text);
     if (this.boardRt) this.boardRt.rxUntil = this.time() + 40000;
+  }
+
+  /** An external program (the Pi's Python) wrote to its UART `port`: boards wired to its TX get it. */
+  externalUartOut(port, text) {
+    const u = uartPins(this.board)[port];
+    const tx = u ? this.pinNode(u.tx) : -1;
+    if (tx < 0) return 0;
+    let n = 0;
+    for (const b of this.boards.slice(1)) {
+      for (const [p2, u2] of Object.entries(uartPins(b.board))) if (b.pinNode(u2.rx) === tx) { b.serialIn(text, p2); n++; }
+    }
+    return n;
+  }
+
+  /** I²C slave: this board's sketch called Wire.begin(address); the master's Wire talks to `wire`. */
+  i2cSlave(address, wire) {
+    const brt = this.boardRt;
+    if (!brt) return;
+    const runner = () => this.runner;
+    brt.i2c = { address: address & 127 };
+    brt.i2cWrite = (bytes) => {
+      wire.rx = bytes.slice();
+      if (wire.onRecv) runner().runNow(wire.onRecv, [bytes.length]);
+      brt.rxUntil = this.time() + 40000;
+    };
+    brt.i2cRead = (n) => {
+      wire.slaveTx = [];
+      if (wire.onReq) runner().runNow(wire.onReq, []);
+      const out = wire.slaveTx.slice(0, n);
+      wire.slaveTx = null;
+      while (out.length < n) out.push(255);
+      brt.txUntil = this.time() + 40000;
+      return out;
+    };
   }
 
   warn(msg, partId, key) {
@@ -718,12 +802,15 @@ export class SimEngine {
 
   // EEPROM persistence
   eepromData(size) {
-    const saved = this.project.eeprom;
+    const saved = this.boards.indexOf(this) > 0 ? this.boardPart.eeprom : this.project.eeprom;
     const a = new Array(size).fill(255);
     if (Array.isArray(saved)) for (let i = 0; i < Math.min(size, saved.length); i++) a[i] = saved[i];
     return a;
   }
-  eepromCommit(data) { this.project.eeprom = data.slice(); if (this.opts.onEeprom) this.opts.onEeprom(); }
+  eepromCommit(data) {
+    if (this.boards.indexOf(this) > 0) this.boardPart.eeprom = data.slice(); else this.project.eeprom = data.slice();
+    if (this.opts.onEeprom) this.opts.onEeprom();
+  }
 
   // ------------------------------------------------------------------ helpers for libraries
   pinNode(p) { const st = this.pins && this.pins.get(p); return st ? st.node : -1; }
@@ -795,8 +882,8 @@ export class SimEngine {
     const sda = this.pinNode(b.i2c.sda), scl = this.pinNode(b.i2c.scl);
     const out = [];
     for (const rt of this.parts.values()) {
-      if (!rt.i2c) continue;
-      const pa = rt.def.i2cPins || { sda: 'SDA', scl: 'SCL' };
+      if (!rt.i2c || rt === this.boardRt) continue;
+      const pa = rt.i2cPins || rt.def.i2cPins || { sda: 'SDA', scl: 'SCL' };
       if (sda >= 0 && scl >= 0 && this.nodeOf(rt.part.id, pa.sda) === sda && this.nodeOf(rt.part.id, pa.scl) === scl) out.push(rt);
     }
     return out;
@@ -820,10 +907,38 @@ export class SimEngine {
 
   /** Signal info driven onto a node by an MCU pin (servo pulses, tone, pwm). */
   pinSignal(node) {
-    if (!this.pins || node < 0) return null;
-    for (const st of this.pins.values()) {
-      if (st.node === node && st.mode === 1) return st;
+    if (node < 0) return null;
+    for (const b of this.boards || [this]) {
+      if (!b.pins) continue;
+      for (const st of b.pins.values()) if (st.node === node && st.mode === 1) return st;
     }
     return null;
   }
+}
+
+/** UART pins of a board: { Serial: { rx, tx }, … } (GPIO numbers). */
+export function uartPins(board) {
+  if (!board) return {};
+  if (board.uart) return board.uart;
+  const pm = board.pinMap || {};
+  return pm[0] && pm[1] && (board.serialPorts || []).includes('Serial') ? { Serial: { rx: 0, tx: 1 } } : {};
+}
+
+// state every board of one engine shares (the circuit, the clock, the event queue …)
+const SHARED = ['dirty', 'changesThisFrame', 'lastIntegrate', 'Vavg', '_partMap', 'nodeActivity', 'frameT', 'lastWall', 'running', 'paused', 'speed', 'extraNodes', 'frameStart', 'simStartWall', 'stats'];
+
+/**
+ * A second (third …) programmable board in the same circuit: an object that inherits the engine's
+ * methods and circuit, with its own pins, power rails, sketch runner and libraries.
+ */
+function subBoard(engine, bp) {
+  const sub = Object.create(engine);
+  for (const k of SHARED) Object.defineProperty(sub, k, { get: () => engine[k], set: (v) => { engine[k] = v; }, configurable: true });
+  sub.boardPart = bp;
+  sub.board = getDef(bp.type).board;
+  sub.runner = null;
+  sub.rt = null;
+  sub.natives = null;
+  sub.root = engine;
+  return sub;
 }

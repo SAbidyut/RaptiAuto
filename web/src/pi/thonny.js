@@ -243,7 +243,10 @@ export class Thonny {
       if (!this.fs.isFile(path)) this.fs.write(path, ex.code);
       this.open(path);
     }
-    if (ex.parts && ex.parts.length) {
+    if (ex.circuit) {
+      if (this.ctx.wire) this.ctx.wire(ex);
+      toast('The circuit is built on the Circuit tab', 'ok');
+    } else if (ex.parts && ex.parts.length) {
       const names = ex.parts.map((p) => p.type).join(', ');
       if (this.ctx.wire) this.ctx.wire(ex);
       toast(`Wired on the Circuit tab: ${names}`, 'ok');
