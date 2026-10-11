@@ -114,7 +114,7 @@ export class PiScreen {
     if (id === 'desktop') this.desktop.shown();
     if (id === 'terminal') {
       if (!this.term) {
-        this.term = new Terminal({ sys: this.sys, openThonny: (p) => { this.setTab('thonny'); if (p) this.thonny.open(p); }, openFile: (p) => { this.setTab('desktop'); this.desktop.openPath(p); } });
+        this.term = new Terminal({ sys: this.sys, openThonny: (p) => { this.setTab('thonny'); if (p) this.thonny.open(p); }, openFile: (p) => { this.setTab('desktop'); this.desktop.openPath(p); }, openUrl: (u) => { this.setTab('desktop'); this.desktop.open('chromium', u || 'http://rapti.net/'); } });
         this.panes.terminal.appendChild(this.term.el);
       }
       setTimeout(() => this.term.con.focus(), 80);

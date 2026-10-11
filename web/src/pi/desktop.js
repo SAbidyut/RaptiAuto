@@ -6,6 +6,7 @@ import { icon } from '../ui/icons.js';
 import { Terminal } from './terminal.js';
 import { normPath, basename, dirname } from './vfs.js';
 import { BOARDS } from './boards.js';
+import { VirtualBrowser } from '../ui/browser.js';
 
 const RASP = '<svg viewBox="0 0 32 32" width="22" height="22"><path d="M10 5c-2-1.5-5-.5-4.5 1.5.8 2 3 2.6 5.2 2.5zM22 5c2-1.5 5-.5 4.5 1.5-.8 2-3 2.6-5.2 2.5z" fill="#3ec43e"/><g fill="#c51a4a"><circle cx="16" cy="12" r="4"/><circle cx="10" cy="15.5" r="3.8"/><circle cx="22" cy="15.5" r="3.8"/><circle cx="12.6" cy="21" r="3.8"/><circle cx="19.4" cy="21" r="3.8"/><circle cx="16" cy="26" r="3.3"/><circle cx="7.5" cy="21.5" r="2.5"/><circle cx="24.5" cy="21.5" r="2.5"/></g></svg>';
 const APP_IC = {
@@ -143,7 +144,7 @@ export class Desktop {
     const setTitle = (t) => { win.titleEl.textContent = t; win.task.lastChild.textContent = t; };
     switch (id) {
       case 'terminal': {
-        const t = new Terminal({ sys: this.sys, onExit: () => this.close(win), openThonny: (p) => this.openThonny(p), openFile: (p) => this.openPath(p) });
+        const t = new Terminal({ sys: this.sys, onExit: () => this.close(win), openThonny: (p) => this.openThonny(p), openFile: (p) => this.openPath(p), openUrl: (u) => this.open('chromium', u || 'http://rapti.net/') });
         win.body.appendChild(t.el);
         setTitle('pi@raspberrypi: ~');
         setTimeout(() => t.con.focus(), 60);
@@ -159,7 +160,7 @@ export class Desktop {
       }
       case 'files': return this.fileManager(win, arg || '/home/pi', setTitle);
       case 'editor': return this.textEditor(win, arg, setTitle);
-      case 'chromium': return this.chromium(win);
+      case 'chromium': return this.chromium(win, arg, setTitle);
       case 'calc': return this.calculator(win);
       case 'config': return this.configApp(win);
       default: return {};
@@ -286,19 +287,17 @@ export class Desktop {
     return {};
   }
 
-  chromium(win) {
-    const url = h('input', { class: 'cr-url', value: 'https://www.raspberrypi.com/', onkeydown: (e) => { if (e.key === 'Enter') show(url.value); } });
-    const page = h('div', { class: 'cr-page' });
-    const show = (u) => {
-      page.innerHTML = '';
-      page.append(h('div', { class: 'cr-dino', html: '<svg viewBox="0 0 44 47" width="64" height="68"><path fill="#535353" d="M22 0h20v4h2v13H32v3h8v3H29v3h5v6h-3v-3h-2v6h-3v3h-3v3h-3v3h2v3h-5v-6h-3v3h-3v3h2v3H9v-9H6v-3H3v-3H0v-9h3v3h3v3h3v3h3v-3h3v-3h3v-3h3V3h2z"/><rect x="27" y="3" width="3" height="3" fill="#fff"/></svg>' }),
-        h('h2', {}, 'No internet'), h('p', {}, 'Try:'), h('ul', {}, h('li', {}, 'Checking the network cables, modem and router'), h('li', {}, 'Reconnecting to Wi-Fi')),
-        h('p', { class: 'cr-code' }, 'ERR_INTERNET_DISCONNECTED'),
-        h('p', { class: 'cr-note' }, `The virtual Raspberry Pi has no internet: "${u}" can't be opened. Python libraries such as gpiozero and RPi.GPIO are already installed.`));
-    };
-    show(url.value);
-    win.body.appendChild(h('div', { class: 'cr' }, h('div', { class: 'cr-bar' }, h('span', { class: 'cr-nav', html: icon('arrowLeft', 16) }), h('span', { class: 'cr-nav', html: icon('restart', 16) }), url), page));
-    return {};
+  /** Chromium: a real (virtual) browser on the simulated network — web pages, the dashboard, your own Flask / http.server apps. */
+  chromium(win, arg, setTitle) {
+    const net = this.sys.net;
+    const vb = new VirtualBrowser({
+      net, origin: this.sys.netDev, home: 'http://rapti.net/', start: false,
+      bookmarks: [['Rapti Home', 'http://rapti.net/'], ['Dashboard', 'http://dashboard.rapti.net/'], ['localhost:5000', 'http://localhost:5000/'], ['localhost:8000', 'http://localhost:8000/'], ['Weather', 'http://wttr.in/Dhaka'], ['HiveMQ', 'http://www.hivemq.com/demos/websocket-client/'], ['Docs', 'http://docs.rapti.net/']],
+      onTitle: (t) => setTitle('Chromium — ' + (t || 'New Tab')),
+    });
+    win.body.appendChild(vb.el);
+    vb.go(arg || 'http://rapti.net/');
+    return { openArg: (u) => { if (u) vb.go(/^[a-z]+:\/\//i.test(u) ? u : vb.fixUrl(u)); }, destroy: () => vb.destroy() };
   }
 
   calculator(win) {

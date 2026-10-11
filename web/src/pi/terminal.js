@@ -9,7 +9,8 @@ const USER = 'pi', HOST = 'raspberrypi';
 const COMMANDS = ['apt', 'apt-get', 'basename', 'cal', 'cat', 'cd', 'chmod', 'clear', 'cp', 'date', 'df', 'dirname', 'echo', 'env', 'exit', 'export', 'false', 'fastfetch', 'find', 'free',
   'grep', 'head', 'help', 'history', 'hostname', 'i2cdetect', 'id', 'ifconfig', 'ip', 'kill', 'logout', 'ls', 'lsb_release', 'lscpu', 'man', 'mkdir', 'mv', 'nano', 'neofetch', 'pinctrl', 'pinout',
   'ping', 'pip', 'pip3', 'poweroff', 'ps', 'pwd', 'python', 'python3', 'raspi-config', 'raspi-gpio', 'reboot', 'rm', 'rmdir', 'rpicam-hello', 'shutdown', 'sleep', 'sudo', 'tail', 'thonny',
-  'top', 'touch', 'tree', 'true', 'uname', 'uptime', 'vcgencmd', 'vi', 'vim', 'wc', 'whoami', 'which', 'xdg-open'];
+  'top', 'touch', 'tree', 'true', 'uname', 'uptime', 'vcgencmd', 'vi', 'vim', 'wc', 'whoami', 'which', 'xdg-open',
+  'curl', 'wget', 'nslookup', 'iwgetid', 'nmcli', 'chromium-browser', 'chromium', 'mosquitto_pub', 'mosquitto_sub', 'systemctl'];
 
 export class Terminal {
   /** ctx: { sys, onExit(), openThonny(path), openFile(path) } */
@@ -346,7 +347,7 @@ export class Terminal {
       case 'history': this.hist.forEach((l, i) => wl(`${String(i + 1).padStart(5)}  ${l}`)); break;
       case 'whoami': wl(USER); break;
       case 'id': wl('uid=1000(pi) gid=1000(pi) groups=1000(pi),4(adm),20(dialout),24(cdrom),27(sudo),29(audio),44(video),46(plugdev),60(games),100(users),104(input),106(render),108(netdev),997(gpio),998(i2c),999(spi)'); break;
-      case 'hostname': wl(args.includes('-I') ? '192.168.1.42 fd00::ba27:ebff:fe12:3456 ' : HOST); break;
+      case 'hostname': wl(args.includes('-I') ? this.netIp() + ' ' : HOST); break;
       case 'uname': {
         const b = this.piInfo();
         wl(args.includes('-a') ? `Linux ${HOST} ${b.kernel} #1 SMP PREEMPT Debian 1:6.6.51-1+rpt3 (2024-10-08) aarch64 GNU/Linux` : args.includes('-r') ? b.kernel : args.includes('-m') ? 'aarch64' : 'Linux');
@@ -401,7 +402,16 @@ export class Terminal {
       case 'exit': case 'logout': this.exit(); break;
       case 'sleep': this.con.write(out); out = ''; await this.wait(Number(args[0] || 1) * 1000); break;
       case 'ping': this.con.write(out); out = ''; await this.ping(args); break;
-      case 'ifconfig': case 'ip': wl(ipText(cmd === 'ip')); break;
+      case 'ifconfig': case 'ip': wl(ipText(cmd === 'ip', this.netIp(), this.netMac())); break;
+      case 'curl': await this.curl(args, { wl, w, err }); break;
+      case 'wget': await this.wget(args, { wl, w, err }); break;
+      case 'nslookup': { const h = args[0]; const ip = h && this.sys.net.resolve(h, this.sys.netDev); wl(`Server:\t\t192.168.1.1\nAddress:\t192.168.1.1#53\n`); if (ip) wl(`Non-authoritative answer:\nName:\t${h}\nAddress: ${ip}`); else { wl(`** server can't find ${h}: NXDOMAIN`); this.status = 1; } break; }
+      case 'iwgetid': wl(this.sys.net.online(this.sys.netDev) ? (args.includes('-r') ? this.sys.netDev.ssid : `wlan0     ESSID:"${this.sys.netDev.ssid}"`) : ''); break;
+      case 'nmcli': wl(this.nmcli(args)); break;
+      case 'chromium-browser': case 'chromium': if (this.ctx.openUrl) this.ctx.openUrl(args.find((a) => !a.startsWith('-')) || ''); else err('chromium: cannot open display'); break;
+      case 'mosquitto_pub': this.con.write(out); out = ''; this.mosquittoPub(args); break;
+      case 'mosquitto_sub': this.con.write(out); out = ''; await this.mosquittoSub(args); break;
+      case 'systemctl': wl(args[0] === 'status' ? `● ${args[1] || 'unknown'}.service\n     Loaded: loaded\n     Active: active (running)` : ''); break;
       case 'vcgencmd': wl(this.vcgencmd(args)); if (/^error/.test(out)) this.status = 1; break;
       case 'pinout': this.con.write(out); out = ''; this.pinout(); break;
       case 'pinctrl': wl(this.pinctrl(args)); break;
@@ -415,7 +425,10 @@ export class Terminal {
       case 'pip': case 'pip3': wl(pipText(args)); if (args[0] === 'install') this.status = 1; break;
       case 'nano': case 'vi': case 'vim': case 'mousepad': case 'geany': await this.nano(args.filter((a) => !a.startsWith('-'))[0]); break;
       case 'thonny': if (this.ctx.openThonny) this.ctx.openThonny(args[0] ? p(args[0]) : null); else err('thonny: cannot open display'); break;
-      case 'xdg-open': case 'open': if (args[0] && this.ctx.openFile) this.ctx.openFile(p(args[0])); break;
+      case 'xdg-open': case 'open':
+        if (/^[a-z]+:\/\//i.test(args[0] || '') && this.ctx.openUrl) this.ctx.openUrl(args[0]);
+        else if (args[0] && this.ctx.openFile) this.ctx.openFile(p(args[0]));
+        break;
       case 'reboot': await this.reboot(); break;
       case 'shutdown': case 'poweroff': case 'halt': this.con.writeln(`Broadcast message from root@${HOST} on pts/0:\n\nThe system will power off now!`, 'fg-Y'); this.sys.killProcess(); await this.wait(800); this.con.writeln('Connection to raspberrypi closed.'); this.exit(); break;
       case 'python': case 'python3': case 'python3.11': this.con.write(out); out = ''; await this.python(args); break;
@@ -582,23 +595,128 @@ export class Terminal {
     }
   }
 
+  netIp() { const d = this.sys.netDev; return this.sys.net && d && d.ip && this.sys.net.online(d) ? d.ip : '192.168.1.50'; }
+  netMac() { const d = this.sys.netDev; return d && this.sys.net ? this.sys.net.macString(d, ':').toLowerCase() : 'd8:3a:dd:12:34:57'; }
+
   async ping(args) {
     const host = args.filter((a) => !a.startsWith('-') && args[args.indexOf(a) - 1] !== '-c')[0];
     if (!host) { this.con.writeln('ping: usage error: Destination address required', 'err'); this.status = 1; return; }
+    const net = this.sys.net, dev = this.sys.netDev;
+    if (!net.online(dev)) { this.con.writeln(`ping: connect: Network is unreachable`, 'err'); this.status = 2; return; }
+    const ip = net.resolve(host, dev);
+    if (!ip) { this.con.writeln(`ping: ${host}: Temporary failure in name resolution`, 'err'); this.status = 2; return; }
     const ci = args.indexOf('-c'); const count = ci >= 0 ? Number(args[ci + 1]) : Infinity;
-    const ip = /^\d+\.\d+\.\d+\.\d+$/.test(host) ? host : '142.250.' + (host.length * 7 % 255) + '.' + (host.length * 13 % 255);
+    const local = /^(127\.|192\.168\.)/.test(ip);
     this.con.writeln(`PING ${host} (${ip}) 56(84) bytes of data.`);
     let n = 0, stop = false; const times = [];
     this.fg = { interrupt: () => { stop = true; } };
     while (!stop && n < count) {
       n++;
-      const t = 8 + Math.random() * 14; times.push(t);
-      this.con.writeln(`64 bytes from ${ip}: icmp_seq=${n} ttl=117 time=${t.toFixed(1)} ms`);
+      const t = local ? 0.2 + Math.random() * 3 : 8 + Math.random() * 14; times.push(t);
+      this.con.writeln(`64 bytes from ${ip}: icmp_seq=${n} ttl=${local ? 64 : 117} time=${t.toFixed(local ? 3 : 1)} ms`);
       await new Promise((r) => { const tm = setTimeout(r, 1000); this.fg.interrupt = () => { stop = true; clearTimeout(tm); r(); }; });
     }
     this.fg = null;
     if (stop) this.con.writeln('^C');
     this.con.writeln(`\n--- ${host} ping statistics ---\n${n} packets transmitted, ${n} received, 0% packet loss, time ${n * 1001}ms\nrtt min/avg/max/mdev = ${Math.min(...times).toFixed(3)}/${(times.reduce((a, b) => a + b, 0) / n).toFixed(3)}/${Math.max(...times).toFixed(3)}/2.114 ms`);
+  }
+
+  /** curl on the virtual network: -s -X METHOD -d data -H header -I (headers only) -i -L, URL. */
+  async curl(args, { wl, w, err }) {
+    let method = '', body = '', url = '', head = false, incl = false, silent = false;
+    const headers = {};
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-X' || a === '--request') method = args[++i];
+      else if (a === '-d' || a === '--data' || a === '--data-raw') { body = args[++i] || ''; }
+      else if (a === '-H' || a === '--header') { const [k, ...v] = String(args[++i] || '').split(':'); headers[k.trim()] = v.join(':').trim(); }
+      else if (a === '-I' || a === '--head') head = true;
+      else if (a === '-i' || a === '--include') incl = true;
+      else if (a === '-s' || a === '--silent' || a === '-sS' || a === '-S') silent = true;
+      else if (a === '-o' || a === '-u' || a === '-A' || a === '-m') i++;
+      else if (!a.startsWith('-')) url = a;
+    }
+    if (!url) { err("curl: try 'curl --help' for more information"); this.status = 2; return; }
+    if (!/^[a-z]+:\/\//i.test(url)) url = 'http://' + url;
+    if (body && !method) method = 'POST';
+    if (body && !headers['Content-Type']) headers['Content-Type'] = /^\s*[{[]/.test(body) ? 'application/json' : 'application/x-www-form-urlencoded';
+    const net = this.sys.net, dev = this.sys.netDev;
+    const res = await net.request({ method: head ? 'HEAD' : method || 'GET', url, headers: { 'user-agent': 'curl/7.88.1', ...headers }, body, fromName: dev.name }, dev);
+    if (res.failed) {
+      const msg = { ERR_NAME_NOT_RESOLVED: ['6', `Could not resolve host: ${new URL(url).hostname}`], ERR_CONNECTION_REFUSED: ['7', `Failed to connect to ${new URL(url).hostname} port ${new URL(url).port || 80} after 2 ms: Couldn't connect to server`] }[res.error] || ['28', res.statusText || res.error];
+      err(`curl: (${msg[0]}) ${msg[1]}`);
+      this.status = +msg[0];
+      return;
+    }
+    if (head || incl) {
+      wl(`HTTP/1.1 ${res.status} ${res.statusText}`);
+      for (const [k, v] of Object.entries(res.headers)) wl(`${k.replace(/(^|-)(\w)/g, (m, a, c) => a + c.toUpperCase())}: ${v}`);
+      wl('');
+    }
+    if (!head) w(res.body + (res.body.endsWith('\n') ? '' : '\n'));
+  }
+
+  async wget(args, { wl, w, err }) {
+    let url = args.find((a) => !a.startsWith('-'));
+    if (!url) { err('wget: missing URL'); return; }
+    if (!/^[a-z]+:\/\//i.test(url)) url = 'http://' + url;
+    const oi = args.indexOf('-O');
+    const net = this.sys.net, dev = this.sys.netDev;
+    const u = new URL(url);
+    wl(`--${new Date().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`);
+    wl(`Resolving ${u.hostname}... ${net.resolve(u.hostname, dev) || 'failed: Name or service not known.'}`);
+    const res = await net.request({ method: 'GET', url, headers: { 'user-agent': 'Wget/1.21.3' }, fromName: dev.name }, dev);
+    if (res.failed) { err(`wget: unable to resolve host address '${u.hostname}'`); this.status = 4; return; }
+    wl(`HTTP request sent, awaiting response... ${res.status} ${res.statusText}`);
+    if (res.status >= 400) { err(`${new Date().toISOString().replace('T', ' ').slice(0, 19)} ERROR ${res.status}: ${res.statusText}.`); this.status = 8; return; }
+    const name = oi >= 0 ? args[oi + 1] : (u.pathname.split('/').filter(Boolean).pop() || 'index.html');
+    this.fs.write(normPath(name, this.cwd, this.env.HOME), res.body);
+    this.sys.emit('files');
+    wl(`Length: ${res.body.length} [${res.headers['content-type'] || 'text/plain'}]\nSaving to: '${name}'\n\n${name}      100%[===================>]  ${res.body.length} B  --.-KB/s    in 0s\n\n'${name}' saved [${res.body.length}/${res.body.length}]`);
+  }
+
+  nmcli(args) {
+    const net = this.sys.net, dev = this.sys.netDev;
+    if (args[0] === 'dev' || args[0] === 'device') {
+      if (args[1] === 'wifi') {
+        const list = net.scan();
+        return 'IN-USE  BSSID              SSID          MODE   CHAN  RATE        SIGNAL  BARS  SECURITY\n' + list.map((n) => `${n.ssid === dev.ssid && net.online(dev) ? '*' : ' '}       02:1A:2B:3C:4D:0${n.ch % 10}  ${n.ssid.padEnd(12)}  Infra  ${String(n.ch).padEnd(4)}  130 Mbit/s  ${100 + n.rssi + 20}      ▂▄▆█  ${n.enc === 'open' ? '--' : 'WPA2'}`).join('\n');
+      }
+      return `DEVICE  TYPE      STATE      CONNECTION\nwlan0   wifi      ${net.online(dev) ? 'connected' : 'disconnected'}  ${net.online(dev) ? dev.ssid : '--'}\neth0    ethernet  unavailable  --\nlo      loopback  unmanaged  --`;
+    }
+    return 'nmcli: use "nmcli dev wifi" to list the Wi-Fi networks';
+  }
+
+  mosquittoPub(args) {
+    const g = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : ''; };
+    const host = g('-h') || 'localhost', topic = g('-t'), msg = g('-m'), port = Number(g('-p')) || 1883;
+    if (!topic) { this.con.writeln('Error: You must specify a topic to publish to.', 'err'); this.status = 1; return; }
+    const mq = this.sys.net.mqtt, dev = this.sys.netDev;
+    const r = mq.connect('mosquitto_pub_' + Date.now(), host, port, {}, dev);
+    if (!r.ok) { this.con.writeln(`Error: ${r.reason === 'refused' ? 'Connection refused' : 'Unknown host'}`, 'err'); this.status = 1; return; }
+    mq.publish(r.client, topic, msg, args.includes('-r'));
+    mq.disconnect(r.client);
+  }
+
+  async mosquittoSub(args) {
+    const g = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : ''; };
+    const host = g('-h') || 'localhost', topic = g('-t'), port = Number(g('-p')) || 1883;
+    if (!topic) { this.con.writeln('Error: You must specify a topic to subscribe to.', 'err'); this.status = 1; return; }
+    const mq = this.sys.net.mqtt, dev = this.sys.netDev;
+    const r = mq.connect('mosquitto_sub_' + Date.now(), host, port, {}, dev);
+    if (!r.ok) { this.con.writeln(`Error: ${r.reason === 'refused' ? 'Connection refused' : 'Unknown host'}`, 'err'); this.status = 1; return; }
+    mq.subscribe(r.client, topic);
+    let stop = false;
+    const verbose = args.includes('-v');
+    this.fg = { interrupt: () => { stop = true; } };
+    while (!stop) {
+      let m;
+      while ((m = mq.poll(r.client))) this.con.writeln(verbose ? `${m.topic} ${m.payload}` : m.payload);
+      await new Promise((res) => { const tm = setTimeout(res, 150); this.fg.interrupt = () => { stop = true; clearTimeout(tm); res(); }; });
+    }
+    mq.disconnect(r.client);
+    this.fg = null;
+    this.con.writeln('^C');
   }
 
   async apt(args) {
@@ -610,10 +728,10 @@ export class Terminal {
     } else if (sub === 'install' || sub === 'upgrade' || sub === 'full-upgrade') {
       await step('Reading package lists... Done'); await step('Building dependency tree... Done'); await step('Reading state information... Done');
       if (sub !== 'install' || !pk.length) { await step('Calculating upgrade... Done'); await step('0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'); return; }
-      const builtin = { 'python3-gpiozero': 1, 'python3-rpi.gpio': 1, 'python3-rpi-lgpio': 1, 'python3': 1, 'thonny': 1, 'python3-pip': 1 };
+      const builtin = { 'python3-gpiozero': 1, 'python3-rpi.gpio': 1, 'python3-rpi-lgpio': 1, 'python3': 1, 'thonny': 1, 'python3-pip': 1, mosquitto: 1, 'mosquitto-clients': 1, 'python3-flask': 1, 'python3-paho-mqtt': 1, 'python3-requests': 1, curl: 1, wget: 1, git: 1, 'python3-psutil': 1, chromium: 1, 'chromium-browser': 1 };
       for (const p of pk) {
         if (builtin[p]) await step(`${p} is already the newest version.`);
-        else { this.con.writeln(`E: Unable to locate package ${p}`, 'err'); this.con.writeln('   (The virtual Pi is offline; gpiozero, RPi.GPIO, neopixel and adafruit_dht are built in.)', 'fg-K'); this.status = 100; }
+        else { this.con.writeln(`E: Unable to locate package ${p}`, 'err'); this.con.writeln('   (Built in: gpiozero, RPi.GPIO, requests, flask, paho-mqtt, mosquitto, curl, neopixel, adafruit_dht.)', 'fg-K'); this.status = 100; }
       }
       if (!this.status) await step('0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.');
     } else this.con.writeln('apt 2.6.1 (arm64)\nUsage: apt [options] command\n\nMost used commands:\n  update - retrieve new lists of packages\n  upgrade - upgrade the system by installing/upgrading packages\n  install - install packages');
@@ -753,12 +871,18 @@ function calendar() {
   return s.trimEnd();
 }
 
-function ipText(ipCmd) {
-  if (ipCmd) return '1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN\n    inet 127.0.0.1/8 scope host lo\n2: eth0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 state DOWN\n    link/ether d8:3a:dd:12:34:56 brd ff:ff:ff:ff:ff:ff\n3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\n    link/ether d8:3a:dd:12:34:57 brd ff:ff:ff:ff:ff:ff\n    inet 192.168.1.42/24 brd 192.168.1.255 scope global dynamic noprefixroute wlan0';
-  return 'eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500\n        ether d8:3a:dd:12:34:56  txqueuelen 1000  (Ethernet)\n\nlo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n        inet 127.0.0.1  netmask 255.0.0.0\n\nwlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet 192.168.1.42  netmask 255.255.255.0  broadcast 192.168.1.255\n        ether d8:3a:dd:12:34:57  txqueuelen 1000  (Ethernet)';
+function ipText(ipCmd, ip = '192.168.1.50', mac = 'd8:3a:dd:12:34:57') {
+  if (ipCmd) return `1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN\n    inet 127.0.0.1/8 scope host lo\n2: eth0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 state DOWN\n    link/ether d8:3a:dd:12:34:56 brd ff:ff:ff:ff:ff:ff\n3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\n    link/ether ${mac} brd ff:ff:ff:ff:ff:ff\n    inet ${ip}/24 brd 192.168.1.255 scope global dynamic noprefixroute wlan0`;
+  return `eth0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500\n        ether d8:3a:dd:12:34:56  txqueuelen 1000  (Ethernet)\n\nlo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n        inet 127.0.0.1  netmask 255.0.0.0\n\nwlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n        inet ${ip}  netmask 255.255.255.0  broadcast 192.168.1.255\n        ether ${mac}  txqueuelen 1000  (Ethernet)`;
 }
 
+const PIP_KNOWN = { requests: '2.31.0', flask: '2.2.2', 'paho-mqtt': '2.1.0', psutil: '5.9.4', gpiozero: '2.0.1', 'rpi.gpio': '0.7.1', pyserial: '3.5', smbus2: '0.4.3', numpy: '1.24.2', pillow: '9.4.0' };
 function pipText(args) {
+  if (args[0] === 'install') {
+    const names = args.slice(1).filter((a) => !a.startsWith('-'));
+    if (names.length && names.every((n) => PIP_KNOWN[n.toLowerCase().replace(/[=<>].*$/, '').replace('_', '-')])) return names.map((n) => { const k = n.toLowerCase().replace(/[=<>].*$/, ''); return `Requirement already satisfied: ${k} in /usr/lib/python3/dist-packages (${PIP_KNOWN[k]})`; }).join('\n');
+    if (names.length) return names.map((n) => `ERROR: Could not find a version that satisfies the requirement ${n} (from versions: none)\nERROR: No matching distribution found for ${n}`).join('\n') + '\n(RaptiAuto: built in: requests, flask, paho-mqtt, psutil, gpiozero, RPi.GPIO, smbus2, pyserial, neopixel, adafruit_dht, board.)';
+  }
   if (args[0] === 'install') return 'error: externally-managed-environment\n\n× This environment is externally managed\n╰─> To install Python packages system-wide, try apt install\n    python3-xyz, where xyz is the package you are trying to\n    install.\n\n(RaptiAuto: the virtual Pi is offline. Built in: gpiozero, RPi.GPIO, smbus2, pyserial, neopixel, adafruit_dht, board.)';
   if (args[0] === 'list') return 'Package    Version\n---------- -------\ngpiozero   2.0.1\nRPi.GPIO   0.7.1\nadafruit-circuitpython-dht 4.0.4\nadafruit-circuitpython-neopixel 6.3.12\npyserial   3.5\nsmbus2     0.4.3';
   return 'pip 23.0.1 from /usr/lib/python3/dist-packages/pip (python 3.11)';

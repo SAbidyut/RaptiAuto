@@ -1,5 +1,9 @@
-# network: simulated Wi-Fi for the Pico W (no real internet; the connection always succeeds).
+# network: Wi-Fi for the Pico W on the simulated network (see src/net). Networks in range: RaptiNet
+# (password rapti1234), RAPTI-Lab (password123), Wokwi-GUEST and Guest (open), Home-WiFi (12345678),
+# Office-5G (admin1234). Any other name works too when the password has 8+ characters (turn on
+# "Strict Wi-Fi" in http://dashboard.rapti.net/ to make a wrong name fail).
 import _rpi_js as J
+import json
 import time as _time
 
 STA_IF = 0
@@ -24,51 +28,67 @@ class WLAN:
         self._active = False
         self._t = None
         self._ssid = None
+        self._res = None
+        self._join = None
 
     def active(self, a=None):
         if a is None:
             return self._active
         self._active = bool(a)
         J.wifi(1 if self._active else 0, '')
+        if not self._active:
+            J.wifi_leave()
 
     def connect(self, ssid=None, key=None, **kw):
         if not self._active:
             raise OSError('wifi is not active')
         self._ssid = ssid
         self._t = _time.ticks_ms()
+        self._res = json.loads(J.wifi_join(ssid or '', key or ''))
         J.wifi(2, ssid or '')
 
     def disconnect(self):
         self._t = None
+        self._res = None
+        J.wifi_leave()
         J.wifi(1, '')
 
     def status(self, param=None):
         if param == 'rssi':
-            return -48
+            return json.loads(J.wifi_info()).get('rssi', -48)
         if self._t is None:
             return STAT_IDLE
         if _time.ticks_diff(_time.ticks_ms(), self._t) < 1800:
             return STAT_CONNECTING
-        J.wifi(3, self._ssid or '')
-        return STAT_GOT_IP
+        st = self._res['status'] if self._res else 1
+        if st == 3:
+            if not json.loads(J.wifi_info()).get('connected'):
+                return STAT_CONNECT_FAIL
+            J.wifi(3, self._ssid or '')
+            return STAT_GOT_IP
+        return STAT_WRONG_PASSWORD if st == 4 else STAT_NO_AP_FOUND
 
     def isconnected(self):
         return self.status() == STAT_GOT_IP
 
     def ifconfig(self, cfg=None):
         if self.isconnected():
-            return ('192.168.1.42', '255.255.255.0', '192.168.1.1', '8.8.8.8')
+            ip = json.loads(J.wifi_info()).get('ip', '192.168.1.50')
+            return (ip, '255.255.255.0', '192.168.1.1', '8.8.8.8')
         return ('0.0.0.0', '0.0.0.0', '0.0.0.0', '0.0.0.0')
 
     def ipconfig(self, *a):
         return self.ifconfig()[0]
 
     def scan(self):
-        return [(b'RAPTI-Lab', b'\x00\x11\x22\x33\x44\x55', 6, -45, 3, 0), (b'Home WiFi', b'\x66\x77\x88\x99\xaa\xbb', 11, -67, 3, 0)]
+        out = []
+        for n in json.loads(J.wifi_scan()):
+            out.append((n['ssid'].encode(), bytes(n['bssid']), n['ch'], n['rssi'], 3 if n['enc'] != 'open' else 0, 0))
+        return out
 
     def config(self, *a, **k):
         if a and a[0] == 'mac':
-            return b'\x28\xcd\xc1\x0a\x4b\x2e'
+            return bytes(int(x, 16) for x in json.loads(J.wifi_info()).get('mac', '28:cd:c1:0a:4b:2e').split(':'))
         if a and a[0] == 'ssid':
             return self._ssid or ''
         return None

@@ -15,6 +15,8 @@ export class GpioSim {
     this.bgTimer = null;
     this.bootsel = 0;
     this.wifiState = { state: 0, ssid: '' };
+    this.net = null;      // the virtual network (src/net) when this board has Wi-Fi / Ethernet
+    this.netDev = null;   // this board's device on it
     this.uartLog = [];
     this.lastYield = now();
     this.quietEnd = 0;
@@ -78,6 +80,7 @@ export class GpioSim {
     this.events = [];
     this.evArg = 0;
     this.bg.clear();
+    if (this.net && this.netDev) { this.net.dropServers(this.netDev); this.net.mqtt.dropDevice(this.netDev); }
     if (this.pins) {
       for (const p of this.pins.values()) {
         p.watch = null; p.cbs = []; p.detected = false;
