@@ -167,6 +167,10 @@ export function installServices(net) {
     return http.text(`Weather report: ${city[0]}\n\n  ${w.code === 0 ? 'Sunny' : 'Partly cloudy'}  ${Math.round(w.temp)} °C\n  Wind ${Math.round(w.wind * 3.6)} km/h   Humidity ${Math.round(w.hum)} %\n`);
   });
 
+  // ---------------------------------------------------------------- NTP servers (UDP in real life: only the name has to resolve)
+  add(['pool.ntp.org', '0.pool.ntp.org', '1.pool.ntp.org', '2.pool.ntp.org', '3.pool.ntp.org', 'asia.pool.ntp.org', 'europe.pool.ntp.org', 'north-america.pool.ntp.org', 'bd.pool.ntp.org',
+    'time.nist.gov', 'time.google.com', 'time.cloudflare.com', 'time.windows.com', 'time.apple.com', 'ntp.ubuntu.com'], () => http.text('NTP uses UDP port 123 — this simulated server answers the time to NTPClient / configTime().'));
+
   // ---------------------------------------------------------------- who am I
   add('api.ipify.org', (req, u) => (u.searchParams.get('format') === 'json' ? http.json({ ip: '103.4.145.20' }) : http.text('103.4.145.20')));
   add(['icanhazip.com', 'ifconfig.me', 'checkip.amazonaws.com'], () => http.text('103.4.145.20\n'));

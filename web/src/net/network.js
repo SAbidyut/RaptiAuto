@@ -54,7 +54,7 @@ export class VirtualNet {
     let d = this.devices.get(id);
     if (!d) {
       const h = hash(id + name);
-      d = { id, name, kind, hostname: hostname || '', mac: [0x24, 0x6f, 0x28, (h >> 16) & 255, (h >> 8) & 255, h & 255], ip: '', ssid: '', rssi: 0, connected: false, broker, since: this.clock(), apIp: '' };
+      d = { id, name, kind, hostname: hostname || '', mac: [0x24, 0x6f, 0x28, (h >> 16) & 255, (h >> 8) & 255, h & 255], ip: '', ssid: '', rssi: 0, connected: false, broker, since: this.clock(), apIp: '', apOn: false, apSsid: '', bt: null };
       this.devices.set(id, d);
     }
     d.name = name; d.kind = kind; if (hostname) d.hostname = hostname; d.broker = broker;
@@ -102,6 +102,16 @@ export class VirtualNet {
 
   leave(d) { if (d && d.connected) { d.connected = false; this.dropServers(d); this.changed(); } }
 
+  /** Text typed into the phone's Bluetooth terminal reaches the board's BluetoothSerial. */
+  btSend(id, text) {
+    const d = this.devices.get(id);
+    if (!d || !d.bt) return false;
+    d.bt.rx += text + '\n';
+    d.bt.log.push({ dir: 'in', text: text + '\n', t: this.clock() });
+    this.changed();
+    return true;
+  }
+
   /** Router and internet switches of the dashboard / IoT panel. */
   setRouter(on) { this.opts.router = !!on; this.changed(); }
   setInternet(on) { this.opts.internet = !!on; this.changed(); }
@@ -113,6 +123,7 @@ export class VirtualNet {
     const h = String(host || '').toLowerCase();
     for (const d of this.devices.values()) {
       if (d.ip && d.ip === h) return d;
+      if (d.apOn && d.apIp === h) return d;
       if (d.hostname && (h === d.hostname.toLowerCase() || h === d.hostname.toLowerCase() + '.local')) return d;
     }
     return null;
@@ -176,7 +187,7 @@ export class VirtualNet {
     if (dev) {
       if (origin && dev !== origin && !this.online(origin)) return { error: this.fail('ERR_INTERNET_DISCONNECTED', 'This device is not connected to Wi-Fi') };
       if (dev !== origin && !this.opts.router) return { error: this.fail('ERR_NETWORK_CHANGED', 'The router is off') };
-      if (!dev.connected && dev !== origin) return { error: this.fail('ERR_ADDRESS_UNREACHABLE', `${host} is not on the network (it has no Wi-Fi connection)`) };
+      if (!dev.connected && !dev.apOn && dev !== origin) return { error: this.fail('ERR_ADDRESS_UNREACHABLE', `${host} is not on the network (it has no Wi-Fi connection)`) };
       const server = this.serverFor(dev, port);
       if (!server) return { error: this.fail('ERR_CONNECTION_REFUSED', `${host} refused to connect on port ${port}`) };
       return { dev, server, port };
@@ -259,7 +270,7 @@ export class VirtualNet {
   snapshot() {
     return {
       router: this.opts.router, internet: this.opts.internet, strict: this.opts.strict, time: this.clock(),
-      devices: [...this.devices.values()].map((d) => ({ id: d.id, name: d.name, kind: d.kind, ip: d.ip, mac: this.macString(d), ssid: d.ssid, rssi: d.rssi, connected: d.connected && this.opts.router, hostname: d.hostname, servers: [...this.servers.values()].filter((s) => s.dev === d).map((s) => s.port), since: d.since })),
+      devices: [...this.devices.values()].map((d) => ({ id: d.id, name: d.name, kind: d.kind, ip: d.ip, mac: this.macString(d), ssid: d.ssid, rssi: d.rssi, connected: d.connected && this.opts.router, hostname: d.hostname, ap: d.apOn ? { ssid: d.apSsid, ip: d.apIp } : null, bt: d.bt ? { name: d.bt.name, log: d.bt.log.slice(-40) } : null, servers: [...this.servers.values()].filter((s) => s.dev === d).map((s) => s.port), since: d.since })),
       http: this.log.slice(-40).reverse(),
       notes: this.notes.slice(-40).reverse(),
       mqtt: this.mqtt.snapshot(),

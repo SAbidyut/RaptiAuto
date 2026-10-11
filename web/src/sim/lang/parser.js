@@ -3,7 +3,7 @@ import { CompileError } from './lexer.js';
 
 const TYPE_WORDS = new Set([
   'void', 'bool', 'boolean', 'char', 'short', 'int', 'long', 'float', 'double', 'signed', 'unsigned',
-  'byte', 'word', 'size_t', 'String', 'auto',
+  'byte', 'word', 'size_t', 'time_t', 'String', 'auto',
   'int8_t', 'uint8_t', 'int16_t', 'uint16_t', 'int32_t', 'uint32_t', 'int64_t', 'uint64_t',
   'uint_fast8_t', 'uint_least8_t', 'int_fast8_t', 'uint_fast16_t', 'uint_fast32_t', 'uintptr_t', 'intptr_t',
   'u8', 'u16', 'u32', 's8', 's16', 's32', 'prog_char', 'prog_uchar', 'wchar_t', 'char16_t', 'char32_t',
@@ -169,6 +169,7 @@ export class Parser {
     else if (name === 'byte') name = 'u8';
     else if (name === 'word') name = 'uint';
     else if (name === 'size_t') name = 'uint';
+    else if (name === 'time_t') name = 'long';
     else if (FIXED[name]) name = FIXED[name];
     return { name, isConst: s.isConst, isStatic: s.isStatic, ptr: 0, line: s.line };
   }

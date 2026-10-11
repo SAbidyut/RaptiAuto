@@ -29,6 +29,7 @@ export function dashboardApi(net, req, u) {
     net.note('telegram-in', 'You → bot', String(b.text || ''));
     return http.json({ ok: true });
   }
+  if (p === '/api/bt/send') return http.json({ ok: net.btSend(b.dev, String(b.text || '')) });
   if (p === '/api/router') { net.setRouter(!!b.on); return http.json({ ok: true }); }
   if (p === '/api/internet') { net.setInternet(!!b.on); return http.json({ ok: true }); }
   if (p === '/api/strict') { net.opts.strict = !!b.on; net.changed(); return http.json({ ok: true }); }
@@ -71,13 +72,15 @@ svg{width:100%;height:56px;background:#0b1328;border-radius:8px}.big{font-size:2
 <section id="nt"><h2>Notifications &amp; chat</h2><div id="notes" class="empty">Telegram / IFTTT / webhook messages sent by devices show here.</div>
 <div class="row"><input id="tg" placeholder="Message the bot (Telegram getUpdates)"><button id="tgs">Send</button></div></section>
 <section id="ht"><h2>HTTP requests <span id="htn"></span></h2><table id="http"></table></section>
+<section id="bt"><h2>Bluetooth terminal</h2><div id="btlist" class="empty">A board that runs SerialBT.begin("name") shows up here — type to send text to it.</div></section>
 <section id="af"><h2>Adafruit IO feeds</h2><div id="aflist" class="empty">No feed yet.</div></section>
 </main>
 <script>
 const $=(i)=>document.getElementById(i);
 const esc=(s)=>String(s).replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const post=(p,b)=>fetch(p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)}).then(()=>load());
-let S=null;
+let S=null;const cache={};
+const put=(id,h)=>{if(cache[id]!==h){cache[id]=h;$(id).innerHTML=h;}};
 const ago=(t)=>{const s=Math.max(0,Math.round((S.time-t)/1000));return s<60?s+' s ago':Math.round(s/60)+' min ago';};
 function draw(){
   $('clock').textContent=new Date(S.time).toLocaleTimeString();
@@ -85,7 +88,8 @@ function draw(){
   const online=S.devices.filter(d=>d.connected);
   $('wifiname').textContent=online[0]?online[0].ssid:'';
   $('devlist').className=S.devices.length?'':'empty';
-  $('devlist').innerHTML=S.devices.length?S.devices.map(d=>'<div class="dev"><span class="dot '+(d.connected?'on':'')+'"></span><div style="flex:1"><b>'+esc(d.name)+'</b> <span class="pill">'+esc(d.kind)+'</span><br><span class="mono mute">'+(d.connected?esc(d.ip)+' · '+esc(d.mac)+' · '+esc(d.ssid)+' · '+d.rssi+' dBm':'offline')+'</span>'+(d.servers.length&&d.connected?'<br>'+d.servers.map(p=>'<a href="http://'+d.ip+(p===80?'':':'+p)+'/">http://'+d.ip+(p===80?'':':'+p)+'/</a>').join(' · '):'')+'</div></div>').join(''):'No device is online yet.';
+  const link=(h)=>'<a href="'+h+'">'+h.replace('http://','')+'</a>';
+  put('devlist',S.devices.length?S.devices.map(d=>'<div class="dev"><span class="dot '+(d.connected||d.ap?'on':'')+'"></span><div style="flex:1"><b>'+esc(d.name)+'</b> <span class="pill">'+esc(d.kind)+'</span><br><span class="mono mute">'+(d.connected?esc(d.ip)+' · '+esc(d.mac)+' · '+esc(d.ssid)+' · '+d.rssi+' dBm':'not on the Wi-Fi')+'</span>'+(d.ap?'<br><span class="mono mute">Access point "'+esc(d.ap.ssid)+'" · '+esc(d.ap.ip)+'</span>':'')+((d.servers.length&&(d.connected||d.ap))?'<br>'+d.servers.map(p=>[d.connected?link('http://'+d.ip+(p===80?'':':'+p)+'/'):'',d.ap?link('http://'+d.ap.ip+(p===80?'':':'+p)+'/'):''].filter(Boolean).join(' · ')).join(' · ')+(d.connected&&d.hostname?'<br><span class="mute mono">or '+link('http://'+d.hostname+'.local/')+'</span>':''):'')+'</div></div>').join(''):'No device is online yet.');
   const m=S.mqtt;
   $('mqttn').textContent=m.clients.length+' client'+(m.clients.length==1?'':'s');
   $('topics').className=m.topics.length?'':'empty';
@@ -94,11 +98,14 @@ function draw(){
   $('tslist').className=S.thingspeak.length?'':'empty';
   $('tslist').innerHTML=S.thingspeak.length?S.thingspeak.map(c=>'<div style="margin-bottom:10px"><b>Channel '+c.id+'</b> <span class="mute">key '+esc(c.key)+' · '+c.entries.length+' entries</span>'+Object.keys(c.fields).map(f=>{const vals=c.entries.map(e=>parseFloat(e['field'+f])).filter(Number.isFinite);const lo=Math.min(...vals),hi=Math.max(...vals),sp=(hi-lo)||1;const pts=vals.map((v,i)=>(i/Math.max(1,vals.length-1)*300)+','+(52-(v-lo)/sp*46)).join(' ');return '<div class="mute" style="margin-top:6px">Field '+f+' <span class="big" style="color:var(--ink)">'+(vals.length?vals[vals.length-1]:'—')+'</span></div><svg viewBox="0 0 300 56" preserveAspectRatio="none"><polyline fill="none" stroke="#22d3ee" stroke-width="2" points="'+pts+'"/></svg>';}).join('')+'</div>').join(''):'No channel yet (a device writes with /update?api_key=…).';
   $('bllist').className=S.blynk.length?'':'empty';
-  $('bllist').innerHTML=S.blynk.length?S.blynk.map(b=>'<div class="mute mono" style="margin-bottom:6px">token '+esc(b.token.slice(0,10))+'… '+(b.online?'<span class="ok">online</span>':'')+'</div><div class="pins">'+b.pins.map(p=>'<div class="pin"><b>'+esc(p.pin)+'</b><br><span class="big">'+esc(p.value)+'</span><div class="row" style="margin-top:4px"><input data-t="'+esc(b.token)+'" data-p="'+esc(p.pin)+'" value="'+esc(p.value)+'" style="width:60px"><button data-set="1">Set</button></div></div>').join('')+'</div><div class="row"><input id="bp_'+esc(b.token)+'" placeholder="V1" style="max-width:70px"><input id="bv_'+esc(b.token)+'" placeholder="value"><button data-add="'+esc(b.token)+'">Write pin</button></div>').join(''):'No Blynk device yet.';
+  put('bllist',S.blynk.length?S.blynk.map(b=>'<div class="mute mono" style="margin-bottom:6px">token '+esc(b.token.slice(0,10))+'… '+(b.online?'<span class="ok">online</span>':'')+'</div><div class="pins">'+b.pins.map(p=>'<div class="pin"><b>'+esc(p.pin)+'</b><br><span class="big">'+esc(p.value)+'</span><div class="row" style="margin-top:4px"><input data-t="'+esc(b.token)+'" data-p="'+esc(p.pin)+'" value="'+esc(p.value)+'" style="width:60px"><button data-set="1">Set</button></div></div>').join('')+'</div><div class="row"><input id="bp_'+esc(b.token)+'" placeholder="V1" style="max-width:70px"><input id="bv_'+esc(b.token)+'" placeholder="value"><button data-add="'+esc(b.token)+'">Write pin</button></div>').join(''):'No Blynk device yet.');
   $('notes').className=S.notes.length?'':'empty';
   $('notes').innerHTML=S.notes.length?S.notes.slice(0,12).map(n=>'<div class="note '+esc(n.kind)+'"><b>'+esc(n.title)+'</b>'+esc(n.text)+' <span class="mute">'+ago(n.t)+'</span></div>').join(''):'Telegram / IFTTT / webhook messages sent by devices show here.';
   $('htn').textContent=S.http.length+' recent';
   $('http').innerHTML='<tr><th>From</th><th>Request</th><th>Status</th></tr>'+S.http.slice(0,12).map(h=>'<tr><td>'+esc(h.from)+'</td><td class="mono">'+esc(h.method)+' '+esc(h.url.replace(/^https?:\\/\\//,'').slice(0,60))+'</td><td class="'+(h.status>=400||!h.status?'bad':'ok')+'">'+(h.status||'ERR')+'</td></tr>').join('');
+  const bts=S.devices.filter(d=>d.bt);
+  $('btlist').className=bts.length?'':'empty';
+  put('btlist',bts.length?bts.map(d=>'<div style="margin-bottom:10px"><b>'+esc(d.bt.name)+'</b> <span class="pill">'+esc(d.name)+'</span><div class="mono" style="background:#0b1328;border-radius:8px;padding:6px 8px;margin:6px 0;max-height:150px;overflow:auto;white-space:pre-wrap">'+(d.bt.log.map(l=>'<div class="'+(l.dir==='in'?'mute':'ok')+'">'+(l.dir==='in'?'→ ':'← ')+esc(l.text.replace(/\\r?\\n$/,''))+'</div>').join('')||'<span class="mute">(nothing yet)</span>')+'</div><div class="row"><input id="btt_'+esc(d.id)+'" placeholder="text to send"><button data-bt="'+esc(d.id)+'">Send</button></div></div>').join(''):'A board that runs SerialBT.begin("name") shows up here — type to send text to it.');
   $('aflist').className=S.adafruit.length?'':'empty';
   $('aflist').innerHTML=S.adafruit.length?S.adafruit.map(f=>'<div class="mono">'+esc(f.feed)+' = <b>'+esc(f.last)+'</b> <span class="mute">('+f.count+')</span></div>').join(''):'No feed yet.';
 }
@@ -108,6 +115,7 @@ $('clr').onclick=()=>post('/api/clear',{});
 $('mpub').onclick=()=>post('/api/mqtt/publish',{topic:$('mt').value,payload:$('mp').value,retain:$('mr').checked,broker:$('mb').value});
 $('tgs').onclick=()=>{if($('tg').value){post('/api/telegram/send',{text:$('tg').value});$('tg').value='';}};
 document.addEventListener('click',(e)=>{const b=e.target;if(b.dataset&&b.dataset.set){const i=b.parentNode.querySelector('input');post('/api/blynk/set',{token:i.dataset.t,pin:i.dataset.p,value:i.value});}
+ if(b.dataset&&b.dataset.bt){const i=document.getElementById('btt_'+b.dataset.bt);if(i.value){post('/api/bt/send',{dev:b.dataset.bt,text:i.value});i.value='';}}
  if(b.dataset&&b.dataset.add){const t=b.dataset.add;post('/api/blynk/set',{token:t,pin:document.getElementById('bp_'+t).value||'V0',value:document.getElementById('bv_'+t).value});}});
 load();setInterval(load,1000);
 </script></body></html>`;

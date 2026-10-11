@@ -249,7 +249,7 @@ register({
   description: 'RA4M1 + ESP32-S3 · 12×8 LED matrix · 5V · 48 MHz',
   box: [-8, 0, 270, 210], pins: unoPins(), internal: UNO_INTERNAL, socket: true,
   board: unoBoard({
-    name: 'Arduino Uno R4 WiFi', arch: 'arm', mhz: 48, ram: 32768, flash: 262144, eeprom: 8192, interruptPins: null,
+    name: 'Arduino Uno R4 WiFi', wifi: true, arch: 'arm', mhz: 48, ram: 32768, flash: 262144, eeprom: 8192, interruptPins: null,
     serialPorts: ['Serial', 'Serial1'], rout: 30, ledMatrix: true,
     macros: { ARDUINO: 10819, ARDUINO_UNOR4_WIFI: 1, ARDUINO_ARCH_RENESAS: 1, ARDUINO_ARCH_RENESAS_UNO: 1 },
   }),
@@ -362,7 +362,7 @@ register({
   description: 'ESP32-WROOM-32 · 240 MHz dual core · WiFi + BT · 3.3V logic',
   box: [-30, -8, 172, 98], pins: ESP_PINS, internal: [['GND.1', 'GND.2']],
   board: {
-    name: 'ESP32 DevKit V1', arch: 'xtensa', family: 'esp32', mhz: 240, vcc: 3.3, adcBits: 12, ledBuiltin: 2,
+    name: 'ESP32 DevKit V1', wifi: true, arch: 'xtensa', family: 'esp32', mhz: 240, vcc: 3.3, adcBits: 12, ledBuiltin: 2,
     pinMap: espMap, analogPins: [36, 39, 34, 35, 32, 33, 25, 26, 27, 14, 12, 13, 4, 2, 15], gpioAnalog: true, anyAnalog: false,
     pwmPins: null, inputOnly: [34, 35, 36, 39], interruptPins: null,
     i2c: { sda: 21, scl: 22 }, spi: { mosi: 23, miso: 19, sck: 18, ss: 5 },
@@ -385,7 +385,7 @@ register({
   description: 'ESP-12E · 80 MHz · WiFi · 3.3V logic',
   box: [-30, -8, 172, 98], pins: NODE_PINS, internal: [['GND.1', 'GND.2', 'GND.3', 'GND.4'], ['3V3.1', '3V3.2', '3V3.3']],
   board: {
-    name: 'NodeMCU ESP8266', arch: 'xtensa', family: 'esp8266', mhz: 80, vcc: 3.3, adcBits: 10, ledBuiltin: 2,
+    name: 'NodeMCU ESP8266', wifi: true, arch: 'xtensa', family: 'esp8266', mhz: 80, vcc: 3.3, adcBits: 10, ledBuiltin: 2,
     pinMap: { 16: 'D0', 5: 'D1', 4: 'D2', 0: 'D3', 2: 'D4', 14: 'D5', 12: 'D6', 13: 'D7', 15: 'D8', 3: 'RX', 1: 'TX', 17: 'A0' },
     analogPins: [17], pwmPins: null, interruptPins: null, i2c: { sda: 4, scl: 5 }, spi: { mosi: 13, miso: 12, sck: 14, ss: 15 },
     gndPins: ['GND.1', 'GND.2', 'GND.3', 'GND.4'], supplies: [{ pin: '3V3.1', v: 3.3, r: 0.1, maxI: 0.6 }, { pin: 'VIN', v: 5, r: 0.1 }],

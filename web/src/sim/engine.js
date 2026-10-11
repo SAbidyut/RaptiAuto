@@ -5,7 +5,7 @@ import { buildNetlist, pinKey } from './netlist.js';
 import { Solver, VSource, Diode } from './circuit/solver.js';
 import { SketchRunner } from './lang/runtime.js';
 import { makeCore } from './lang/core.js';
-import { makeLibraries } from './libs/index.js';
+import { makeLibraries, libMacros, checkIncludes } from './libs/index.js';
 import { Stress, pinCurrentStress, pinVoltageStress, supplyStress, burnMessage } from './damage.js';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -25,6 +25,7 @@ export class SimEngine {
   constructor(project, opts = {}) {
     this.project = project;
     this.opts = opts;
+    this.net = opts.net || null;      // the virtual network (Wi-Fi, internet, MQTT …) the boards' libraries use
     this.solver = new Solver();
     this.running = false;
     this.paused = false;
@@ -254,7 +255,7 @@ export class SimEngine {
     this.runner = new SketchRunner({
       code,
       board,
-      macros: { ...board.macros, ...timeMacros() },
+      macros: { ...board.macros, ...timeMacros(), ...libMacros },
       natives: (rt) => {
         const n = makeCore(rt, engine, board);
         makeLibraries(n, rt, engine, board);
@@ -265,10 +266,20 @@ export class SimEngine {
     });
     const res = this.runner.compile();
     if (!res.ok) return res;
+    // a Wi-Fi library on a board that has none: the compiler stops like the Arduino IDE does
+    const missing = checkIncludes(board, res.includes);
+    if (missing) return { ok: false, error: missing };
     this.rt = this.runner.rt;
     this.runner.start();
     return res;
   }
+
+  /** Library state that must go when this board's sketch stops or restarts (connections, servers). */
+  addCleanup(fn) {
+    if (!Object.prototype.hasOwnProperty.call(this, '_cleanups')) this._cleanups = [];
+    this._cleanups.push(fn);
+  }
+  runCleanups() { const l = Object.prototype.hasOwnProperty.call(this, '_cleanups') ? this._cleanups : []; for (const fn of l) { try { fn(); } catch (e) { /* ignore */ } } }
 
   /**
    * External program (no sketch runner): move the circuit's clock to wall time `wall` now, between
@@ -285,6 +296,7 @@ export class SimEngine {
 
   stop() {
     this.running = false;
+    for (const b of this.boards || [this]) b.runCleanups();
     if (this.opts.onSound) this.opts.onSound('*', 0, 0);
     for (const p of this.parts.values()) if (p.stopped) p.stopped();
   }
@@ -311,6 +323,9 @@ export class SimEngine {
       const sub = this.boards[i];
       const st = sub.runner.step(target, 6);
       if (st === 'error') { this.stop(); if (this.opts.onError) this.opts.onError({ ...sub.runner.error, boardId: sub.boardPart.id, boardLabel: sub.label }); return 'error'; }
+    }
+    for (const b of this.boards) {
+      if (b.restartRequested) { b.restartRequested = false; b.runCleanups(); if (b.runner && b.runner.state !== 'error') b.runner.start(); }
     }
     const busy = now() - t0;
     this.processEvents();
