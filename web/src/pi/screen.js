@@ -505,10 +505,10 @@ export class PiScreen {
 
   about() {
     const body = h('div', { class: 'dialog-body pi-about' },
-      h('p', {}, 'Python runs on a real MicroPython 1.29 interpreter compiled to WebAssembly, inside the app (no internet needed).'),
+      h('p', {}, 'Python runs on a real MicroPython 1.29 interpreter compiled to WebAssembly, inside the app (it needs no real internet: the simulated Wi-Fi network is built in).'),
       h('p', {}, 'The Circuit tab uses the same parts and circuit solver as the Arduino simulator: wire LEDs with resistors, buttons, sensors, motors, displays … to the header, and the GPIOs drive and read the real circuit (3.3 V logic, ~16 mA per pin, pull-ups, 5 V warnings).'),
-      h('p', {}, 'Raspberry Pi 5 / 4: Python 3 style programs with gpiozero, RPi.GPIO, neopixel, adafruit_dht, i2c_lcd and signal. Pico boards: MicroPython machine, rp2, neopixel, dht, i2c_lcd and network (Pico W).'),
-      h('p', { class: 'muted' }, 'Not simulated: a real Linux kernel, apt / pip installs, internet, the camera, PIO programs, CPython-only libraries such as numpy or OpenCV.'));
+      h('p', {}, 'Raspberry Pi 5 / 4: Python 3 style programs with gpiozero, RPi.GPIO, neopixel, adafruit_dht, RPLCD / i2c_lcd, adafruit_ssd1306 (OLED), tm1637, max7219 + spidev, requests, flask, http.server, socket, paho-mqtt and psutil. Pico boards: MicroPython machine (I2C, SPI), rp2, neopixel, dht, ssd1306, tm1637, max7219, i2c_lcd and — on the Pico W — network, urequests, umqtt and ntptime.'),
+      h('p', { class: 'muted' }, 'Not simulated: a real Linux kernel, real apt / pip installs, the real internet (a simulated one is built in: Chromium, requests, MQTT, Flask), the camera, PIO programs, CPython-only libraries such as numpy or OpenCV.'));
     new Sheet({ title: 'About the Raspberry Pi Lab', icon: 'info', content: body }).open();
   }
 

@@ -488,7 +488,7 @@ export class Shell {
       h('div', { class: 'li-text' },
         h('h2', {}, 'Virtual Raspberry Pi'),
         h('p', {}, 'Raspberry Pi 5 / 4 and Pico: build circuits on a breadboard, run real Python and MicroPython, use the Pi OS desktop and terminal.'),
-        h('div', { class: 'li-feats' }, ...['Breadboard', 'GPIO', 'Thonny', 'Terminal', 'I²C · UART', 'Arduino slave'].map((t) => h('span', { class: 'pill' }, t))),
+        h('div', { class: 'li-feats' }, ...['Breadboard', 'GPIO', 'Thonny', 'Terminal', 'Displays', 'IoT · Wi-Fi', 'I²C · UART', 'Arduino slave'].map((t) => h('span', { class: 'pill' }, t))),
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: () => this.newPiProject() }),
           h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: () => { const t = el.querySelector('#pi-examples'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } })))));

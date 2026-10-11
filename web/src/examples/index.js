@@ -15,7 +15,7 @@ export const EXAMPLE_CATEGORIES = [
   { id: 'sensors', name: 'Sensors' },
   { id: 'displays', name: 'Displays' },
   { id: 'motors', name: 'Motors' },
-  { id: 'iot', name: 'ESP32 & Pico' },
+  { id: 'iot', name: 'IoT & Wi-Fi' },
   { id: 'electrical', name: 'Electrical' },
   { id: 'multi', name: 'Master–Slave' },
 ];
