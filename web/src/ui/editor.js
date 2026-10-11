@@ -441,6 +441,8 @@ export class Editor {
       const what = [parts.length ? `${parts.length} part${parts.length > 1 ? 's' : ''}` : '', wires.length ? `${wires.length} wire${wires.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
       appendAll(bar,
         h('div', { class: 'sel-name' }, `${parts.length + wires.length} selected`, h('small', {}, what)),
+        parts.length ? btn('mirror', 'Mirror', () => this.flipSelected('x')) : null,
+        parts.length ? btn('flipv', 'Flip', () => this.flipSelected('y')) : null,
         parts.length ? btn('copy', 'Copy', () => this.duplicateSelected()) : null,
         wires.length && !parts.length ? btn('eraser', 'Straight', () => { for (const w of this.project.wires) if (wires.includes(w.id)) w.points = []; this.commit('Straighten'); }) : null,
         btn('trash', 'Delete', () => this.deleteSelected(), 'danger'),
@@ -454,6 +456,8 @@ export class Editor {
       appendAll(bar,
         h('div', { class: 'sel-name' }, def.name, def.label ? h('small', {}, def.label(partProps(part))) : null),
         btn('rotate', 'Rotate', () => this.rotateSelected()),
+        btn('mirror', 'Mirror', () => this.flipSelected('x')),
+        btn('flipv', 'Flip', () => this.flipSelected('y')),
         def.props.length ? btn('sliders', 'Edit', () => openPartProps(this, part)) : btn('info', 'Info', () => openPartProps(this, part)),
         btn('copy', 'Copy', () => this.duplicateSelected()),
         btn('trash', 'Delete', () => this.deleteSelected(), 'danger'),
@@ -496,6 +500,8 @@ export class Editor {
       const part = this.project.parts.find((p) => p.id === target.id);
       popupMenu(anchor, [
         { icon: 'rotate', label: 'Rotate', action: () => this.rotateSelected() },
+        { icon: 'mirror', label: 'Mirror (left ↔ right)', action: () => this.flipSelected('x') },
+        { icon: 'flipv', label: 'Flip (up ↕ down)', action: () => this.flipSelected('y') },
         { icon: 'sliders', label: 'Properties', action: () => openPartProps(this, part) },
         { icon: 'copy', label: 'Duplicate', action: () => this.duplicateSelected() },
         { icon: 'wire', label: 'Delete connected wires', action: () => { this.project.wires = this.project.wires.filter((w) => w.from.part !== part.id && w.to.part !== part.id); this.commit('Delete wires'); } },
@@ -524,6 +530,22 @@ export class Editor {
     part.x += Math.round((cx - (nx0 + nx1) / 2) / 10) * 10;
     part.y += Math.round((cy - (ny0 + ny1) / 2) / 10) * 10;
     this.commit('Rotate');
+    Native.vibrate(8);
+  }
+
+  /**
+   * Mirror (axis 'x': left ↔ right) or flip (axis 'y': up ↕ down) the selected part, or a whole
+   * selection about the middle of the group. Pins swap sides, labels stay readable, wires follow.
+   */
+  flipSelected(axis) {
+    const sel = this.canvas.selection;
+    if (this.engine) { toast('Stop the simulation to edit the circuit', 'warn'); return; }
+    if (!sel || (sel.kind !== 'part' && sel.kind !== 'multi')) return;
+    const ids = sel.kind === 'multi' ? sel.parts : [sel.id];
+    const parts = ids.map((id) => this.project.parts.find((p) => p.id === id)).filter(Boolean);
+    if (!parts.length) return;
+    flipParts(this.project, parts, axis, sel.kind === 'multi' ? sel.wires : []);
+    this.commit(axis === 'x' ? 'Mirror' : 'Flip');
     Native.vibrate(8);
   }
 
@@ -810,6 +832,33 @@ export class Editor {
 
   onPause() { if (this.engine) this.engine.paused = true; this.audio.suspend(); this.saveNow(); }
   onResume() { if (this.engine) { this.engine.paused = false; this.engine.lastWall = null; } this.audio.resume(); }
+}
+
+/**
+ * Mirror (axis 'x') or flip (axis 'y') parts about the middle of their joint bounding box. Every part
+ * toggles part.flipX / part.flipY (its pins swap sides) and moves to the mirrored place (rounded to
+ * the 0.1" grid, so pins stay on the grid); wires that run between the parts are mirrored too.
+ */
+export function flipParts(project, parts, axis, wireIds = []) {
+  const k = axis === 'x' ? 0 : 1;
+  const boxes = parts.map((p) => worldBox(p));
+  const lo = Math.min(...boxes.map((b) => b[k])), hi = Math.max(...boxes.map((b) => b[k + 2]));
+  const mid = (lo + hi) / 2;
+  const key = axis === 'x' ? 'flipX' : 'flipY';
+  parts.forEach((part, i) => {
+    const c0 = (boxes[i][k] + boxes[i][k + 2]) / 2;
+    if (part[key]) delete part[key]; else part[key] = true;
+    const nb = worldBox(part);
+    const c1 = (nb[k] + nb[k + 2]) / 2;
+    const shift = Math.round((2 * mid - c0 - c1) / 10) * 10;
+    if (axis === 'x') part.x += shift; else part.y += shift;
+  });
+  const ids = new Set(parts.map((p) => p.id));
+  const sel = new Set(wireIds);
+  for (const w of project.wires) {
+    if (!(ids.has(w.from.part) && ids.has(w.to.part)) && !sel.has(w.id)) continue;
+    w.points = w.points.map(([x, y]) => (axis === 'x' ? [Math.round((2 * mid - x) / 5) * 5, y] : [x, Math.round((2 * mid - y) / 5) * 5]));
+  }
 }
 
 function fmtTime(s) {

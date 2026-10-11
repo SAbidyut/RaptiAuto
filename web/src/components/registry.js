@@ -68,13 +68,22 @@ export function rotatePoint(lx, ly, rot) {
   }
 }
 
+/**
+ * A part is placed as  world = position + flip(rotate(local)):  rotate first (part.rot), then mirror
+ * on the screen (part.flipX = left ↔ right, part.flipY = up ↔ down), so "Mirror" always swaps left
+ * and right whatever the rotation is.
+ */
 export function toWorld(part, lx, ly) {
-  const [rx, ry] = rotatePoint(lx, ly, part.rot || 0);
+  let [rx, ry] = rotatePoint(lx, ly, part.rot || 0);
+  if (part.flipX) rx = -rx;
+  if (part.flipY) ry = -ry;
   return [part.x + rx, part.y + ry];
 }
 
 export function toLocal(part, wx, wy) {
-  const dx = wx - part.x, dy = wy - part.y;
+  let dx = wx - part.x, dy = wy - part.y;
+  if (part.flipX) dx = -dx;
+  if (part.flipY) dy = -dy;
   return rotatePoint(dx, dy, 360 - (part.rot || 0));
 }
 
@@ -95,7 +104,18 @@ export function worldBox(part) {
 }
 
 export function partTransform(part) {
-  return `translate(${part.x} ${part.y})${part.rot ? ` rotate(${part.rot})` : ''}`;
+  const fx = part.flipX ? -1 : 1, fy = part.flipY ? -1 : 1;
+  return `translate(${part.x} ${part.y})${fx < 0 || fy < 0 ? ` scale(${fx} ${fy})` : ''}${part.rot ? ` rotate(${part.rot})` : ''}`;
+}
+
+/**
+ * Counter-scale for the text of a mirrored part, in the part's own (rotated) axes: the artwork is
+ * mirrored but its lettering stays readable (each label is mirrored back around its own centre).
+ */
+export function textCounterScale(part) {
+  const fx = part.flipX ? -1 : 1, fy = part.flipY ? -1 : 1;
+  const quarter = (((part.rot || 0) % 180) + 180) % 180 === 90;
+  return quarter ? [fy, fx] : [fx, fy];
 }
 
 /** Ohm value formatting: 220 -> "220Ω", 4700 -> "4.7kΩ". */

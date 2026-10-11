@@ -2,7 +2,7 @@
 // wiring (tap pin → tap pin, or drag), selection (tap, or an AutoCAD-style window / crossing box),
 // Google-Maps-style double-tap-and-slide zoom, and live simulation visuals.
 import {
-  getDef, pinsOf, toWorld, toLocal, worldBox, partTransform, partProps, newId, PITCH,
+  getDef, pinsOf, toWorld, toLocal, worldBox, partTransform, partProps, newId, PITCH, textCounterScale,
 } from '../components/registry.js';
 import { SHARED_DEFS } from '../components/draw.js';
 import { pluggedPins } from '../sim/netlist.js';
@@ -26,7 +26,9 @@ function partMarkup(def, props) {
   const key = def.type + '|' + JSON.stringify(props);
   let m = markupCache.get(key);
   if (!m) {
-    m = def.render(props);
+    // every label sits in its own <g class="tf">: on a mirrored part it is mirrored back around its
+    // own centre (see .part.flip .tf in app.css), so the lettering stays readable
+    m = def.render(props).replace(/<text\b[\s\S]*?<\/text>/g, (t) => `<g class="tf">${t}</g>`);
     markupCache.set(key, m);
     if (markupCache.size > 400) markupCache.delete(markupCache.keys().next().value);
   }
@@ -233,6 +235,7 @@ export class CircuitCanvas {
           this.partEls.set(p.id, el);
         }
         el.setAttribute('transform', partTransform(p));
+        this.applyFlip(el, p);
         layer.appendChild(el); // keeps z-order
       }
     }
@@ -241,6 +244,17 @@ export class CircuitCanvas {
     this.buildPinIndex();
     this.renderOverlay();
     this.applyView();
+  }
+
+  /** Mirrored parts: tell the labels how to flip back. */
+  applyFlip(el, part) {
+    const flipped = !!(part.flipX || part.flipY);
+    if (flipped !== el.classList.contains('flip')) el.classList.toggle('flip', flipped);
+    if (flipped) {
+      const [cx, cy] = textCounterScale(part);
+      el.style.setProperty('--cfx', cx);
+      el.style.setProperty('--cfy', cy);
+    }
   }
 
   pinPos(ref) {

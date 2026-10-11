@@ -302,6 +302,8 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .part { transition: filter .15s; }
 .part.dragging { filter: drop-shadow(0 10px 10px rgba(0, 0, 0, .55)) brightness(1.06); }
 .sim-mode .part { cursor: pointer; }
+/* a mirrored / flipped part: every label is mirrored back around its own centre so it stays readable */
+.part.flip .tf, .part.flip .disp-img { transform-box: fill-box; transform-origin: center; transform: scale(var(--cfx, 1), var(--cfy, 1)); }
 .wire path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .wire-outline { stroke: rgba(3, 6, 14, .7); stroke-width: 4.8; }
 .wire-core { stroke-width: 3.1; }
