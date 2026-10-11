@@ -6,8 +6,9 @@ import { PICO_W_LED } from './gpio.js';
 import { netBridge } from './netbridge.js';
 
 const PI_ONLY = ['RPi/__init__.py', 'RPi/GPIO.py', 'gpiozero.py', 'board.py', 'adafruit_dht.py', 'signal.py', 'smbus2.py', 'smbus.py', 'serial.py', 'flask.py', 'http/__init__.py', 'http/server.py',
-  'paho/__init__.py', 'paho/mqtt/__init__.py', 'paho/mqtt/client.py', 'paho/mqtt/publish.py', 'paho/mqtt/subscribe.py', 'psutil.py', 'threading.py'];
-const PICO_ONLY = ['machine.py', 'rp2.py', 'network.py', 'dht.py', 'urequests.py', 'umqtt/__init__.py', 'umqtt/simple.py', 'ntptime.py'];
+  'paho/__init__.py', 'paho/mqtt/__init__.py', 'paho/mqtt/client.py', 'paho/mqtt/publish.py', 'paho/mqtt/subscribe.py', 'psutil.py', 'threading.py',
+  'adafruit_ssd1306.py', 'busio.py', 'spidev.py', 'RPLCD/__init__.py', 'RPLCD/i2c.py'];
+const PICO_ONLY = ['machine.py', 'rp2.py', 'network.py', 'dht.py', 'urequests.py', 'umqtt/__init__.py', 'umqtt/simple.py', 'ntptime.py', 'pico_i2c_lcd.py', 'lcd_api.py'];
 
 let wasmModule = null;
 /** Compile micropython.wasm once; every program then gets a fresh instance in a few ms. */
@@ -68,6 +69,8 @@ function bridge(gpio, proc) {
     i2c_scan: () => gpio.i2cScan(),
     i2c_write: (addr, hex) => gpio.i2cWrite(addr, hex),
     i2c_read: (addr, n) => gpio.i2cRead(addr, n),
+    spi_xfer: (sck, mosi, hex) => gpio.spiXfer(sck, mosi, hex),
+    disp_tm1637: (clk, dio, hex, bright, on) => gpio.dispTm1637(clk, dio, hex, bright, on),
     ...netBridge(gpio),
   };
 }

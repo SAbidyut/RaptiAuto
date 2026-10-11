@@ -5,10 +5,12 @@ import time as _t
 
 class _N:
     def __init__(self, **k):
-        self.__dict__.update(k)
+        self._v = tuple(k.values())
+        for key in k:
+            setattr(self, key, k[key])
 
     def __iter__(self):
-        return iter(self.__dict__.values())
+        return iter(self._v)
 
 
 def cpu_percent(interval=None, percpu=False):

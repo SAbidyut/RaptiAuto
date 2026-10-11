@@ -29,8 +29,8 @@ class DHT11(DHTBase):
 class DHT22(DHTBase):
     @property
     def temperature(self):
-        return round(self._read(0), 1)
+        return round(float(self._read(0)), 1)
 
     @property
     def humidity(self):
-        return round(self._read(1), 1)
+        return round(float(self._read(1)), 1)

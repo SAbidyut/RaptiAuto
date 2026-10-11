@@ -80,6 +80,7 @@ export function netBridge(gpio) {
       return JSON.stringify(net().join(dev(), ssid, pass));
     },
     wifi_leave: () => { if (ok()) net().leave(dev()); },
+    wifi_ap: (on, ssid, pass) => { if (!ok()) return 0; const d = dev(); d.apOn = !!on; d.apIp = on ? '192.168.4.1' : ''; d.apSsid = ssid || ''; net().changed(); return 1; },
     wifi_info: () => JSON.stringify(ok() ? { connected: net().online(dev()), ip: dev().ip, ssid: dev().ssid, rssi: dev().rssi, mac: net().macString(dev()), router: net().opts.router } : { connected: false }),
     wifi_scan: () => JSON.stringify(ok() ? net().scan() : []),
   };

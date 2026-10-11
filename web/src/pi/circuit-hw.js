@@ -70,6 +70,16 @@ export class CircuitHw {
     return e.partsOnPin(n, (rt) => rt.def && rt.def.type === type, pinId).map((x) => x.rt);
   }
   on(n, type, pinId = null) { return this.partsOn(n, type, pinId).length > 0; }
+  /** Like partsOn, but also parts reached through up to two resistors (the 1 k / 2 k divider on an HC-SR04 ECHO). */
+  partsBehind(n, type, pinId = null) {
+    const direct = this.partsOn(n, type, pinId);
+    if (direct.length) return direct;
+    const e = this.engine;
+    if (!this.has(n)) return [];
+    const out = [];
+    for (const nd of e.resistiveNeighbours(e.pinNode(n))) out.push(...e.partsOnNode(nd, (rt) => rt.def && rt.def.type === type, pinId).map((x) => x.rt));
+    return out;
+  }
   passive(n) { return this.partsOn(n, 'buzzer').some((rt) => (rt.part.props || {}).kind !== 'active'); }
 
   // ---------------------------------------------------------------- analog & sensors
@@ -102,7 +112,7 @@ export class CircuitHw {
 
   /** gpiozero DistanceSensor: metres to the object of the HC-SR04 whose ECHO is on this pin; −1 = none. */
   distance(echo) {
-    const rt = this.partsOn(echo, 'hc-sr04', 'ECHO')[0];
+    const rt = this.partsBehind(echo, 'hc-sr04', 'ECHO')[0];
     if (!rt) return -1;
     if (!rt.powered()) { this.warnOnce('srpwr', 'HC-SR04 has no power: VCC to 5V, GND to GND'); return -1; }
     rt.visual.ping = now();
@@ -186,6 +196,7 @@ export class CircuitHw {
   i2cWrite(addr, bytes) {
     const rt = this.i2cDevices().find((r) => r.i2c.address === addr);
     if (rt && rt.i2cWrite) { this.advance(); rt.i2cWrite(bytes); this.engine.dirty = true; return; }
+    if (rt && rt.ssd1306) { this.advance(); this.ssd1306Write(rt, bytes); return; }
     if (!rt || !rt.hd44780) return;
     const lcd = rt.hd44780;
     const s = rt._pcf || (rt._pcf = { en: 0, hi: null, rs: 0, mode8: true, cg: -1 });
@@ -219,6 +230,101 @@ export class CircuitHw {
     if (s.cg >= 0) { lcd.cgram[s.cg & 63] = v & 0x1f; s.cg = (s.cg + 1) & 63; return; }
     if (!lcd.initialized) lcd.init();
     lcd.write(v);
+  }
+
+  // ---------------------------------------------------------------- displays on I²C / SPI / pins
+  /**
+   * SSD1306 OLED on I²C: the control byte says "commands" (0x00 / 0x80) or "display data" (0x40 / 0xC0). Data goes
+   * to the GDDRAM like on the chip: pages of 8 rows, columns of 1 byte (LSB at the top), with horizontal, vertical
+   * and page addressing, so every SSD1306 driver (MicroPython ssd1306, Adafruit) draws the same picture.
+   */
+  ssd1306Write(rt, bytes) {
+    const d = rt.ssd1306;
+    if (rt.powered && !rt.powered()) return;
+    const s = rt._ssd || (rt._ssd = { mode: 0, col: 0, pg: 0, c0: 0, c1: 127, p0: 0, p1: 7, need: 0, cur: 0, args: [] });
+    let i = 0;
+    while (i < bytes.length) {
+      const ctl = bytes[i++];
+      const dc = ctl & 0x40;
+      if (ctl & 0x80) { if (i < bytes.length) this.ssdItem(d, s, dc, bytes[i++]); } else while (i < bytes.length) this.ssdItem(d, s, dc, bytes[i++]);
+    }
+    d.version++;
+    this.engine.dirty = true;
+  }
+
+  ssdItem(d, s, dc, b) {
+    if (dc) {
+      if (s.pg >= 0 && s.pg < d.h / 8 && s.col >= 0 && s.col < d.w) for (let k = 0; k < 8; k++) d.fb[(s.pg * 8 + k) * d.w + s.col] = (b >> k) & 1;
+      if (s.mode === 1) { if (++s.pg > s.p1) { s.pg = s.p0; if (++s.col > s.c1) s.col = s.c0; } } else if (s.mode === 2) { s.col = (s.col + 1) % d.w; } else if (++s.col > s.c1) { s.col = s.c0; if (++s.pg > s.p1) s.pg = s.p0; }
+      return;
+    }
+    if (s.need) {
+      s.args.push(b);
+      if (--s.need) return;
+      const a = s.args;
+      switch (s.cur) {
+        case 0x20: s.mode = a[0] & 3; break;
+        case 0x21: s.c0 = a[0] & 127; s.c1 = a[1] & 127; s.col = s.c0; break;
+        case 0x22: s.p0 = a[0] & 7; s.p1 = a[1] & 7; s.pg = s.p0; break;
+        case 0x81: d.contrast = a[0] / 255; break;
+        default: break;
+      }
+      return;
+    }
+    if ([0x20, 0x81, 0xD3, 0xD5, 0xD9, 0xDA, 0xDB, 0x8D, 0xA8, 0xAD].includes(b)) { s.cur = b; s.need = 1; s.args = []; return; }
+    if (b === 0x21 || b === 0x22) { s.cur = b; s.need = 2; s.args = []; return; }
+    if (b === 0x26 || b === 0x27) { s.cur = b; s.need = 6; s.args = []; return; }
+    if (b === 0x29 || b === 0x2A) { s.cur = b; s.need = 5; s.args = []; return; }
+    if (b === 0xA3) { s.cur = b; s.need = 2; s.args = []; return; }
+    if (b === 0xAE) d.on = false;
+    else if (b === 0xAF) d.on = true;
+    else if (b === 0xA6) d.invert = false;
+    else if (b === 0xA7) d.invert = true;
+    else if (b >= 0xB0 && b <= 0xB7) s.pg = b & 7;
+    else if (b <= 0x0F) { s.col = (s.col & 0x70) | (b & 15); if (s.mode === 2) s.c0 = 0; }
+    else if (b >= 0x10 && b <= 0x1F) s.col = (s.col & 15) | ((b & 7) << 4);
+  }
+
+  /** TM1637 on CLK / DIO (the drivers send whole frames; the pins' edges are not simulated). */
+  dispTm1637(clk, dio, bytes, brightness, on) {
+    const rt = this.partsOn(clk, 'tm1637', 'CLK').find((r) => this.partsOn(dio, 'tm1637', 'DIO').includes(r));
+    if (!rt) { this.warnOnce('tmwire', `TM1637 display not found on CLK=GPIO${clk}, DIO=GPIO${dio}. Wire CLK, DIO, VCC and GND.`); return 0; }
+    if (rt.powered && !rt.powered()) { this.warnOnce('tmpwr', 'TM1637 has no power: VCC to 3V3 / 5V, GND to GND'); return 0; }
+    const d = rt.tm1637;
+    d.brightness = brightness & 7; d.on = !!on;
+    if (bytes.length) d.set(0, bytes);
+    d.version++;
+    this.engine.dirty = true;
+    return 1;
+  }
+
+  /**
+   * One SPI transfer on pins sck / mosi (Raspberry Pi SPI0 = GPIO11 / GPIO10): a MAX7219 chain wired to them gets
+   * register / value pairs (the first pair ends up in the LAST module of a cascade); an MCP3008 answers like the chip.
+   * Returns the bytes clocked back.
+   */
+  spiXfer(sck, mosi, bytes) {
+    this.advance();
+    const out = new Array(bytes.length).fill(0);
+    for (const rt of this.partsOn(mosi, 'max7219', 'DIN')) {
+      if (!this.partsOn(sck, 'max7219', 'CLK').includes(rt)) continue;
+      if (rt.powered && !rt.powered()) { this.warnOnce('mxpwr', 'MAX7219 has no power: VCC to 5V, GND to GND'); continue; }
+      const devs = rt.max7219, n = devs.length;
+      for (let k = 0; k + 1 < bytes.length; k += 2) {
+        const d = devs[n - 1 - ((k / 2) % n)], reg = bytes[k] & 15, v = bytes[k + 1] & 255;
+        if (reg >= 1 && reg <= 8) d.rows[reg - 1] = v;
+        else if (reg === 0x0A) d.intensity = v & 15;
+        else if (reg === 0x0C) d.shutdown = !(v & 1);
+        d.version++;
+      }
+      this.engine.dirty = true;
+      return out;
+    }
+    if (bytes.length === 3 && bytes[0] === 1 && (bytes[1] & 0x80)) {
+      const raw = Math.round(Math.max(0, Math.min(1, this.mcp3008((bytes[1] >> 4) & 7))) * 1023);
+      return [0, (raw >> 8) & 3, raw & 255];
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------- board drawing & messages

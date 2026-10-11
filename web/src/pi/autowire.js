@@ -75,8 +75,8 @@ export function autowire(board, specs = []) {
 
   for (const s of specs) {
     const P = s.pins || {}, props = s.props || {};
-    const g0 = P.a ?? P.sig ?? P.out ?? P.data ?? P.din ?? P.trig ?? P.fwd ?? P.r ?? null;
-    const anchor = g0 != null ? gp(g0) : s.type === 'lcd' ? gp(pico ? 4 : 2) : pico ? gp(26) : gp(10);
+    const g0 = P.a ?? P.sig ?? P.out ?? P.data ?? P.din ?? P.clk ?? P.trig ?? P.fwd ?? P.r ?? null;
+    const anchor = g0 != null ? gp(g0) : s.type === 'lcd' || s.type === 'oled' ? gp(pico ? 4 : 2) : pico ? gp(26) : gp(10);
     const place0 = place;
     const placeAt = (where, w, hgt) => place0(where, w, hgt, anchor);
     switch (s.type) {
@@ -187,6 +187,28 @@ export function autowire(board, specs = []) {
         const at = placeAt('up', 290, 160);
         const l = add('lcd-i2c', at.x + 15, at.y - 150, { address: String(props.addr ?? 39) });
         toBoard(l, 'VCC', V5, RED); toBoard(l, 'GND', GND(), BLACK); toBoard(l, 'SDA', gp(pico ? 4 : 2)); toBoard(l, 'SCL', gp(pico ? 5 : 3));
+        break;
+      }
+      case 'oled': {
+        // SSD1306 128x64 on I²C (SDA / SCL of the default bus), 3.3 V
+        const at = placeAt('up', 110, 130);
+        const o = add('oled-ssd1306', at.x + 35, at.y - 20, { address: String(props.addr ?? 60), color: props.color || 'white' });
+        toBoard(o, 'VCC', v3(), RED); toBoard(o, 'GND', GND(), BLACK); toBoard(o, 'SDA', gp(pico ? 4 : 2)); toBoard(o, 'SCL', gp(pico ? 5 : 3));
+        break;
+      }
+      case 'tm1637': {
+        // 4-digit 7-segment display: CLK + DIO on any two GPIOs, 3.3 V (its DIO line is pulled up to VCC)
+        const at = placeAt(side(g0), 140, 110);
+        const t = add('tm1637', at.x + 48, at.y - 10);
+        toBoard(t, 'CLK', gp(P.clk)); toBoard(t, 'DIO', gp(P.dio)); toBoard(t, 'VCC', v3(), RED); toBoard(t, 'GND', GND(), BLACK);
+        break;
+      }
+      case 'max7219': {
+        // 8×8 LED matrix (props.modules 1 or 4) on SPI: DIN = MOSI, CLK = SCLK, CS
+        const m = Number(props.modules) || 1;
+        const at = placeAt(side(g0), 90 + 82 * m, 130);
+        const x = add('max7219', at.x + 12, at.y - 10, { modules: String(m) });
+        toBoard(x, 'VCC', V5, RED); toBoard(x, 'GND', GND(), BLACK); toBoard(x, 'DIN', gp(P.din)); toBoard(x, 'CLK', gp(P.clk)); toBoard(x, 'CS', gp(P.cs));
         break;
       }
       default: break;

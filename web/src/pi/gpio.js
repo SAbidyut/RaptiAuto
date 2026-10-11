@@ -378,6 +378,18 @@ export class GpioSim {
     this.hw.i2cWrite(addr, bytes);
   }
 
+  spiXfer(sck, mosi, hex) {
+    const bytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+    const out = this.hw ? this.hw.spiXfer(sck, mosi, bytes) : new Array(bytes.length).fill(0);
+    return out.map((b) => (b & 255).toString(16).padStart(2, '0')).join('');
+  }
+  dispTm1637(clk, dio, hex, bright, on) {
+    const bytes = [];
+    for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+    return this.hw ? this.hw.dispTm1637(clk, dio, bytes, bright, on) : 0;
+  }
+
   // ---------------------------------------------------------------- yielding
   /** Asked by the interpreter about every few hundred bytecodes: give the browser a turn? */
   shouldYield() {

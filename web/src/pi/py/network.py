@@ -30,11 +30,18 @@ class WLAN:
         self._ssid = None
         self._res = None
         self._join = None
+        self._ap_ssid = 'MicroPython-ap'
+        self._ap_pass = ''
 
     def active(self, a=None):
         if a is None:
             return self._active
         self._active = bool(a)
+        if self._if == AP_IF:
+            if self._active and self._ap_pass and 0 < len(self._ap_pass) < 8:
+                raise OSError('AP password must be at least 8 characters')
+            J.wifi_ap(1 if self._active else 0, self._ap_ssid, self._ap_pass)
+            return
         J.wifi(1 if self._active else 0, '')
         if not self._active:
             J.wifi_leave()
@@ -69,9 +76,13 @@ class WLAN:
         return STAT_WRONG_PASSWORD if st == 4 else STAT_NO_AP_FOUND
 
     def isconnected(self):
+        if self._if == AP_IF:
+            return self._active
         return self.status() == STAT_GOT_IP
 
     def ifconfig(self, cfg=None):
+        if self._if == AP_IF:
+            return ('192.168.4.1', '255.255.255.0', '192.168.4.1', '0.0.0.0') if self._active else ('0.0.0.0', '0.0.0.0', '0.0.0.0', '0.0.0.0')
         if self.isconnected():
             ip = json.loads(J.wifi_info()).get('ip', '192.168.1.50')
             return (ip, '255.255.255.0', '192.168.1.1', '8.8.8.8')
@@ -87,6 +98,16 @@ class WLAN:
         return out
 
     def config(self, *a, **k):
+        if self._if == AP_IF:
+            if 'essid' in k or 'ssid' in k:
+                self._ap_ssid = k.get('essid') or k.get('ssid')
+            if 'password' in k:
+                self._ap_pass = k['password']
+            if a and a[0] in ('essid', 'ssid'):
+                return self._ap_ssid
+            if self._active and k:
+                J.wifi_ap(1, self._ap_ssid, self._ap_pass)
+            return None
         if a and a[0] == 'mac':
             return bytes(int(x, 16) for x in json.loads(J.wifi_info()).get('mac', '28:cd:c1:0a:4b:2e').split(':'))
         if a and a[0] == 'ssid':
