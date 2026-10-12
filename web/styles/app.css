@@ -781,8 +781,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .ex-info.hints .ex-hint { flex: none; }
 .ex-tags .tag { white-space: nowrap; }
 
-/* entering / leaving full screen: a soft cross-fade instead of a snap (ui/widgets.js smoothSwap) */
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
-html.fs-morph .screen { animation: fsMorph .36s cubic-bezier(.2, .8, .2, 1); }
-@keyframes fsMorph { from { opacity: .35; transform: scale(.985); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { html.fs-morph .screen { animation: none; } }
+/* entering / leaving full screen: a curtain hides the re-layout (ui/widgets.js smoothSwap) */
+.fs-curtain { position: fixed; inset: 0; z-index: 99999; background: radial-gradient(120% 90% at 50% 0%, #0f1a36 0%, var(--bg) 70%); opacity: 0; pointer-events: none; transition: opacity .3s cubic-bezier(.4, 0, .2, 1); }
+.fs-curtain.on { opacity: 1; pointer-events: auto; transition-duration: .17s; }

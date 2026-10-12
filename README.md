@@ -4,9 +4,13 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
-## New in 2.23 — smooth full screen, no screws on the breaker
+## New in 2.24 — calmer full-screen switch
 
-- Entering and leaving full screen (Arduino editor, Pi lab, PLC lab) is a soft cross-fade instead of a snap.
+- Entering and leaving full screen (Arduino editor, Pi lab, PLC lab) now goes behind a soft curtain: the screen fades out, the layout and the system bars switch and settle unseen, then it fades back in — nothing jumps around on the way.
+
+## New in 2.23 — no screws on the breaker
+
+
 - The MCB's load wires go straight into terminal openings — no screw heads show (the PE terminal keeps its screw).
 
 ## New in 2.22 — 3D fixes: motor nameplate, MCB top

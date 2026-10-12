@@ -281,12 +281,10 @@ export class Editor {
       this.root.classList.toggle('fs', on);
       this.setChrome(!on, false);
       this.updateLayout();
-    });
+      Native.setImmersive(on);
+    }, () => { this.canvas.applyView(); setTimeout(() => this.canvas.applyView(), 80); });
     if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
-    Native.setImmersive(on);
     Native.vibrate(8);
-    setTimeout(() => this.canvas.applyView(), 60);
-    setTimeout(() => this.canvas.applyView(), 400);
   }
 
   /** Full screen: show (on) or hide the menus and tool bars. */

@@ -340,12 +340,13 @@ export class PiScreen {
     smoothSwap(() => {
       this.root.classList.toggle('fs', on);
       this.setChrome(!on, false);
+      Native.setImmersive(on);
+    }, () => {
+      this.circuit.canvas.applyView();
+      setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 80);
     });
     if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
-    Native.setImmersive(on);
     Native.vibrate(8);
-    setTimeout(() => this.circuit.canvas.applyView(), 60);
-    setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 400);
   }
 
   setChrome(on, buzz = true) {
