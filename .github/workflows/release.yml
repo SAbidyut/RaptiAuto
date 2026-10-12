@@ -1,4 +1,6 @@
 # Builds the signed APK and publishes it as a GitHub Release named after the version, e.g. RaptiAuto-v2.19.0.apk.
+#   - push to main / master (or a ccr-* working branch): the release v<versionName of the manifest> is created
+#     or refreshed with the new APK
 #   - push a tag:   git tag v2.19.0 && git push origin v2.19.0
 #   - or run it by hand from the Actions tab ("Release APK" → Run workflow); the tag is taken from
 #     android/AndroidManifest.xml (versionName) and created on the selected branch.
@@ -6,6 +8,7 @@ name: Release APK
 
 on:
   push:
+    branches: [main, master, 'ccr-**']
     tags: ['v*']
   workflow_dispatch:
 
