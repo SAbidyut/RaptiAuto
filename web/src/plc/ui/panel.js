@@ -10,6 +10,8 @@ import { DEVICE_DEFS, CATEGORIES, devicePorts, deviceProps, compatible, findPort
 import { makeConn, labId, portUse, MAX_WIRES } from '../store.js';
 import { LabSystem } from '../sim/system.js';
 import { defaultParams } from '../sim/vfd.js';
+import { fmtName } from '../sim/modbus.js';
+import { openCommSheet } from './comm-sheet.js';
 
 const WIRE_COLORS = [['auto', 'Auto'], ['#dc2626', 'Red'], ['#1e3a8a', 'Dark blue'], ['#2563eb', 'Blue'], ['#7c4a1e', 'Brown'], ['#f97316', 'Orange'], ['#e5e7eb', 'White'], ['#111827', 'Black'], ['#a855f7', 'Violet'], ['#eab308', 'Yellow'], ['pe', 'Earth']];
 const thumbs = new Map();
@@ -220,8 +222,63 @@ export class PanelView {
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
     this.chooser = h('div', { class: 'port-chooser hidden' });
     this.taskPill = h('button', { class: 'task-pill hidden', onclick: () => this.lab.showTasks() });
-    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill);
+    // Network view legend: what the packets mean and the live state of the bus
+    this.netCard = h('div', { class: 'net-legend hidden' });
+    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill, this.netCard);
     this.setMode('wire');
+  }
+
+  // ------------------------------------------------------------------ Network view
+  /** Show only the communication: x-ray of the panel, glowing cables, station tags, live packets. */
+  toggleNet(on = !this.netView) {
+    this.netView = on;
+    this.scene.setNetView(on);
+    this.el.classList.toggle('net-on', on);
+    if (this.netChip) this.netChip.classList.toggle('active', on);
+    this.netCard.classList.toggle('hidden', !on);
+    this.netSig = null;
+    if (on) {
+      this.updateNetCard();
+      if (!this.lab.settings.netHinted) { this.lab.settings.netHinted = true; this.lab.app.saveSettings(); this.hint('Network view: only the communication. Amber = request from the master, green = reply, red = error / no reply. Zoom in for the port names; tap a cable for its pin-out.', 7500); }
+      if (!this.lab.sys) toast('Press Simulate to see the frames travel', 'info', 3000);
+    }
+    Native.vibrate(8);
+  }
+
+  /** The legend card: bus format, master, stations and frame counters. */
+  updateNetCard() {
+    if (!this.netView) return;
+    const sys = this.lab.sys;
+    const P = this.lab.project;
+    const plc = P.devices.find((d) => d.id === this.lab.activeId) || P.devices.find((d) => DEVICE_DEFS[d.type].category === 'plc');
+    let line = 'Press Simulate to see the frames';
+    let stats = '';
+    if (sys) {
+      const masters = sys.byKind('plc').filter((p) => p.cpu.powered && p.cpu.mbReq.size);
+      if (masters.length) {
+        const m = masters[0], bus = sys.busOf(m), st = m.m2.stat || { tx: 0, rx: 0, timeouts: 0, errors: 0 };
+        const n = bus.vfds.length + bus.plcs.length + bus.slaves.length;
+        line = `RS-485 ${fmtName(m.cpu.com2Format())} · ${sys.busName(m)} COM2 → ${n} slave${n === 1 ? '' : 's'}`;
+        stats = `<span class="nl-st">TX <b>${st.tx}</b></span><span class="nl-st ok">RX <b>${st.rx}</b></span><span class="nl-st err">no reply <b>${st.timeouts}</b></span><span class="nl-st err">exc. <b>${st.errors}</b></span>`;
+      } else line = sys.hmiLinkState.ok ? `HMI ↔ PLC on ${sys.hmiLinkState.port} · Delta DVP protocol` : `${plc ? 'No MODRW is running — the PLC is not a Modbus master now' : 'No PLC'}`;
+    }
+    // bus colours of the cables this lab has
+    const buses = new Set();
+    for (const c of P.conns) if (c.comm) { const d = P.devices.find((x) => x.id === c.a.dev); const pt = d && findPort(d, c.a.port); if (pt) buses.add(pt.bus); }
+    const keys = ['rs485', 'rs232', 'usb'].filter((b) => buses.has(b)).map((b) => `<span class="nl-b ${b}">${busName(b)}</span>`).join('');
+    const html = `<div class="nl-keys"><span class="nl-k req">request</span><span class="nl-k res">reply</span><span class="nl-k err">error</span>${keys ? '<span class="nl-sep"></span>' + keys : ''}</div><div class="nl-line">${esc(line)}</div>${stats ? `<div class="nl-stats">${stats}</div>` : ''}`;
+    if (html === this.netSig) return;
+    this.netSig = html;
+    this.netCard.innerHTML = html;
+    this.netCard.appendChild(h('button', { class: 'nl-more', html: `<span>Details</span>${icon('forward', 14)}`, onclick: () => { this.lab.views.monitor.sub = 'network'; this.lab.setTab('monitor'); } }));
+  }
+
+  frame(dt) {
+    this.cardAcc = (this.cardAcc || 0) + dt;
+    if (this.cardAcc < 0.4) return;
+    this.cardAcc = 0;
+    if (this.potCard && this.potCard.upd) this.potCard.upd();
+    this.updateNetCard();
   }
 
   updateTaskPill() {
@@ -268,8 +325,11 @@ export class PanelView {
     // focus chips
     this.chips.innerHTML = '';
     const chip = (label, target, ic) => h('button', { class: 'chip lab-chip', html: `${ic ? icon(ic, 14) : ''}<span>${label}</span>`, onclick: () => { this.scene.focus(target); Native.vibrate(5); } });
-    this.chips.append(chip('Overview', 'overview', 'fit'), chip('Panel', 'panel', 'grid'));
     const devs = this.lab.project.devices;
+    const hasNet = this.lab.project.conns.some((c) => c.comm) || devs.some((d) => DEVICE_DEFS[d.type].category === 'modbus');
+    this.netChip = hasNet ? h('button', { class: 'chip lab-chip net-chip' + (this.netView ? ' active' : ''), html: `${icon('network', 14)}<span>Network</span>`, onclick: () => this.toggleNet() }) : null;
+    if (!hasNet && this.netView) this.toggleNet(false);
+    this.chips.append(chip('Overview', 'overview', 'fit'), ...(this.netChip ? [this.netChip] : []), chip('Panel', 'panel', 'grid'));
     const add = (pred, label, ic) => devs.filter(pred).forEach((d, i, arr) => this.chips.appendChild(chip(arr.length > 1 ? `${label} ${i + 1}` : label, d.id, ic)));
     add((d) => DEVICE_DEFS[d.type].category === 'plc', 'PLC', 'cpu');
     add((d) => d.type === 'dop-107bv', 'HMI', 'screen');
@@ -365,7 +425,27 @@ export class PanelView {
         break;
       }
       case 'pot': this.openPot(ctl.devId); break;
+      case 'tcKey':
+        if (ctl.key === 'UP' || ctl.key === 'DOWN') {
+          sys.act(ctl.devId, 'tcKey', ctl.key);
+          const m = this.scene.modelOf(ctl.devId); if (m && m.press) m.press(ctl.key);
+          Native.vibrate(8); this.lab.save(); this.scene.dirty = true;
+          this.masterWrites(ctl.devId, /^Write SV/);
+        } else this.openTc(ctl.devId);
+        break;
+      case 'tcCard': this.openTc(ctl.devId); break;
+      case 'thCard': this.openTh(ctl.devId); break;
       default: break;
+    }
+  }
+
+  /** A value set by hand on a slave that the PLC keeps writing over Modbus comes back: say so once. */
+  masterWrites(devId, what) {
+    const sys = this.lab.sys;
+    if (!sys || this.hintedWrites) return;
+    if (sys.log.some((l) => l.ids && l.ids.to === devId && l.dir === 'TX' && what.test(l.info) && sys.time - l.t < 1.5)) {
+      this.hintedWrites = true;
+      toast('The PLC writes this value over Modbus every cycle (it is the master) — change it on the HMI instead', 'info', 5000);
     }
   }
 
@@ -637,7 +717,7 @@ export class PanelView {
       const pa = findPort(da, c.a.port), pb = findPort(db, c.b.port);
       appendAll(bar,
         h('div', { class: 'sel-name' }, c.comm ? `${busName(pa.bus)} cable` : 'Wire', h('small', {}, `${this.lab.deviceName(da)} ${pa.label} ↔ ${this.lab.deviceName(db)} ${pb.label}`)),
-        c.comm ? null : btn('palette', 'Colour', () => this.recolor(c)),
+        c.comm ? btn('plug', 'Pin-out', () => openCommSheet(this.lab, c)) : btn('palette', 'Colour', () => this.recolor(c)),
         btn('trash', 'Delete', () => { P.conns = P.conns.filter((x) => x.id !== c.id); this.select(null); this.lab.commitHardware('Delete wire', { devices: false }); Native.vibrate(12); }, 'danger'),
         h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.select(null) }));
     }
@@ -723,6 +803,13 @@ export class PanelView {
       const n = P.devices.filter((d) => d.type === 'lamp').length;
       dev.props = [{ label: 'RUN', color: 'green' }, { label: 'FAULT', color: 'red' }, { label: 'READY', color: 'yellow' }, { label: 'POWER', color: 'white' }][n % 4];
     }
+    // Modbus slaves get the next free station address on the line (real ones ship as station 1)
+    if (def.category === 'modbus') {
+      const used = new Set(P.devices.map((d) => (d.type === 'ms300' ? +((d.state.params || {})['09-00'] ?? 1) : DEVICE_DEFS[d.type].category === 'modbus' ? +(d.props.station ?? 1) : null)).filter((x) => x));
+      let st = 1;
+      while (used.has(st)) st++;
+      dev.props = { station: st };
+    }
     P.devices.push(dev);
     let tip = `${def.short} added. In ⚡ Wire mode tap one of its terminals, then the terminal it connects to.`;
     if (def.sim === 'hmi') {
@@ -739,7 +826,10 @@ export class PanelView {
     else if (def.sim === 'relay') tip = 'Relay added. Coil: PLC Y → A1 (+), A2 → 0 V. Contact: 11 is common, 14 closes (NO) and 12 opens (NC) when the coil is ON — switch a 230 V load or a VFD input with it.';
     else if (def.sim === 'cb') tip = `${def.short} added. Feed the top terminal(s), take the protected supply from the bottom. 3-pole: drive / supply → 1 3 5, 2 4 6 → contactor or motor.`;
     else if (def.sim === 'tb') tip = 'Terminal block added. Top terminal n and bottom terminal n are joined — land field wires (sensors, buttons, motor) on one side and the panel wiring on the other.';
-    else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
+    else if (def.category === 'modbus') {
+      const pr = deviceProps(dev);
+      tip = `${def.short} added as station ${pr.station} (${pr.baud} bps ${pr.format} ${pr.protocol}). ${def.sim === 'mbth' ? 'Power: V+ → +24 V, V− → 0 V.' : 'Power: L / N from the MCB (or another device\'s L / N).'} RS-485: tap its RS-485 terminals, then PLC COM2 or the last device of the line (daisy chain). The PLC COM2 and every slave need the same format — see Settings, then the Network chip.`;
+    } else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
     this.lab.commitHardware('Add ' + def.short);
     this.select({ kind: 'dev', id: dev.id });
     setTimeout(() => this.scene.focus(dev.id), 60);
@@ -961,6 +1051,57 @@ export class PanelView {
   }
 
   closePot() { if (this.potCard) { this.potCard.remove(); this.potCard = null; } }
+
+  // ------------------------------------------------------------------ Modbus slaves
+  /** DTB4848 card: set value, RUN / STOP and the control method. */
+  openTc(devId) {
+    this.closePot();
+    const dev = this.lab.project.devices.find((d) => d.id === devId);
+    if (!dev) return;
+    const s = dev.state;
+    const act = (v) => { this.scene.system.act(devId, 'tcSet', v); this.scene.dirty = true; this.lab.save(); upd(); };
+    const val = h('b', {}, '');
+    const range = h('input', { class: 'range', type: 'range', min: s.lo ?? 0, max: s.hi ?? 400, step: 1, value: Math.round(s.sv ?? 120) });
+    const run = h('button', { class: 'chip', onclick: () => act({ run: !s.run }) });
+    const modes = [[0, 'PID'], [1, 'ON/OFF'], [2, 'Manual 30 %']].map(([m, t]) => h('button', { class: 'chip', onclick: () => act({ mode: m }) }, t));
+    const upd = () => {
+      const rt = this.scene.system && this.scene.system.rts.get(devId);
+      const pv = rt && rt.mb && rt.mb.powered ? ` · PV ${rt.mb.pv.toFixed(1)}` : '';
+      val.textContent = `SV ${Math.round(s.sv)} °C${pv}`;
+      run.innerHTML = `${icon(s.run ? 'stop' : 'play', 14)}<span>${s.run ? 'RUN → STOP' : 'STOP → RUN'}</span>`;
+      run.classList.toggle('active', !!s.run);
+      modes.forEach((b, i) => b.classList.toggle('active', (s.mode ?? 0) === i));
+    };
+    range.addEventListener('input', () => { act({ sv: +range.value }); this.masterWrites(devId, /^Write SV/); });
+    this.potCard = h('div', { class: 'pot-card mb-card' },
+      h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'DTB4848'} · set value`), val), range,
+      h('div', { class: 'chips-row mb-chips' }, run, ...modes),
+      h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
+    this.potCard.upd = upd;
+    this.el.appendChild(this.potCard);
+    upd();
+  }
+
+  /** RS-485 T/H sensor card: temperature and humidity. */
+  openTh(devId) {
+    this.closePot();
+    const dev = this.lab.project.devices.find((d) => d.id === devId);
+    if (!dev) return;
+    const s = dev.state;
+    const vt = h('b', {}, ''), vh = h('b', {}, '');
+    const rt = h('input', { class: 'range', type: 'range', min: -20, max: 60, step: 0.5, value: s.temp ?? 26.5 });
+    const rh = h('input', { class: 'range', type: 'range', min: 0, max: 100, step: 0.5, value: s.rh ?? 55 });
+    const upd = () => { vt.textContent = `${(+rt.value).toFixed(1)} °C`; vh.textContent = `${(+rh.value).toFixed(1)} %RH`; };
+    const set = () => { this.scene.system.act(devId, 'thSet', { temp: +rt.value, rh: +rh.value }); upd(); this.scene.dirty = true; };
+    rt.addEventListener('input', set); rh.addEventListener('input', set);
+    rt.addEventListener('change', () => this.lab.save()); rh.addEventListener('change', () => this.lab.save());
+    this.potCard = h('div', { class: 'pot-card mb-card' },
+      h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'Sensor'} · temperature`), vt), rt,
+      h('div', { class: 'ctl-head' }, h('label', {}, 'Humidity'), vh), rh,
+      h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
+    this.el.appendChild(this.potCard);
+    upd();
+  }
 }
 
 /** Selection for lists of device / cable ids: null, one device or cable, or 'multi'. */

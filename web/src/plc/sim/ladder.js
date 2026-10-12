@@ -694,7 +694,7 @@ function checkInstr(el, ops) {
   const fits = (op, n) => !op || op.idx === undefined || (op.n ? op.idx + op.n * 4 * n - 1 : op.idx + n - 1) <= max(op);
   switch (el.t) {
     case 'ZRST': if (ops[0] && ops[1] && (ops[0].dev !== ops[1].dev || ops[0].idx > ops[1].idx)) return 'ZRST: D1 and D2 must be the same device type with D1 ≤ D2'; break;
-    case 'MODRW': if (ops[1] && ops[1].dev !== 'D' && ![3, 6, 16].includes(ops[1].val)) return 'MODRW: function must be K3 (read), K6 (write one) or K16 (write many)'; break;
+    case 'MODRW': if (ops[1] && ops[1].dev !== 'D' && ![1, 2, 3, 4, 5, 6, 15, 16].includes(ops[1].val)) return 'MODRW: function must be K1 / K2 (read bits), K3 / K4 (read words), K5 (write one bit), K6 (write one word), K15 (write bits) or K16 (write words)'; break;
     case 'BMOV': case 'FMOV': case 'MEAN': {
       const n = v(2), lim = el.t === 'MEAN' ? 64 : 512;
       if (n !== undefined && (n < 1 || n > lim)) return `${el.t}: n must be K1 … K${lim}`;

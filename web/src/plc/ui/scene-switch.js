@@ -68,6 +68,7 @@ export class SceneSwitch {
     if (this._sel.devs.length + this._sel.conns.length > 1) s.selectMany(this._sel.devs, this._sel.conns);
     else { s.selectDevice(this._sel.devs[0] || null); s.selectCable(this._sel.conns[0] || null); }
     s.setMarkers(this._markers);
+    if (this._net && s.setNetView) s.setNetView(true, false);
   }
 
   // ---------------------------------------------------------------- state → every view
@@ -78,6 +79,9 @@ export class SceneSwitch {
   get system() { return this._system; }
   setRunning(on) { this._running = on; for (const s of this.all) s.setRunning(on); }
   setMarkers(list) { this._markers = list || []; for (const s of this.all) s.setMarkers(this._markers); }
+  /** Network view (communication only) in both views; the visible one frames the network. */
+  setNetView(on) { this._net = on; for (const s of this.all) if (s.setNetView) s.setNetView(on, s === this.active); }
+  get netView() { return !!this._net; }
   selectDevice(id) { this._sel.devs = id ? [id] : []; for (const s of this.all) s.selectDevice(id); }
   selectCable(id) { this._sel.conns = id ? [id] : []; for (const s of this.all) s.selectCable(id); }
   selectMany(devs, conns) { this._sel = { devs: [...devs], conns: [...conns] }; for (const s of this.all) s.selectMany(devs, conns); }

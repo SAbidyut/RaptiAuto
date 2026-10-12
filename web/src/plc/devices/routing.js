@@ -22,8 +22,8 @@ const norm = (a) => { const l = vlen(a) || 1; return [a[0] / l, a[1] / l, a[2] /
 const dist = (a, b) => vlen(sub(a, b));
 
 // ------------------------------------------------------------------ cable styles
-const CONN_LEN = { rj45: 22, db9: 20, minidin: 18, usba: 32, usbmini: 21, plug3: 14, term3: 16 };
-const CONN_HALF = { rj45: 7, db9: 19, minidin: 6.5, usba: 8, usbmini: 6, plug3: 8, term3: 8 };
+const CONN_LEN = { rj45: 22, db9: 20, minidin: 18, usba: 32, usbmini: 21, plug3: 14, term3: 16, term2: 16 };
+const CONN_HALF = { rj45: 7, db9: 19, minidin: 6.5, usba: 8, usbmini: 6, plug3: 8, term3: 8, term2: 6 };
 /** Length of the fitting (ferrule, banana plug or connector body) along the port direction. */
 export const fitLength = (port) => (port.kind === 'comm' ? CONN_LEN[port.conn] || 14 : port.kind === 'sock' ? 22 : 10);
 const fitHalfWidth = (port, r) => (port.kind === 'comm' ? CONN_HALF[port.conn] || 6 : port.kind === 'sock' ? 3.7 : r + 0.6);
@@ -274,7 +274,7 @@ export function routeLab(project, layout) {
     const k = list.indexOf(c.id), n = list.length;
     const P0 = toWorld(d.place, port.pos), dir = norm(dirToWorld(d.place, port.dir));
     const side = norm(dirToWorld(d.place, [1, 0, 0]));
-    let pos = P0, E, lead = dir;
+    let pos = P0, E, lead = dir, shift = 0;
     const flen = fitLength(port);
     if (port.kind === 'sock') {
       // banana plugs stack: plug k sits in the back of plug k-1; lower plugs let their cord out sideways
@@ -287,6 +287,11 @@ export function routeLab(project, layout) {
         E = add(add(pos, mul(dir, 15)), mul(s, 3.2));
         lead = norm(add(mul(s, 0.8), mul(dir, 0.6)));
       } else E = add(pos, mul(dir, flen));
+    } else if (n > 1 && (port.conn === 'term2' || port.conn === 'term3')) {
+      // two RS-485 cables on the same screw terminals (daisy chain): the sleeves sit side by side
+      // and their wires fan into the same terminals
+      shift = (k - (n - 1) / 2) * (port.conn === 'term3' ? 17 : 13);
+      E = add(add(P0, mul(side, shift)), mul(dir, flen + 4));
     } else {
       if (n > 1) pos = add(P0, mul(side, sideOffset(list, k, port)));
       E = add(pos, mul(dir, flen));
@@ -299,7 +304,7 @@ export function routeLab(project, layout) {
       // a front port may leave upwards only from the upper part of the device: below that the wire
       // would cross the keypad, display or LEDs on its way up
       upOk: dir[1] > 0.3 || (dir[1] >= -0.3 && port.pos[1] >= 0.6 * d.def.size[1]),
-      fit: { pos, dir, kind: port.kind === 'comm' ? 'conn' : port.kind === 'sock' ? 'plug' : 'ferrule', conn: port.conn, bus: port.bus, len: flen },
+      fit: { pos, dir, side, shift, kind: port.kind === 'comm' ? 'conn' : port.kind === 'sock' ? 'plug' : 'ferrule', conn: port.conn, bus: port.bus, len: flen },
       half: fitHalfWidth(port, st.r),
     };
   }

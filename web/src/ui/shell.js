@@ -407,7 +407,7 @@ export class Shell {
       h('div', { class: 'lb-content' },
         h('div', { class: 'hero-kicker', html: `${icon('cube', 15)}<span>NEW · Industrial automation</span>` }),
         h('h2', {}, 'Delta PLC Lab ', h('span', { class: 'grad' }, 'in 3D')),
-        h('p', {}, 'DVP PLC, DOP-107 HMI and MS300 VFD on a real 3D trainer. Plug in cables, draw ladder, simulate live.'),
+        h('p', {}, 'DVP PLC, DOP-107 HMI, MS300 VFD and Modbus RS-485 devices on a real 3D trainer. Plug in cables, draw ladder, watch every frame travel the network.'),
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: (e) => { e.stopPropagation(); this.newLab(); } }),
           h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: (e) => { e.stopPropagation(); this.labSeg = 'examples'; this.go('plclab'); } }))));
@@ -435,7 +435,7 @@ export class Shell {
       h('div', { class: 'li-text' },
         h('h2', {}, 'Delta automation trainer'),
         h('p', {}, 'Wire a Delta DVP PLC, DOP-107 touch panel and MS300 drive in 3D, program it like ISPSoft and watch the motor turn.'),
-        h('div', { class: 'li-feats' }, ...['3D wiring', 'Ladder + IL', 'HMI designer', 'VFD keypad', 'Modbus RTU', '2 PLCs · RS-485'].map((t) => h('span', { class: 'pill' }, t))),
+        h('div', { class: 'li-feats' }, ...['3D wiring', 'Ladder + IL', 'HMI designer', 'VFD keypad', 'Modbus network 3D', 'DTB · sensor · meter', '2 PLCs · RS-485'].map((t) => h('span', { class: 'pill' }, t))),
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: () => this.newLab() }),
           h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: () => { this.labSeg = 'examples'; draw(true); } })))));

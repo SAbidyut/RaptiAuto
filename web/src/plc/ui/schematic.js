@@ -15,8 +15,9 @@ const GAP_MIN = 34;     // minimum gap between devices
 const MARGIN = 26;      // band margin left / right
 const CONSOLE_PER_ROW = 8;
 
-const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', sensor: '#14b8a6', switchgear: '#f43f5e', motor: '#94a3b8', pc: '#64748b' };
-const BUS_COLOR = { rs232: '#f59e0b', rs485: '#22d3ee', usb: '#a78bfa' };
+const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', sensor: '#14b8a6', switchgear: '#f43f5e', motor: '#94a3b8', pc: '#64748b', modbus: '#c084fc' };
+// the same colours as the 3D Network view: RS-485 violet, RS-232 amber, USB sky blue
+export const BUS_COLOR = { rs232: '#f59e0b', rs485: '#a78bfa', usb: '#38bdf8' };
 const LAMP = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
 const CAP = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#2a2d33', white: '#e9ecef' };
 
@@ -41,7 +42,7 @@ function edgeOf(def, port) {
   return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
 }
 
-const BODY_H = { plc: 196, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112 };
+const BODY_H = { plc: 196, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112, tc: 150, mbth: 132, meter: 132 };
 
 function symbolFor(dev) {
   const def = DEVICE_DEFS[dev.type];
@@ -54,7 +55,7 @@ function symbolFor(dev) {
   top.sort(order); bottom.sort(def.sim === 'plc' ? (a, b) => plcKey(a) - plcKey(b) : order);
   const slotW = (p) => (p.kind === 'comm' ? COMM_W : P);
   const rowW = (row) => row.reduce((s, p) => s + slotW(p), 0);
-  const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130 }[def.sim] || 104;
+  const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130, tc: 130, mbth: 124, meter: 116 }[def.sim] || 104;
   const w = Math.max(minW, rowW(top) + SIDE * 2, rowW(bottom) + SIDE * 2);
   const h = BODY_H[def.sim] || 118;
   const slots = new Map();
@@ -595,6 +596,35 @@ function drawDevice(g, sym) {
       };
       break;
     }
+    case 'tc': case 'mbth': case 'meter': {
+      // Modbus slaves: the display, the station address and TX / RX
+      const cx = w / 2, sim = def.sim;
+      el('rect', { x: cx - 44, y: 30, width: 88, height: sim === 'tc' ? 52 : 34, rx: 5, class: sim === 'tc' ? 'sd-lcd' : 'sd-lcd lcd-g' }, g);
+      const l1 = txt(cx + 38, sim === 'tc' ? 52 : 54, '', sim === 'tc' ? 'sd-seg pv' : 'sd-seg lcd');
+      const l2 = sim === 'tc' ? txt(cx + 38, 76, '', 'sd-seg sv') : null;
+      if (sim === 'tc') { txt(cx - 40, 46, 'PV', 'sd-mini l'); txt(cx - 40, 72, 'SV', 'sd-mini l'); }
+      txt(cx, h - 40, `${title} · ID ${props.station ?? 1}`, 'sd-sub');
+      const tx = led(cx - 14, h - 28, '#36ff6a', 3.5), rx = led(cx + 8, h - 28, '#ffb020', 3.5);
+      txt(cx - 9, h - 25, 'TX', 'sd-mini l'); txt(cx + 13, h - 25, 'RX', 'sd-mini l');
+      if (sim === 'tc') ctl(cx - 46, 28, 92, 56, 'tcCard', { label: 'Oven controller' });
+      else if (sim === 'mbth') ctl(cx - 46, 28, 92, 38, 'thCard', { label: 'Temperature / humidity' });
+      else ctl(cx - 46, 28, 92, 38, 'toggle', { label: 'Next display page' });
+      update = (rt) => {
+        const m = rt.mb;
+        if (!m) return;
+        let a = '', b = '';
+        if (m.powered) {
+          if (sim === 'tc') { a = m.pv.toFixed(1); b = rt.dev.state.run ? Number(rt.dev.state.sv).toFixed(1) : 'StoP'; }
+          else if (sim === 'mbth') a = `${m.temp.toFixed(1)}° ${m.rh.toFixed(0)}%`;
+          else a = [`${m.V.toFixed(1)} V`, `${m.I.toFixed(2)} A`, `${Math.round(m.P)} W`, `${(rt.dev.state.wh / 1000).toFixed(3)} kWh`][m.page % 4];
+        }
+        if (l1.textContent !== a) l1.textContent = a;
+        if (l2 && l2.textContent !== b) l2.textContent = b;
+        ledOn(tx, m.powered && m.time - m.stat.lastTx < 0.07);
+        ledOn(rx, m.powered && m.time - m.stat.lastRx < 0.07);
+      };
+      break;
+    }
     case 'contactor': {
       const cx = w / 2, cy = h / 2;
       txt(cx, cy - 20, props.label || 'KM1', 'sd-title');
@@ -717,6 +747,16 @@ export class LabSchematic {
     this.hmiStamp = 0; this.lapStamp = 0;
     this.hmiDirty = true; this.laptopDirty = true;
     this.syncCables(layout);
+    this.markNet();
+  }
+
+  /** Network view: everything but the communication fades (CSS). */
+  setNetView(on) { this.netOn = on; this.svg.classList.toggle('net-view', !!on); this.markNet(); }
+  markNet() {
+    if (!this.project) return;
+    const net = new Set();
+    for (const c of this.project.conns) if (c.comm) { net.add(c.a.dev); net.add(c.b.dev); }
+    for (const [id, d] of this.devs) d.g.classList.toggle('net-dev', net.has(id) || DEVICE_DEFS[d.dev.type].category === 'modbus');
   }
 
   /** Re-route every wire (a new wire can widen a duct and move the devices a little). */

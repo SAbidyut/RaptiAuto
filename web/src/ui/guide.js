@@ -116,6 +116,20 @@ export const GUIDE = [
       + tip('VFD by RS-485: PLC <code>MOV H87 D1120</code> + <code>SET M1143</code> (9600 8E1 RTU), drive Pr.09-04 = 14, Pr.00-20 = 1, Pr.00-21 = 2. Then <code>MODRW K1 K6 H2000 D0 K1</code> writes the run command (H12 = RUN FWD).'),
   },
   {
+    icon: 'network', title: 'Modbus network (RS-485)',
+    html: ol(
+      'Open the lab exercise <b>Modbus RTU network</b>: the PLC COM2 is the master of one RS-485 line with four slaves — the MS300 drive (ID 1), a <b>DTB4848</b> temperature controller with an oven (ID 2), an RS-485 <b>temperature / humidity sensor</b> (ID 3) and an <b>energy meter</b> (ID 4). The HMI talks to the PLC on COM1.',
+      'Press <b>Simulate</b>, then the <b>Network</b> chip in the Lab tab: the 3D panel turns into an x-ray of the communication. The RS-485 cable glows violet, RS-232 amber, USB blue; every device shows its role and station address; the two ends of the line get their 120 Ω resistors.',
+      'Watch the frames: an <b>amber</b> packet is the master\'s request travelling to the addressed station, <b>green</b> is the reply coming back, <b>red</b> an exception or no reply. Zoom in to read what each frame says and the name of every port.',
+      'Tap a communication cable → <b>Pin-out</b>: both connectors, which pin goes where (RS-232 crosses TX and RX), and the settings both ends must share.',
+      '<b>Monitor → Network</b> lists the line as it is cabled with the live state of every station; tap a station for its register map with live values.',
+    ) + ul(
+      'Add Modbus devices with ＋ → <b>Modbus RS-485 devices</b>. Daisy-chain them: PLC COM2 → device → device (each RS-485 port takes two cables).',
+      'Every slave needs its <b>own station address</b> and the master\'s <b>baud rate, data format and RTU / ASCII</b> (device Settings; the PLC uses D1120 / M1143). Two slaves with the same address answer together and their replies collide.',
+      '<code>MODRW Kstation Kfunction Haddress Dn Kcount</code>: function 3 / 4 reads words, 1 / 2 reads bits (16 per register), 6 / 16 writes words, 5 / 15 writes bits. M1129 = time-out.',
+    ) + tip('DTB4848: 1000H PV, 1001H SV (0.1 °C), bit 0814H RUN / STOP. Sensor: 0000H temperature, 0001H humidity. Meter: 0000H V, 0001H A, 0002H W, 0005H / 0006H Wh.'),
+  },
+  {
     icon: 'save', title: 'Saving, export & sharing',
     html: ul(
       'Projects are saved automatically on this phone. Find them in <b>My Projects</b>.',
