@@ -22,8 +22,8 @@ import { autowire, defaultCircuit, boardOnly } from './autowire.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from './examples.js';
 import { FsDock } from '../ui/fsdock.js';
 
-const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny']];
-const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny']];
+const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny'], ['output', 'list', 'Output']];
+const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny'], ['output', 'list', 'Output']];
 const CIRCUIT_KEY = (board) => 'rapti.pi.circuit.v1.' + board;
 
 export class PiScreen {
@@ -66,17 +66,19 @@ export class PiScreen {
       desktop: h('div', { class: 'pi-pane pane-desktop' }),
       terminal: h('div', { class: 'pi-pane pane-terminal' }),
       thonny: h('div', { class: 'pi-pane pane-thonny' }),
+      output: h('div', { class: 'pi-pane pane-output' }),
     };
     for (const p of Object.values(this.panes_)) this.main.appendChild(p);
     this.nav = h('nav', { class: 'ed-nav pi-nav' });
     // full screen: a small dock of buttons and the ☰ handle that brings the menus back
     const fb = (ic, title, fn, extra = {}) => h('button', { class: 'fs-btn', title, 'aria-label': title, html: icon(ic, 20), onclick: fn, ...extra });
     this.fsRun = fb('play', 'Run', () => this.toggleRun(), { class: 'fs-btn fs-run' });
-    this.fsOut = fb('terminal', 'Output', () => this.toggleOutput());
+    this.fsOut = fb('terminal', 'Output over the circuit', () => this.toggleOutput());
     this.fsBar = h('div', { class: 'fs-bar pi-fsbar' },
       fb('fullscreenExit', 'Exit full screen', () => this.setFullscreen(false)), this.fsRun,
       fb('circuit', 'Circuit', () => this.toggleTab('circuit'), { 'data-tab': 'circuit' }),
       fb('code', 'Thonny', () => this.toggleTab('thonny'), { 'data-tab': 'thonny' }),
+      fb('list', 'Output', () => this.toggleTab('output'), { 'data-tab': 'output' }),
       fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }),
       this.fsOut);
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
@@ -84,7 +86,7 @@ export class PiScreen {
     this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'pi', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
 
     // Thonny and the desktop are shared by every tab; the terminal tab has its own shell
-    this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex) });
+    this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex), onRun: () => this.revealOutput() });
     this.desktop = new Desktop({ sys: this.sys, thonny: this.thonny });
     this.panes_.desktop.appendChild(this.desktop.el);
     this.buildCircuitPane();
@@ -129,8 +131,21 @@ export class PiScreen {
     Native.vibrate(8);
   }
 
-  /** Thonny can only be in one place: the Desktop (which can open it in a window) and the Thonny tab are not shown together. */
-  clash(a, b) { return (a === 'desktop' && b === 'thonny') || (a === 'thonny' && b === 'desktop'); }
+  /** Thonny can only be in one place: the Desktop (which can open it in a window) and the Thonny / Output screens are not shown together. */
+  clash(a, b) { const th = (x) => x === 'thonny' || x === 'output'; return (a === 'desktop' && th(b)) || (b === 'desktop' && th(a)); }
+
+  /** Bring the Output screen up (beside the code when there is room, else instead of the screen on show). */
+  showOutput() {
+    if (this.vis.includes('output')) return;
+    if (this.wide && this.vis.length < 2 && this.vis.includes('thonny')) this.toggleTab('output'); else this.setTab('output');
+  }
+
+  /** Run pressed in Thonny: the program's output has its own screen — open it beside the code (landscape). */
+  revealOutput() {
+    if (!this.vis.includes('thonny') || this.vis.includes('output')) return;
+    if (!this.wide) { toast('Running — the output is on the Output tab'); return; }
+    if (this.vis.length < 2) this.toggleTab('output');
+  }
 
   updateLayout() {
     const r = this.root.getBoundingClientRect();
@@ -167,9 +182,14 @@ export class PiScreen {
     this.fsBar.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', is(b.dataset.tab)));
     this.root.dataset.tab = id;
     if (was('desktop') && !is('desktop')) this.desktop.hidden();
-    if (is('thonny')) {
-      if (!was('thonny') || id === 'thonny') { this.panes_.thonny.appendChild(this.thonny.el); this.thonny.shown(); }
-    } else if (was('thonny') || (was('desktop') && !is('desktop') && !this.desktop.thonnyWin())) this.thonny.hidden();
+    const th = is('thonny') || is('output'), wasTh = was('thonny') || was('output');
+    if (th) {
+      this.thonny.splitInto(this.panes_.thonny, this.panes_.output);
+      if (!wasTh || id === 'thonny' || id === 'output') {
+        this.thonny.shown();
+        if (is('output')) this.thonny.con.scrollEnd();
+      }
+    } else if (wasTh || (was('desktop') && !is('desktop') && !this.desktop.thonnyWin())) this.thonny.hidden();
     if (is('desktop') && (!was('desktop') || id === 'desktop')) this.desktop.shown();
     if (is('terminal') && (!was('terminal') || id === 'terminal')) {
       if (!this.term) {
@@ -587,7 +607,7 @@ export class PiScreen {
       this.drawFileChip();
       this.panes_.board.scrollTop = 0;
     } else if (what === 'files') this.drawFileChip();
-    else if (what === 'input') { if (this.tab === 'circuit' || this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin())) this.setTab('thonny'); }
+    else if (what === 'input') { if (this.tab === 'circuit' || this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin()) || (this.tab === 'thonny' && !this.vis.includes('output'))) this.showOutput(); }
     else if (what === 'run' || what === 'proc') { this.updateRun(); this.drawFileChip(); }
   }
 

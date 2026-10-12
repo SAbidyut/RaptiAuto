@@ -4,6 +4,11 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.17 — Thonny: Code and Output on separate screens, dark theme
+
+- The Raspberry Pi lab's Thonny is split like the Arduino editor: **Thonny** (toolbar, file tabs, editor) and **Output** (the Shell, program output and `input()`) are two screens in the tab bar. In landscape open both side by side; pressing Run opens Output next to the code.
+- Thonny, its editor and its shell now use the app's dark theme (same colours as the Arduino code editor).
+
 ## New in 2.16 — one draggable full-screen menu
 
 - In full screen the Arduino editor, the Raspberry Pi lab and the PLC lab share the same frosted-glass menu: tap the round ☰ button to open the options, tap ✕ to close them, and **drag it anywhere** — the spot is remembered per screen.

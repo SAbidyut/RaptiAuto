@@ -152,44 +152,49 @@
 .nano-key b { background: #d3d7cf; color: #000; padding: 0 3px; font-weight: 700; }
 
 /* ---------------------------------------------------------------- Thonny (light, like on the Pi) */
-.thonny { flex: 1; display: flex; flex-direction: column; min-height: 0; background: #f2f2f2; color: #1f2328; font-family: var(--font); --th-font: 14px; }
-.th-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: linear-gradient(#f7f7f7, #e9e9e9); border-bottom: 1px solid #cfcfcf; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+/* Thonny wears the app's dark theme: the code (toolbar, tabs, editor) and the Output / Shell are two screens, like the Arduino editor's Code and Serial Monitor */
+.thonny { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--canvas-bg); color: var(--text); font-family: var(--font); --th-font: 14px; }
+.th-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: rgba(10, 16, 32, .9); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
 .th-toolbar::-webkit-scrollbar { display: none; }
-.th-tb { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 46px; padding: 3px 4px; border-radius: 6px; color: #333; font-size: 10.5px; flex-shrink: 0; }
+.th-tb { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 46px; padding: 3px 4px; border-radius: 8px; color: #b6c4de; font-size: 10.5px; flex-shrink: 0; }
 .th-tb i { display: grid; place-items: center; height: 28px; }
-.th-tb:active { background: #dcdcdc; }
+.th-tb:active { background: rgba(148, 163, 184, .18); }
 .th-tb.th-run.busy i { animation: thBusy 1s infinite; }
 @keyframes thBusy { 50% { opacity: .45; } }
-.th-sep { width: 1px; height: 32px; background: #cfcfcf; margin: 0 3px; flex-shrink: 0; }
+.th-sep { width: 1px; height: 32px; background: var(--line2); margin: 0 3px; flex-shrink: 0; }
 .th-flex { flex: 1; }
-.th-more { color: #444; justify-content: center; min-width: 38px; }
-.th-tabs { display: flex; gap: 1px; padding: 3px 4px 0; background: #e4e4e4; border-bottom: 1px solid #c9c9c9; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.th-more { color: var(--muted); justify-content: center; min-width: 38px; }
+.th-tabs { display: flex; gap: 2px; padding: 4px 6px 0; background: rgba(7, 11, 22, .9); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
 .th-tabs::-webkit-scrollbar { display: none; }
-.th-tab { display: flex; align-items: center; gap: 4px; padding: 5px 4px 5px 10px; border-radius: 5px 5px 0 0; background: #d6d6d6; font-size: 12.5px; color: #333; white-space: nowrap; cursor: pointer; flex-shrink: 0; }
-.th-tab.active { background: #fff; color: #000; font-weight: 600; }
-.th-tab-x { width: 22px; height: 22px; border-radius: 4px; color: #777; font-size: 16px; line-height: 1; }
-.th-tab-x:active { background: #ccc; }
-.th-editor { flex: 3 1 0; min-height: 120px; display: flex; background: #fff; position: relative; }
+.th-tab { display: flex; align-items: center; gap: 4px; padding: 5px 4px 5px 11px; border-radius: 8px 8px 0 0; background: rgba(148, 163, 184, .08); font-size: 12.5px; color: var(--muted); white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+.th-tab.active { background: var(--canvas-bg); color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
+.th-tab-x { width: 22px; height: 22px; border-radius: 6px; color: var(--dim); font-size: 16px; line-height: 1; }
+.th-tab-x:active { background: rgba(148, 163, 184, .2); }
+.th-editor { flex: 3 1 0; min-height: 120px; display: flex; background: var(--canvas-bg); position: relative; }
 .th-editor .code-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .th-editor .code-cm { flex: 1; min-height: 0; overflow: hidden; }
-.py-wrap .symbol-bar { background: #ececec; border-top: 1px solid #d0d0d0; }
-.py-wrap .sym { background: #fff; color: #222; border: 1px solid #cfcfcf; }
-.py-wrap .sym-icon { color: #3a7bd5; }
+.py-wrap .symbol-bar { background: rgba(10, 16, 32, .95); border-top: 1px solid var(--line); }
+.py-wrap .sym { background: rgba(148, 163, 184, .1); color: var(--text); border: 1px solid var(--line2); }
+.py-wrap .sym-icon { color: var(--accent); }
 .py-wrap.focused .symbol-bar { display: flex; }
-.th-grip { height: 12px; display: grid; place-items: center; background: #e4e4e4; border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; cursor: row-resize; touch-action: none; flex-shrink: 0; }
-.th-grip span { width: 38px; height: 4px; border-radius: 2px; background: #a8a8a8; }
-.th-shell { flex: 0 0 34%; min-height: 90px; display: flex; flex-direction: column; background: #fff; }
-.th-shell-head { display: flex; align-items: center; justify-content: space-between; padding: 3px 10px; font-size: 12px; background: #ececec; border-bottom: 1px solid #d6d6d6; color: #333; flex-shrink: 0; }
-.th-shell-head .th-clear { color: #2b62c2; }
-.con.th-con { background: #fff; color: #111; font-size: calc(var(--th-font) - 1px); }
-.con.th-con .con-prefix { color: #8a5a00; }
-.con.th-con .err { color: #c41a16; }
-.con.th-con .th-magic { color: #2b62c2; }
-.con.th-con .fg-K { color: #888; }
-.con.th-con .con-keys { background: #ececec; border-top: 1px solid #d6d6d6; }
-.con.th-con .ck { background: #fff; color: #222; border: 1px solid #cfcfcf; }
-.th-status { display: flex; justify-content: flex-end; gap: 6px; padding: 3px 10px calc(3px + var(--safe-b) * 0); font-size: 11.5px; color: #444; background: #e8e8e8; border-top: 1px solid #d0d0d0; flex-shrink: 0; white-space: nowrap; overflow: hidden; }
-.th-port { color: #777; }
+.th-grip { height: 12px; display: grid; place-items: center; background: rgba(10, 16, 32, .95); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: row-resize; touch-action: none; flex-shrink: 0; }
+.th-grip span { width: 38px; height: 4px; border-radius: 2px; background: var(--dim); }
+.th-shell { flex: 0 0 34%; min-height: 90px; display: flex; flex-direction: column; background: #070d1b; }
+.th-shell-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 12px; font-size: 12px; background: rgba(10, 16, 32, .95); border-bottom: 1px solid var(--line); color: var(--muted); flex-shrink: 0; }
+.th-shell-head b { color: var(--text); font-weight: 600; letter-spacing: .02em; }
+.th-shell-head .th-clear { color: var(--accent); }
+.con.th-con { background: #070d1b; color: #d7e3f8; font-size: calc(var(--th-font) - 1px); }
+.con.th-con .con-prefix { color: #fbbf24; }
+.con.th-con .err { color: #ff6b6b; }
+.con.th-con .th-magic { color: #7dd3fc; }
+.con.th-con .fg-K { color: #5d6c8c; }
+.con.th-con .con-keys { background: rgba(10, 16, 32, .95); border-top: 1px solid var(--line); }
+.con.th-con .ck { background: rgba(148, 163, 184, .1); color: var(--text); border: 1px solid var(--line2); }
+.th-status { display: flex; justify-content: flex-end; gap: 6px; padding: 3px 10px; font-size: 11.5px; color: var(--muted); background: rgba(7, 11, 22, .95); border-top: 1px solid var(--line); flex-shrink: 0; white-space: nowrap; overflow: hidden; }
+.th-port { color: var(--dim); }
+/* the two screens: the code fills its screen, the Shell fills the Output screen */
+.thonny.th-code .th-editor { flex: 1 1 0; }
+.thonny.th-out .th-shell { flex: 1 1 0; }
 .thonny .cm-editor { font-size: var(--code-size, 14px); }
 .th-files-path { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 8px; overflow-wrap: anywhere; }
 .th-files { display: flex; flex-direction: column; gap: 4px; }
