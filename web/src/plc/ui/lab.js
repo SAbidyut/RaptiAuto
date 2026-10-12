@@ -122,7 +122,9 @@ export class LabScreen {
     const r = this.root.getBoundingClientRect();
     const wide = r.width >= 760 && r.width > r.height * 1.05;
     if (wide !== this.wide) { this.wide = wide; this.root.classList.toggle('wide', wide); }
-    const split = wide && this.settings.labSplit !== false;
+    // Full screen in landscape: the Lab view (2D / 3D) and another tab are shown together only while
+    // the simulation runs; stopped, full screen shows one screen at a time (like the Arduino editor).
+    const split = wide && this.settings.labSplit !== false && !(this.fullscreen && !this.sys);
     if (split !== this.split) { this.split = split; this.root.classList.toggle('split', split); }
     this.applyTabClasses();
   }
@@ -159,6 +161,7 @@ export class LabScreen {
     this.fullscreen = on;
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
+    this.updateLayout();
     if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (bottom right) for the menus'); }
     Native.setImmersive(on);
     Native.vibrate(8);
@@ -379,6 +382,7 @@ export class LabScreen {
     this.status.classList.remove('hidden');
     this.scene.setSystem(this.sys);
     this.scene.setRunning(true);
+    this.updateLayout();
     this.simT0 = performance.now();
     Native.keepScreenOn(true);
     Native.vibrate(15);
@@ -400,6 +404,7 @@ export class LabScreen {
     this.status.classList.add('hidden');
     this.scene.setSystem(this.idleSystem());
     this.scene.setRunning(false);
+    this.updateLayout();
     Native.keepScreenOn(false);
     for (const v of Object.values(this.views)) if (v.onSimStop) v.onSimStop();
     this.renderStatic();

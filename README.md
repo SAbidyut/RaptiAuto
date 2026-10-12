@@ -4,6 +4,12 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## Unreleased — PLC Lab full screen, HMI pinch zoom, no current when stopped
+
+- **Full screen in landscape:** the Lab view (2D / oblique 3D) and a second tab (Ladder, HMI, VFD, Monitor) are shown side by side only **while the simulation runs**. With the simulation stopped, full screen shows one screen at a time. The layout follows Simulate / Stop at once.
+- **HMI pinch zoom:** on the HMI tab, two fingers zoom the DOP-107 picture in and out (50 % – 500 %) and move it; the ＋ / − / fit buttons at the left, the mouse wheel, one finger on the frame while zoomed and a double tap on the frame (back to fit) work too. Works when operating and when designing screens; a touch only presses an HMI button when it is a single finger, so a pinch never presses anything.
+- **No current in the wires when stopped:** the moving current lights on the 3D cables kept running after Stop; they are cleared now.
+
 ## New in 2.13 — real internet, live-data IoT projects, example search
 
 - **Real internet for IoT:** with the phone online and *Settings → Internet (IoT) → Real internet* on (also a switch in the IoT dashboard), web requests of sketches, Python programs, `curl` and the Raspberry Pi's Chromium go out for real (the Android app makes them natively, so there are no CORS limits; the app now has the INTERNET permission). Chromium opens **real websites** (links, forms, images and styles work; a button opens the page in the phone's browser), and a search in its address bar goes to DuckDuckGo. Weather is the real weather — e.g. Dhaka ≈ 29 °C instead of a made-up value; OpenWeatherMap without your own key answers with the real Open-Meteo weather of that city. Services that need your own account (ThingSpeak, Blynk, Telegram, IFTTT, Slack / Discord webhooks, Adafruit IO) and the RAPTI pages stay simulated, so their data shows in the dashboard. If the phone is offline or a real service fails, the simulator answers in the same format. Real requests show a green "real" pill in the dashboard's HTTP log.
