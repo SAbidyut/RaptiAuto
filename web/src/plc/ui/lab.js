@@ -16,6 +16,7 @@ import { VfdView } from './vfd-view.js';
 import { MonitorView } from './monitor.js';
 import { LAB_TASKS } from '../tasks.js';
 import { Sheet } from '../../ui/widgets.js';
+import { FsDock } from '../../ui/fsdock.js';
 
 const TABS = [
   ['panel', 'cube', 'Lab'],
@@ -76,12 +77,12 @@ export class LabScreen {
     this.fsBar = h('div', { class: 'fs-bar lab-fs-bar' },
       h('button', { class: 'fs-btn', title: 'Exit full screen', html: icon('fullscreenExit', 20), onclick: () => this.setFullscreen(false) }),
       this.fsRun = h('button', { class: 'fs-btn fs-run', html: icon('play', 20), onclick: () => this.toggleSim() }),
-      ...TABS.map(([id, ic, label]) => h('button', { class: 'fs-btn', 'data-tab': id, title: label, 'aria-label': label, html: icon(ic, 20), onclick: () => this.toggleTab(id) })),
-      h('button', { class: 'fs-btn fs-hide', title: 'Hide menus', 'aria-label': 'Hide menus', html: icon('close', 20), onclick: () => this.setChrome(false) }));
+      ...TABS.map(([id, ic, label]) => h('button', { class: 'fs-btn', 'data-tab': id, title: label, 'aria-label': label, html: icon(ic, 20), onclick: () => this.toggleTab(id) })));
     // full screen hides every menu; this small handle (bottom right, clear of every tool bar at the
     // top) brings them back, and the ✕ at the end of the dock hides them again
-    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
-    this.root.append(this.top, this.status, this.main, this.nav, this.fsBar, this.fsHandle);
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
+    this.root.append(this.top, this.status, this.main, this.nav, this.fsBar);
+    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'lab', orient: 'row', home: () => this.dockHome(), settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
     this.updateSub();
     this.ro = new ResizeObserver(() => this.updateLayout());
     this.ro.observe(this.root);
@@ -154,6 +155,7 @@ export class LabScreen {
     for (const b of this.nav.children) b.classList.toggle('active', vis.includes(b.dataset.tab));
     for (const b of this.fsBar.querySelectorAll('[data-tab]')) b.classList.toggle('active', vis.includes(b.dataset.tab));
     void t;
+    if (this.dock) this.dock.place();
   }
 
   /** Show one screen (phone upright); in landscape a screen that is not open takes the place of the focused one. */
@@ -199,13 +201,19 @@ export class LabScreen {
     if (b) b.classList.toggle('hidden', !on);
   }
 
+  /** First spot of the full-screen menu: bottom right, just above the ladder / HMI footer or the 3D chips. */
+  dockHome() {
+    const b = parseFloat(getComputedStyle(this.root).getPropertyValue('--dock-b')) || 12, H = this.root.clientHeight || 360;
+    return { fx: 1, fy: Math.min(1, Math.max(0, (H - b - 44 - 8) / Math.max(1, H - 16 - 36))) };
+  }
+
   setFullscreen(on) {
     this.fullscreen = on;
     this.panes = null; // full screen starts automatic again: one screen, two while running
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
     this.updateLayout();
-    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (bottom right) for the menus'); }
+    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
     Native.setImmersive(on);
     Native.vibrate(8);
   }
@@ -215,6 +223,7 @@ export class LabScreen {
     this.root.classList.toggle('fs-clean', !on);
     this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
     this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (this.dock) this.dock.place();
     if (buzz) Native.vibrate(6);
   }
 

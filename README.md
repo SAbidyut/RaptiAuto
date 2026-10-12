@@ -4,6 +4,12 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.16 — one draggable full-screen menu
+
+- In full screen the Arduino editor, the Raspberry Pi lab and the PLC lab share the same frosted-glass menu: tap the round ☰ button to open the options, tap ✕ to close them, and **drag it anywhere** — the spot is remembered per screen.
+- The Pi lab's menu now floats over the panes like the Arduino one (no more shifted panes or black strips); the bars under it step aside for whichever side it is on.
+- HMI top bar: on a narrow screen the screen chips drop to their own row, so the zoom buttons never cover them.
+
 ## New in 2.15 — PLC manual, PID controller, Modbus examples
 
 - **Manual** (bottom bar: Home · Examples · Manual · About): nine English chapters for the PLC side — PLC programming, wiring, VFD (MS300) operation and control, HMI design step by step, Modbus (frames, registers, MODRW), PID control and tuning, guided projects and a reference. Over 40 small diagrams, live-coloured ladder figures, search, and "Open example" buttons that load the matching lab example.

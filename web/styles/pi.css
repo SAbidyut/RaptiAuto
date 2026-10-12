@@ -364,21 +364,23 @@
 .pb-note small { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
 /* full screen (the .editor rules hide the top bar and tabs, float the dock and the ☰ handle) */
 .pi-screen.fs .pi-fsbar .fs-btn[hidden] { display: none; }
-.pi-screen.fs:not(.fs-clean) .pi-filechip { left: calc(68px + var(--safe-l)); top: calc(10px + var(--safe-t)); }
+.pi-screen.fs .pi-filechip { left: calc(10px + var(--safe-l)); top: calc(10px + var(--safe-t)); }
+.pi-screen.fs:not(.fs-clean)[data-dock-x="l"] .pi-filechip { left: calc(68px + var(--safe-l)); }
 .pi-screen.fs .pi-circuit .pi-sim-status { top: calc(56px + var(--safe-t)); }
 @media (min-width: 640px) { .pi-screen.fs .pi-circuit .pi-sim-status { top: calc(10px + var(--safe-t)); } }
 .pi-screen.fs.fs-clean .pi-circuit .pi-sim-status { display: none; }
 .pi-screen.fs.fs-clean .pi-filechip { display: none; }
+/* the Thonny toolbar steps aside for the floating menu (its side is in data-dock-x) */
+.pi-screen.fs:not(.fs-clean)[data-dock-x="l"] .th-toolbar { padding-left: calc(62px + var(--safe-l)); }
+.pi-screen.fs:not(.fs-clean)[data-dock-x="r"] .th-toolbar { padding-right: calc(62px + var(--safe-r)); }
 /* two screens side by side (landscape, the tab bar opens / closes them) */
 .pi-screen.pi-split .pi-main { display: flex; }
 .pi-screen.pi-split .pi-pane.active { position: relative; inset: auto; flex: 1; min-width: 0; }
 .pi-screen.pi-split .pi-pane.active ~ .pi-pane.active { border-left: 1px solid var(--line2); }
-/* full screen: menus hidden → the screen uses every pixel (only the camera cut-out is kept clear); menus shown → room for the dock on the left and the ☰ handle on the right */
+/* full screen: menus hidden → the screen uses every pixel (only the camera cut-out is kept clear); the floating, draggable menu (ui/fsdock.js) never takes room from the panes */
 .pi-screen.fs .pi-pane:not(.pane-pcircuit) { padding-top: var(--safe-t); }
 .pi-screen.fs .pi-pane.first:not(.pane-pcircuit) { padding-left: var(--safe-l); }
 .pi-screen.fs .pi-pane.last:not(.pane-pcircuit) { padding-right: var(--safe-r); }
-.pi-screen.fs:not(.fs-clean) .pi-pane.first:not(.pane-pcircuit) { padding-left: calc(64px + var(--safe-l)); }
-.pi-screen.fs:not(.fs-clean) .pi-pane.last:not(.pane-pcircuit) { padding-right: calc(46px + var(--safe-r)); }
 .pi-screen.fs .pi-out { padding-bottom: var(--safe-b); }
 
 /* ---- the Raspberry Pi Lab picture (home banner + top of the Pi page) */

@@ -20,6 +20,7 @@ import { PiCircuit } from './circuit.js';
 import { CircuitHw } from './circuit-hw.js';
 import { autowire, defaultCircuit, boardOnly } from './autowire.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from './examples.js';
+import { FsDock } from '../ui/fsdock.js';
 
 const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny']];
 const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny']];
@@ -78,8 +79,9 @@ export class PiScreen {
       fb('code', 'Thonny', () => this.toggleTab('thonny'), { 'data-tab': 'thonny' }),
       fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }),
       this.fsOut);
-    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
-    this.root.append(this.top, this.main, this.nav, this.fsBar, this.fsHandle);
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
+    this.root.append(this.top, this.main, this.nav, this.fsBar);
+    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'pi', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
 
     // Thonny and the desktop are shared by every tab; the terminal tab has its own shell
     this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex) });
@@ -346,7 +348,7 @@ export class PiScreen {
     this.circuit.fullscreen = on;
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
-    if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus'); }
+    if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
     Native.setImmersive(on);
     Native.vibrate(8);
     setTimeout(() => this.circuit.canvas.applyView(), 60);
@@ -357,6 +359,7 @@ export class PiScreen {
     this.root.classList.toggle('fs-clean', !on);
     this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
     this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (this.dock) this.dock.place();
     if (buzz) Native.vibrate(6);
     setTimeout(() => this.circuit.canvas.applyView(), 30);
   }

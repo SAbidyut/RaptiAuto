@@ -43,13 +43,7 @@
 .lab { --dock-b: 12px; }
 .lab.tab-panel, .lab.split { --dock-b: 54px; }
 .lab.tab-ladder:not(.split), .lab.tab-hmi:not(.split) { --dock-b: 44px; } /* above the ladder / HMI footer */
-.lab.fs .lab-fs-bar { display: flex; flex-direction: row; gap: 4px; position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 16px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b)); z-index: 20; padding: 5px; border-radius: 20px; overflow-x: auto; scrollbar-width: none; }
-.lab.fs .lab-fs-bar::-webkit-scrollbar { display: none; }
-/* the ☰ handle sat at the top right, over the ladder / HMI / VFD tool bars (e.g. Monitor): in the lab
-   it waits at the bottom right, and while the menus are shown the ✕ at the end of the dock hides them */
-.lab.fs .fs-handle.fs-handle { top: auto; bottom: calc(var(--dock-b) + var(--safe-b) + 6px); }
-.lab.fs:not(.fs-clean) .fs-handle.fs-handle { display: none; }
-.lab.fs .lab-fs-bar .fs-hide { color: var(--accent); }
+.lab.fs .lab-fs-bar { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; position: absolute; left: 0; top: 0; z-index: 21; padding: 5px; border-radius: 20px; }
 .lab.fs .lab-fs-bar .fs-btn { flex-shrink: 0; }
 .lab.fs .lab-status { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100% - 24px - var(--safe-l) - var(--safe-r)); bottom: calc(var(--dock-b) + var(--safe-b) + 62px); height: 34px; border-radius: 99px; z-index: 20; }
 .lab.fs .lab-fs-bar.fs-bar, .lab.fs .lab-status.sim-status { background: rgba(10, 16, 32, .42) !important; border: 1px solid rgba(148, 163, 184, .24) !important; backdrop-filter: blur(18px) saturate(160%) !important; -webkit-backdrop-filter: blur(18px) saturate(160%) !important; box-shadow: 0 14px 36px -16px rgba(0, 0, 0, .7) !important; }
@@ -350,6 +344,11 @@
 .hv-bar .segmented { flex-shrink: 0; }
 .hv-bar .segmented .seg { padding: 0 10px; gap: 5px; }
 .hv-bar .hv-screens .chip { padding: 0 10px; }
+.hv-bar.narrow { flex-wrap: wrap; row-gap: 6px; }
+.hv-bar.narrow .hv-screens { order: 5; flex: 1 0 100%; }
+.hv-bar.narrow .hv-tools { margin-left: auto; }
+.hv-bar.narrow .hv-zoom { margin-left: auto; }
+.hv-bar.narrow .hv-tools + .hv-zoom { margin-left: 0; }
 .hv-overlay { position: absolute; inset: 0; pointer-events: none; }
 .hv-sel { position: absolute; border: 2px dashed #22d3ee; border-radius: 4px; pointer-events: auto; box-shadow: 0 0 0 2000px rgba(2, 6, 14, .12); touch-action: none; }
 .hv-sel-tag { position: absolute; left: -2px; bottom: calc(100% + 3px); white-space: nowrap; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #22d3ee; color: #04121a; }

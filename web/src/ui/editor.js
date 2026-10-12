@@ -9,6 +9,7 @@ import { openLibrary } from './library.js';
 import { openPartProps, openWireSheet, openSimControls } from './inspector.js';
 import { h, toast, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from './widgets.js';
 import { icon } from './icons.js';
+import { FsDock } from './fsdock.js';
 import { Native } from '../native.js';
 import { AudioEngine } from './audio.js';
 import { VirtualNet } from '../net/network.js';
@@ -108,9 +109,10 @@ export class Editor {
       h('button', { class: 'fs-btn fs-iot', 'data-tab': 'iot', html: icon('globe', 20), onclick: () => this.toggleTab('iot') }));
 
     // full screen hides every menu; this small handle brings them back
-    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
 
-    this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar, this.fsHandle);
+    this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar);
+    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'editor', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
     this.refreshIotTab();
     this.stale = h('div', { class: 'stale-banner hidden', html: `${icon('restart', 16)}<span>Code changed — restart to apply</span>`, onclick: () => this.restart() });
     this.circuitPane.appendChild(this.stale);
@@ -277,7 +279,7 @@ export class Editor {
     this.panes = null; // full screen starts automatic again
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
-    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (top right) for the menus'); }
+    if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
     this.updateLayout();
     Native.setImmersive(on);
     Native.vibrate(8);
@@ -290,6 +292,7 @@ export class Editor {
     this.root.classList.toggle('fs-clean', !on);
     this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
     this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (this.dock) this.dock.place();
     if (buzz) Native.vibrate(6);
     setTimeout(() => this.canvas.applyView(), 30);
   }

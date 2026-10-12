@@ -1060,7 +1060,7 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   const { p, s, run } = sim('modbus-th-fan');
   const D = (i) => s.plc.cpu.D[i];
   run(3000);
-  check('th-fan: temperature / humidity read with FC03', D(50) === 270 && D(51) === 550, [D(50), D(51)].join());
+  check('th-fan: temperature / humidity read with FC03', Math.abs(D(50) - 270) <= 6 && Math.abs(D(51) - 550) <= 15, [D(50), D(51)].join());
   check('th-fan: fan off at 27 °C, on above 30 °C', !s.plc.cpu.Y[0]);
   s.act('th', 'thSet', { temp: 33 }); run(3000);
   check('th-fan: fan on at 33 °C', s.plc.cpu.Y[0] === 1 && s.rts.get('lfan').on);

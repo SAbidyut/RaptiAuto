@@ -83,6 +83,9 @@ export class HmiView {
     this.el.append(this.bar, this.stage, this.info);
     this.ro = new ResizeObserver(() => this.layout());
     this.ro.observe(this.stage);
+    // narrow bar: the screen chips drop to their own row so the zoom buttons never cover them
+    this.roBar = new ResizeObserver(() => this.fitBar());
+    this.roBar.observe(this.bar);
     // run-mode touch
     const cv = this.lab.hmiCanvas;
     cv.addEventListener('pointerdown', (e) => this.runDown(e));
@@ -104,6 +107,8 @@ export class HmiView {
   }
 
   onShow() { this.layout(); this.refresh(); }
+  fitBar() { this.bar.classList.toggle('narrow', this.bar.clientWidth < (this.designing ? 760 : 520)); }
+
   onBack() { if (this.sel) { this.select(null); return true; } if (this.designing) { this.setDesign(false); return true; } return false; }
   onSimStart() { this.refresh(); }
   onSimStop() { this.refresh(); }
@@ -122,6 +127,7 @@ export class HmiView {
 
   setDesign(on) {
     this.designing = on;
+    if (this.bar) this.fitBar();
     for (const b of this.seg.children) b.classList.toggle('active', (b.dataset.m === 'design') === on);
     this.el.classList.toggle('designing', on);
     this.lab.hmiCanvas.style.display = on ? 'none' : '';
