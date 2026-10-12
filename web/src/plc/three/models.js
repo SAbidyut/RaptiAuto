@@ -2,7 +2,7 @@
 //   { group, update(rt, ctx) → changed?, controls: [mesh], screen?, dispose() }
 // in the device-local frame of devices/defs.js (mm, origin bottom-centre-back, +z = front).
 import {
-  THREE, MAT, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
+  THREE, MAT, FLIP, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
   glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M,
 } from './kit.js';
 import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps } from '../devices/defs.js';
@@ -405,18 +405,27 @@ function buildPsu(dev) {
   B.add(rbox(48, 82, 10, 2.5), mat('psuFront', { color: 0xe4e7eb, roughness: 0.5 }), M4(0, 63, 99));
   B.add(rbox(46, 20, 12, 1.5), MAT.termBlock, M4(0, 114, 94.5));
   B.add(rbox(46, 20, 12, 1.5), MAT.termBlock, M4(0, 11, 94.5));
-  B.add(cyl(2.4, 2.4, 2, 16), MAT.steel, M4(14, 78, 104.4, Math.PI / 2));
+  // the potentiometer (V.adj): a steel knob with a screwdriver slot, in a small recess
+  B.add(cyl(4.4, 4.4, 1, 24), mat('psuWell', { color: 0x9ca3ad, roughness: 0.5 }), M4(14, 80, 104.3, Math.PI / 2));
+  B.add(cyl(3, 3, 2, 24), MAT.steel, M4(14, 80, 105, Math.PI / 2));
+  B.add(box(5.2, 0.9, 0.8), MAT.slot, M4(14, 80, 106.2, 0, 0, 0.5));
+  // cooling slots down both sides of the front, like the real unit
+  for (const sx of [-1, 1]) for (const dx of [19.3, 21.7]) B.add(box(0.9, 26, 0.7), mat('psuVent', { color: 0x4b5563, roughness: 0.7 }), M4(sx * dx, 58, 104.2));
   B.add(box(30, 10, 14), MAT.darkPlastic, M4(0, -2, 20));
   for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.2);
   B.build(group);
   const front = decal(46, 80, (g, W, H) => {
-    deltaLogo(g, W / 2, 8, 5.4, '#1d4f9c', 'center');
-    txt(g, 'CliQ', W / 2, 16, { size: 3.4, weight: 800, color: '#64748b', font: FONT_D });
-    txt(g, 'DC OK', 9, 32, { size: 2.6, weight: 800, color: '#374151', align: 'left' });
-    txt(g, 'V.adj', 30, 30, { size: 2.4, weight: 700, color: '#374151', align: 'left' });
-    txt(g, '24 V', W / 2, 48, { size: 8, weight: 800, color: '#111827', font: FONT_D });
+    deltaLogo(g, W / 2, 7, 5.4, '#1d4f9c', 'center');
+    txt(g, 'CliQ', W / 2, 14.5, { size: 3.4, weight: 800, color: '#64748b', font: FONT_D });
+    // LED (left) and V.adj (right) share one row; their captions sit under them, clear of both
+    txt(g, 'DC OK', 11, 32, { size: 2.5, weight: 800, color: '#374151' });
+    txt(g, 'V.adj', 37, 32, { size: 2.5, weight: 700, color: '#374151' });
+    g.strokeStyle = '#6b7280'; g.lineWidth = 0.28; g.beginPath(); g.arc(37, 23, 5.6, Math.PI * 0.85, Math.PI * 2.15); g.stroke();
+    txt(g, '−', 31.2, 27.6, { size: 2.4, weight: 800, color: '#6b7280' }); txt(g, '+', 42.8, 27.6, { size: 2.4, weight: 800, color: '#6b7280' });
+    g.strokeStyle = '#c3c9d1'; g.lineWidth = 0.3; rrect(g, 6, 38, W - 12, 24, 1.6); g.stroke();
+    txt(g, '24 V', W / 2, 47, { size: 8, weight: 800, color: '#111827', font: FONT_D });
     txt(g, '2.5 A · 60 W', W / 2, 56, { size: 3, weight: 700, color: '#4b5563' });
-    txt(g, 'DRP024V060W1AZ', W / 2, 72, { size: 2.6, weight: 700, color: '#6b7280' });
+    txt(g, 'DRP024V060W1AZ', W / 2, 69, { size: 2.6, weight: 700, color: '#6b7280' });
   }, { ppm: 12 });
   front.position.set(0, 63, 104.06);
   group.add(front);
@@ -425,8 +434,8 @@ function buildPsu(dev) {
   const bot = labelStrip(46, 4, [{ x: -18, label: '+V' }, { x: -6, label: '+V' }, { x: 6, label: '−V' }, { x: 18, label: '−V' }], { size: 2.6 });
   bot.position.set(0, 4.6, 100.7); group.add(bot);
   const okLed = ledMat('#36ff6a');
-  const l = new THREE.Mesh(cyl(1.6, 1.6, 1, 14), okLed);
-  l.rotation.x = Math.PI / 2; l.position.set(-14, 72, 104.4);
+  const l = new THREE.Mesh(cyl(1.7, 1.7, 1, 14), okLed);
+  l.rotation.x = Math.PI / 2; l.position.set(-12, 80, 104.4);
   group.add(l);
   return {
     group, controls: [],
@@ -435,49 +444,71 @@ function buildPsu(dev) {
 }
 
 // ====================================================================== MCB + mains
-function buildMcb(dev) {
+/**
+ * A DIN-rail miniature circuit breaker: white housing with a stepped front, dark recessed screw wells, the toggle
+ * on a dark pivot plate with a red / green ON-OFF window, and the rating printed between the screws and the toggle.
+ * opts: { W, cx, rating, volt, tag, poleLabels, pe, extraScrews }
+ */
+function breakerModel(dev, o) {
+  const { W, cx } = o;
   const group = new THREE.Group();
   const B = new Builder();
-  B.add(rbox(36, 90, 64, 2.5), MAT.white, M4(-6, 45, 32));
-  B.add(rbox(32, 44, 8, 2), MAT.white, M4(-6, 45, 67));
-  B.add(rbox(10, 42, 50, 1.5), mat('peBlock', { color: 0x2f9e44, roughness: 0.5 }), M4(17, 45, 25));
-  B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(17, 38, 25));
-  B.add(box(30, 10, 14), MAT.darkPlastic, M4(-6, -2, 20));
-  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.3);
-  // line side screws (the mains cable from here is routed with the wiring, see devices/routing.js)
-  addScrew(B, [-15, 80, 64], [0, 0.55, 0.83], 2.3);
-  addScrew(B, [-3, 80, 64], [0, 0.55, 0.83], 2.3);
+  const body = mat('mcbBody', { color: 0xeceeec, roughness: 0.5 });
+  const step = mat('mcbStep', { color: 0xe0e3e5, roughness: 0.5 });
+  const well = mat('mcbWell', { color: 0x30343a, roughness: 0.7 });
+  B.add(rbox(W, 90, 64, 2.5), body, M4(cx, 45, 32));
+  B.add(rbox(W - 4, 38, 8, 2), step, M4(cx, 41, 67));
+  B.add(rbox(W - 9, 30, 2.4, 1.2), well, M4(cx, 40, 71.2)); // pivot plate
+  B.add(box(Math.min(30, W - 4), 10, 14), MAT.darkPlastic, M4(cx, -2, 20));
+  // the screws sit in dark wells so they look seated in the terminal cages
+  B.add(box(W - 6, 8, 1.4), well, M4(cx, 82, 64.3));
+  B.add(box(W - 6, 8, 1.4), well, M4(cx, 10, 64.3));
+  if (o.pe) {
+    B.add(rbox(10, 42, 50, 1.5), mat('peBlock', { color: 0x2f9e44, roughness: 0.5 }), M4(17, 45, 25));
+    B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(17, 38, 25));
+  }
+  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.2);
+  for (const sc of o.extraScrews || []) addScrew(B, sc, [0, 0.55, 0.83], 2.2);
   B.build(group);
-  const front = decal(32, 86, (g, W, H) => {
-    txt(g, 'C10', W / 2, 9, { size: 5, weight: 800, color: '#111827', font: FONT_D });
-    txt(g, '230/400 V~', W / 2, 15, { size: 2.6, weight: 700, color: '#4b5563' });
-    g.strokeStyle = '#4b5563'; g.lineWidth = 0.35; rrect(g, 9, 70, 14, 7, 1); g.stroke();
-    txt(g, '6000', W / 2, 73.6, { size: 2.6, weight: 700, color: '#374151' });
-    txt(g, 'L', 9, 82, { size: 3, weight: 800, color: '#374151' });
-    txt(g, 'N', 21, 82, { size: 3, weight: 800, color: '#374151' });
+  const fw = W - 4;
+  const front = decal(W, 86, (g, w) => {
+    txt(g, o.rating, w / 2, 14.5, { size: o.rating.length > 3 ? 4.4 : 5.2, weight: 800, color: '#111827', font: FONT_D });
+    if (o.tag) txt(g, o.tag, w / 2, 20.5, { size: 2.6, weight: 800, color: '#1d4f9c' });
+    txt(g, o.volt + (o.cap ? '  ' + o.cap : ''), w / 2, o.tag ? 25 : 21, { size: 2.3, weight: 700, color: '#4b5563' });
+    for (const [x, label] of o.poleLabels || []) txt(g, label, x + w / 2, 83, { size: 2.8, weight: 800, color: '#374151' });
   }, { ppm: 12 });
-  front.position.set(-6, 45, 64.06);
+  front.position.set(cx, 45, 64.06);
   group.add(front);
-  const pel = labelStrip(12, 5, [{ x: 0, label: 'PE', size: 3 }], { color: '#111' });
-  pel.position.set(17, 67, 50.2); group.add(pel);
-  // indicator + lever
-  const ind = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), offsetMat(new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 })));
-  ind.position.set(-6, 60.5, 71.1);
+  if (o.pe) {
+    const pel = labelStrip(12, 5, [{ x: 0, label: 'PE', size: 3 }], { color: '#111' });
+    pel.position.set(17, 50, 50.2); group.add(pel);
+  }
+  // ON / OFF window (red = ON, green = OFF) and the toggle
+  const ind = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(8, W - 8), 3.4), offsetMat(new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 })));
+  ind.position.set(cx, 57, 71.7);
   group.add(ind);
   const lever = new THREE.Group();
-  lever.position.set(-6, 45, 71);
-  const lv = new THREE.Mesh(rbox(10, 18, 7, 1.6), mat('mcbLever', { color: 0x1f3f8f, roughness: 0.45 }));
+  lever.position.set(cx, 41, 72);
+  const lw = Math.min(W - 11, 44);
+  const lv = new THREE.Mesh(rbox(lw, 17, 7, 1.6), mat('mcbLever', { color: 0x23272e, roughness: 0.35, metalness: 0.1 }));
   lv.position.set(0, 7, 3);
   lever.add(lv);
+  for (let i = 0; i < 3; i++) { // finger grip ridges
+    const rg = new THREE.Mesh(box(lw - 3, 0.9, 0.6), mat('mcbRidge', { color: 0x3a3f48, roughness: 0.5 }));
+    rg.position.set(0, 9 + i * 2.6, 6.6);
+    lever.add(rg);
+  }
+  const mark = new THREE.Mesh(box(Math.min(5, lw - 4), 1.2, 0.5), mat('mcbMark', { color: 0xd8dde5, roughness: 0.5 }));
+  mark.position.set(0, 4, 6.7);
+  lever.add(mark);
   group.add(lever);
-  const hit = control(new THREE.Mesh(box(30, 44, 16), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: 'MCB' });
-  hit.position.set(-6, 45, 74);
+  const hit = control(new THREE.Mesh(box(W, 44, 16), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: o.label });
+  hit.position.set(cx, 45, 74);
   group.add(hit);
   return {
     group, controls: [hit],
     update(rt) {
-      const on = rt.dev.state.on;
-      const a = on ? -0.55 : 0.75;
+      const on = o.isOn(rt), a = on ? -0.55 : 0.75;
       if (lever.rotation.x === a) return false;
       lever.rotation.x = a;
       ind.material.color.set(on ? 0xd62828 : 0x2f9e44);
@@ -486,15 +517,28 @@ function buildMcb(dev) {
   };
 }
 
+function buildMcb(dev) {
+  return breakerModel(dev, {
+    W: 36, cx: -6, rating: 'C10', volt: '230/400 V~', cap: '6000', pe: true, label: 'MCB',
+    poleLabels: [[-10, 'L'], [6, 'N']], extraScrews: [[-15, 80, 64], [-3, 80, 64]],
+    isOn: (rt) => rt.dev.state.on,
+  });
+}
+
 // ====================================================================== console modules
+/** Height of a console module plate; the modules are turned about the middle of it (buildModel). */
+const CONSOLE_H = 86;
+/** A port position in the turned module's own frame. */
+const turned = (pos) => [-pos[0], CONSOLE_H - pos[1], pos[2]];
+
 function plate(dev, label, extraPrint) {
   const group = new THREE.Group();
   const B = new Builder();
   B.add(rbox(64, 86, 5, 2), mat('modPlate', { color: 0x252b35, roughness: 0.5, metalness: 0.2 }), M4(0, 43, 2.5));
-  for (const p of devicePorts(dev)) addSocket(B, p.pos, p.dir, SOCK_BY_PORT[p.id] || '#1b1d22');
+  for (const p of devicePorts(dev)) addSocket(B, turned(p.pos), p.dir, SOCK_BY_PORT[p.id] || '#1b1d22');
   const print = decal(64, 86, (g, W, H) => {
     txt(g, label, W / 2, 7.5, { size: 5.2, weight: 800, color: '#f1f5f9', font: FONT_D });
-    for (const p of devicePorts(dev)) txt(g, p.label, p.pos[0] + W / 2, H - 7.5, { size: 3.4, weight: 800, color: '#94a3b8' });
+    for (const p of devicePorts(dev)) txt(g, p.label, turned(p.pos)[0] + W / 2, H - 7.5, { size: 3.4, weight: 800, color: '#94a3b8' });
     if (extraPrint) extraPrint(g, W, H);
   }, { ppm: 9 });
   print.position.set(0, 43, 5.05);
@@ -981,42 +1025,10 @@ function buildRelay(dev) {
 function buildCb(dev) {
   const pr = deviceProps(dev);
   const n = pr.poles === '3P' ? 3 : 1, W = n === 3 ? 54 : 18;
-  const group = new THREE.Group();
-  const B = new Builder();
-  B.add(rbox(W, 90, 64, 2.5), MAT.white, M4(0, 45, 32));
-  B.add(rbox(W - 4, 44, 8, 2), MAT.white, M4(0, 45, 67));
-  B.add(box(Math.min(30, W - 4), 10, 14), MAT.darkPlastic, M4(0, -2, 20));
-  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.1);
-  B.build(group);
-  const front = decal(W - 4, 86, (g, w) => {
-    txt(g, pr.rating || 'C6', w / 2, 9, { size: 4.4, weight: 800, color: '#111827', font: FONT_D });
-    txt(g, pr.label || 'QF1', w / 2, 15, { size: 2.8, weight: 800, color: '#1d4f9c' });
-    txt(g, n === 3 ? '400 V~' : '230 V~', w / 2, 76, { size: 2.4, weight: 700, color: '#4b5563' });
-  }, { ppm: 12 });
-  front.position.set(0, 45, 64.06);
-  group.add(front);
-  const ind = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(8, W - 8), 4), offsetMat(new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 })));
-  ind.position.set(0, 60.5, 71.1);
-  group.add(ind);
-  const lever = new THREE.Group();
-  lever.position.set(0, 45, 71);
-  const lv = new THREE.Mesh(rbox(Math.min(W - 6, 44), 18, 7, 1.6), mat('mcbLever', { color: 0x1f3f8f, roughness: 0.45 }));
-  lv.position.set(0, 7, 3);
-  lever.add(lv);
-  group.add(lever);
-  const hit = control(new THREE.Mesh(box(W, 44, 16), new THREE.MeshBasicMaterial({ visible: false })), dev.id, 'toggle', { label: `${pr.label || 'Breaker'} ON / OFF` });
-  hit.position.set(0, 45, 74);
-  group.add(hit);
-  return {
-    group, controls: [hit],
-    update(rt) {
-      const on = rt.dev.state.on !== false, a = on ? -0.55 : 0.75;
-      if (lever.rotation.x === a) return false;
-      lever.rotation.x = a;
-      ind.material.color.set(on ? 0xd62828 : 0x2f9e44);
-      return true;
-    },
-  };
+  return breakerModel(dev, {
+    W, cx: 0, rating: pr.rating || 'C6', tag: pr.label || 'QF1', volt: n === 3 ? '400 V~' : '230 V~',
+    label: `${pr.label || 'Breaker'} ON / OFF`, isOn: (rt) => rt.dev.state.on !== false,
+  });
 }
 
 function buildTb(dev) {
@@ -1265,7 +1277,18 @@ export function buildModel(dev, ctx) {
   const def = DEVICE_DEFS[dev.type];
   const fn = def && BUILDERS[def.sim];
   if (!fn) return null;
-  const model = fn(dev, ctx);
+  let model;
+  if (def.zone === 'console') {
+    // console modules are built "head down": the sockets end up at the top of the module — toward the back of the
+    // console — so the cords leave over the back edge and never lie across the buttons (defs.js sockRow)
+    FLIP.on = true;
+    try { model = fn(dev, ctx); } finally { FLIP.on = false; }
+    const inner = model.group, outer = new THREE.Group();
+    inner.position.set(0, CONSOLE_H, 0);
+    inner.rotation.z = Math.PI;
+    outer.add(inner);
+    model.group = outer;
+  } else model = fn(dev, ctx);
   model.group.userData.devId = dev.id;
   model.group.traverse((o) => {
     if (o.isMesh && !o.userData.control) { o.castShadow = o.castShadow || false; }

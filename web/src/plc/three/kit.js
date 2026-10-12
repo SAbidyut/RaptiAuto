@@ -74,13 +74,26 @@ export const FONT = "'Inter', system-ui, sans-serif";
 export const FONT_D = "'Space Grotesk', 'Inter', sans-serif";
 export const FONT_M = "'JetBrains Mono', ui-monospace, monospace";
 
+/**
+ * While FLIP.on, decals are drawn for a module that is turned half way round (the operator console modules, see
+ * models.js): the picture is turned with it, so each text is turned back on the spot to stay upright.
+ */
+export const FLIP = { on: false };
+
 export function txt(g, s, x, y, { size = 20, color = '#111', weight = 700, align = 'center', base = 'middle', font = FONT, spacing = 0 } = {}) {
   g.font = `${weight} ${size}px ${font}`;
   g.fillStyle = color;
-  g.textAlign = align;
   g.textBaseline = base;
   if (spacing && 'letterSpacing' in g) g.letterSpacing = spacing + 'px';
-  g.fillText(s, x, y);
+  if (g.__flipText) {
+    g.save(); g.translate(x, y); g.rotate(Math.PI);
+    g.textAlign = align === 'left' ? 'right' : align === 'right' ? 'left' : align;
+    g.fillText(s, 0, 0);
+    g.restore();
+  } else {
+    g.textAlign = align;
+    g.fillText(s, x, y);
+  }
   if (spacing && 'letterSpacing' in g) g.letterSpacing = '0px';
 }
 
@@ -138,7 +151,8 @@ export function offsetMat(m, k = 1) {
 
 /** A textured plane (decal) facing +z. ppm = canvas pixels per mm. */
 export function decal(wmm, hmm, draw, { ppm = 6, transparent = true, rough = 0.55, emissive = false, metal = 0 } = {}) {
-  const tex = canvasTexture(Math.ceil(wmm * ppm), Math.ceil(hmm * ppm), (g, w, h) => { g.scale(ppm, ppm); draw(g, wmm, hmm); });
+  const flip = FLIP.on;
+  const tex = canvasTexture(Math.ceil(wmm * ppm), Math.ceil(hmm * ppm), (g, w, h) => { g.scale(ppm, ppm); g.__flipText = flip; draw(g, wmm, hmm); });
   const m = offsetMat(new THREE.MeshStandardMaterial({ map: tex, transparent, roughness: rough, metalness: metal, depthWrite: !transparent }));
   if (emissive) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = tex; m.emissiveIntensity = 0; }
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(wmm, hmm), m);

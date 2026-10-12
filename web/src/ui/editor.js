@@ -112,7 +112,7 @@ export class Editor {
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
 
     this.root.append(this.topbar, this.status, this.main, this.nav, this.fsBar);
-    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'editor', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
+    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'editor', orient: 'col', home: { fx: 0, fy: 1 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
     this.refreshIotTab();
     this.stale = h('div', { class: 'stale-banner hidden', html: `${icon('restart', 16)}<span>Code changed — restart to apply</span>`, onclick: () => this.restart() });
     this.circuitPane.appendChild(this.stale);

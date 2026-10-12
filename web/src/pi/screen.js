@@ -77,7 +77,7 @@ export class PiScreen {
       fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }));
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
     this.root.append(this.top, this.main, this.nav, this.fsBar);
-    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'pi', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
+    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'pi', orient: 'col', home: { fx: 0, fy: 1 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
 
     // Thonny and the desktop (with its Terminal) are shared by every tab
     this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex), onRun: () => this.revealOutput() });
