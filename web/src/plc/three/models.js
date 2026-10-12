@@ -461,20 +461,29 @@ function breakerModel(dev, o) {
   B.add(rbox(W - 9, 30, 2.4, 1.2), well, M4(cx, 40, 71.2)); // pivot plate
   B.add(box(Math.min(30, W - 4), 10, 14), MAT.darkPlastic, M4(cx, -2, 20));
   // the screws sit in dark wells so they look seated in the terminal cages
-  B.add(box(W - 6, 8, 1.4), well, M4(cx, 82, 64.3));
+  if (!o.gland) B.add(box(W - 6, 8, 1.4), well, M4(cx, 82, 64.3));
   B.add(box(W - 6, 8, 1.4), well, M4(cx, 10, 64.3));
+  if (o.gland) {
+    // the mains cable comes in through a rubber gland on the top (the line side is under the cover): no screws show
+    B.add(cyl(6.6, 6.6, 2.4, 24), mat('glandNut', { color: 0x2b2f36, roughness: 0.55 }), M4(o.gland[0], 90.8, o.gland[1]));
+    B.add(cyl(5, 5, 4, 24), MAT.rubber, M4(o.gland[0], 92, o.gland[1]));
+  }
   if (o.pe) {
     B.add(rbox(10, 42, 50, 1.5), mat('peBlock', { color: 0x2f9e44, roughness: 0.5 }), M4(17, 45, 25));
     B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(17, 38, 25));
   }
   for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.2);
-  for (const sc of o.extraScrews || []) addScrew(B, sc, [0, 0.55, 0.83], 2.2);
   B.build(group);
   const fw = W - 4;
   const front = decal(W, 86, (g, w) => {
-    txt(g, o.rating, w / 2, 14.5, { size: o.rating.length > 3 ? 4.4 : 5.2, weight: 800, color: '#111827', font: FONT_D });
-    if (o.tag) txt(g, o.tag, w / 2, 20.5, { size: 2.6, weight: 800, color: '#1d4f9c' });
-    txt(g, o.volt + (o.cap ? '  ' + o.cap : ''), w / 2, o.tag ? 25 : 21, { size: 2.3, weight: 700, color: '#4b5563' });
+    const top = o.gland ? 9 : 14.5; // without screws on the top the printing can start higher
+    txt(g, o.rating, w / 2, top, { size: o.rating.length > 3 ? 4.4 : 5.4, weight: 800, color: '#111827', font: FONT_D });
+    if (o.tag) txt(g, o.tag, w / 2, top + 6, { size: 2.6, weight: 800, color: '#1d4f9c' });
+    txt(g, o.volt, w / 2, top + (o.tag ? 10.5 : 6.5), { size: 2.3, weight: 700, color: '#4b5563' });
+    if (o.cap) {
+      g.strokeStyle = '#6b7280'; g.lineWidth = 0.3; rrect(g, w / 2 - 6, top + 10, 12, 5.4, 1); g.stroke();
+      txt(g, o.cap, w / 2, top + 12.8, { size: 2.6, weight: 800, color: '#374151' });
+    }
     for (const [x, label] of o.poleLabels || []) txt(g, label, x + w / 2, 83, { size: 2.8, weight: 800, color: '#374151' });
   }, { ppm: 12 });
   front.position.set(cx, 45, 64.06);
@@ -519,8 +528,8 @@ function breakerModel(dev, o) {
 
 function buildMcb(dev) {
   return breakerModel(dev, {
-    W: 36, cx: -6, rating: 'C10', volt: '230/400 V~', cap: '6000', pe: true, label: 'MCB',
-    poleLabels: [[-10, 'L'], [6, 'N']], extraScrews: [[-15, 80, 64], [-3, 80, 64]],
+    W: 36, cx: -6, rating: 'C10', volt: '230/400 V~', cap: '6000', pe: true, label: 'MCB', gland: [-9, 60],
+    poleLabels: [[-10, 'L'], [6, 'N']],
     isOn: (rt) => rt.dev.state.on,
   });
 }
@@ -1095,7 +1104,11 @@ function buildMotor(dev) {
     const rows = [['0.75 kW', '4 P'], ['220 V Δ', '3.2 A'], ['50 Hz', '1420 rpm'], ['IP55', 'Ins. F']];
     rows.forEach(([a, b], i) => { txt(g, a, 6, 13 + i * 7, { size: 3, weight: 700, align: 'left', color: '#1f2937', font: FONT_M }); txt(g, b, W - 6, 13 + i * 7, { size: 3, weight: 700, align: 'right', color: '#1f2937', font: FONT_M }); });
   }, { ppm: 8, transparent: false });
-  plateD.position.set(-20, 100, 76);
+  // the cooling fins stand 9 mm proud of the housing: the plate sits on a flat pad in front of them, so no fin cuts through it
+  const pad = new THREE.Mesh(rbox(70, 46, 8, 1.5), mat('platePad', { color: 0x2a4a78, roughness: 0.45, metalness: 0.3 }));
+  pad.position.set(-20, 100, 78.4);
+  group.add(pad);
+  plateD.position.set(-20, 100, 82.5);
   group.add(plateD);
   const tlbl = labelStrip(60, 5, devicePorts(dev).map((p) => ({ x: p.pos[0], label: p.label, size: 3 })), { color: '#f8fafc' });
   tlbl.rotation.x = -Math.PI / 2; tlbl.position.set(0, 186.1, 7.5);

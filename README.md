@@ -4,6 +4,11 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.22 — 3D fixes: motor nameplate, MCB top
+
+- The motor nameplate sits on a flat pad in front of the cooling fins, so a fin no longer cuts through the text.
+- The MCB has no screws on its top any more: the mains cable enters through a rubber gland, and the rating / voltage / breaking-capacity printing is complete.
+
 ## New in 2.21 — manual for Arduino and Raspberry Pi, cleaner VFD keypad, leaner home page
 
 - **Manual, three parts** (tabs on the Manual page): **PLC Lab**, **Arduino** (8 chapters: the lab, the circuit canvas, programming, electronics, step-by-step projects, Serial / sensors / displays, IoT and master–slave, boards and reference) and **Raspberry Pi** (8 chapters: the lab, the GPIO, the circuit canvas, Python and Thonny, GPIO programming, projects, Desktop and Terminal, reference). 190+ new diagrams — every project is wired up picture by picture — and code listings with colours; the "Open this example" buttons open the real examples.
