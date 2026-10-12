@@ -20,7 +20,7 @@ import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } 
 import { autowire } from '../pi/autowire.js';
 import { searchExamples, SEARCH_HINTS } from './example-search.js';
 import { piHeroArt } from './pi-hero.js';
-import { MANUAL, searchManual } from '../manual/index.js';
+import { MANUAL, PARTS, partChapters, searchManual } from '../manual/index.js';
 
 export const PAGES = {
   home: { title: 'Home', icon: 'home' },
@@ -412,6 +412,7 @@ export class Shell {
   /** Open a chapter (index into MANUAL) and optionally scroll to a section id. */
   openManual(ci, secId) {
     this.manualCh = ci;
+    if (MANUAL[ci]) this.manualPart = MANUAL[ci].part;
     this.manualSec = secId || null;
     if (!this.unbackManual) this.unbackManual = pushBack(() => { this.unbackManual = null; this.manualCh = null; this.render(); });
     this.render();
@@ -426,8 +427,11 @@ export class Shell {
   pageManual(el) {
     // chapter buttons inside the text: "Open this example"
     el.addEventListener('click', (e) => {
-      const b = e.target.closest && e.target.closest('[data-ex]');
-      if (b) this.openLabExample(b.dataset.ex);
+      const b = e.target.closest && e.target.closest('[data-ex],[data-ard],[data-pi]');
+      if (!b) return;
+      if (b.dataset.ex) this.openLabExample(b.dataset.ex);
+      else if (b.dataset.ard) { const ex = EXAMPLES.find((x) => x.id === b.dataset.ard); if (ex) this.openExample(ex); else toast('That example is not available', 'warn'); }
+      else if (b.dataset.pi) { const ex = this.piAll().find((x) => x.file === b.dataset.pi); if (ex) this.openPiExample(ex, ex.kind === 'pico' ? 'pico' : 'pi5'); else toast('That example is not available', 'warn'); }
     });
     if (this.manualCh === null || this.manualCh === undefined || !MANUAL[this.manualCh]) { this.manualIndex(el); return; }
     const ci = this.manualCh, ch = MANUAL[ci];
@@ -436,7 +440,7 @@ export class Shell {
       h('option', { value: '' }, 'Jump to …'), ...secs.map((s, i) => h('option', { value: `mx-${ch.id}-${s.id}` }, `${ch.no}.${i + 1}  ${s.title}`)));
     el.appendChild(h('div', { class: 'mx-top' },
       h('button', { class: 'icon-btn sm', 'aria-label': 'All chapters', title: 'All chapters', html: icon('back', 20), onclick: () => this.closeManual() }),
-      h('div', { class: 'mx-crumb' }, h('small', {}, `Chapter ${ch.no} of ${MANUAL.length}`), ch.title), jump));
+      h('div', { class: 'mx-crumb' }, h('small', {}, `${PARTS.find((p) => p.id === ch.part).name} · chapter ${partChapters(ch.part).indexOf(ch) + 1} of ${partChapters(ch.part).length}`), ch.title), jump));
     const art = h('article', { class: 'mx-article' });
     art.innerHTML = `<h1>${ch.title}</h1><p class="mx-lead">${ch.blurb}</p>` +
       `<div class="mx-toc"><b>In this chapter</b>${secs.map((s, i) => `<a href="#" data-sec="mx-${ch.id}-${s.id}"><i>${ch.no}.${i + 1}</i>${s.title}</a>`).join('')}</div>` +
@@ -445,10 +449,11 @@ export class Shell {
       const a = e.target.closest && e.target.closest('a[data-sec]');
       if (a) { e.preventDefault(); const t = art.querySelector('#' + a.dataset.sec); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     });
-    const prev = MANUAL[ci - 1], next = MANUAL[ci + 1];
+    const sib = partChapters(ch.part), pi = sib.indexOf(ch);
+    const prev = sib[pi - 1], next = sib[pi + 1];
     art.appendChild(h('div', { class: 'mx-nav' },
-      prev ? h('button', { class: 'prev', onclick: () => this.openManual(ci - 1) }, '← Previous', h('b', {}, `${prev.no} · ${prev.title}`)) : h('span', { style: 'flex:1' }),
-      next ? h('button', { class: 'next', onclick: () => this.openManual(ci + 1) }, 'Next →', h('b', {}, `${next.no} · ${next.title}`)) : h('span', { style: 'flex:1' })));
+      prev ? h('button', { class: 'prev', onclick: () => this.openManual(MANUAL.indexOf(prev)) }, '← Previous', h('b', {}, `${prev.no} · ${prev.title}`)) : h('span', { style: 'flex:1' }),
+      next ? h('button', { class: 'next', onclick: () => this.openManual(MANUAL.indexOf(next)) }, 'Next →', h('b', {}, `${next.no} · ${next.title}`)) : h('span', { style: 'flex:1' })));
     el.appendChild(art);
     if (this.manualSec) {
       const id = `mx-${ch.id}-${this.manualSec}`;
@@ -458,11 +463,18 @@ export class Shell {
   }
 
   manualIndex(el) {
-    el.appendChild(h('section', { class: 'mx-hero' },
-      h('div', { class: 'hero-kicker', html: `${icon('book', 15)}<span>RaptiAuto manual</span>` }),
-      h('h2', {}, 'Learn PLC, VFD, HMI and Modbus'),
-      h('p', {}, 'From the first ladder rung to a Modbus network with a PID oven — nine chapters, with diagrams and examples that open with one tap.')));
+    if (!this.manualPart) this.manualPart = 'plc';
+    const hero = h('section', { class: 'mx-hero' });
+    const parts = h('div', { class: 'mx-parts', role: 'tablist' });
     const body = h('div');
+    const fillHero = () => {
+      const P = PARTS.find((x) => x.id === this.manualPart);
+      hero.innerHTML = '';
+      hero.append(h('div', { class: 'hero-kicker', html: `${icon('book', 15)}<span>RaptiAuto manual</span>` }), h('h2', {}, P.title), h('p', {}, P.lead));
+      for (const b of parts.children) b.classList.toggle('on', b.dataset.part === this.manualPart);
+    };
+    for (const P of PARTS) parts.appendChild(h('button', { 'data-part': P.id, role: 'tab', onclick: () => { this.manualPart = P.id; fillHero(); draw(search.querySelector('input').value); search.querySelector('input').placeholder = P.search; } }, P.name, h('small', {}, `${partChapters(P.id).length} chapters`)));
+    let search;
     const draw = (q) => {
       body.innerHTML = '';
       if (q.trim()) {
@@ -471,19 +483,21 @@ export class Shell {
         const list = h('div', { class: 'mx-hits' });
         for (const r of hits) {
           const ci = MANUAL.indexOf(r.ch), si = r.ch.sections.indexOf(r.sec);
-          list.appendChild(h('button', { class: 'mx-hit', onclick: () => this.openManual(ci, r.sec.id) }, h('b', {}, `${r.ch.no}.${si + 1}  ${r.sec.title}`), h('small', {}, r.snippet)));
+          list.appendChild(h('button', { class: 'mx-hit', onclick: () => { this.manualPart = r.ch.part; this.openManual(ci, r.sec.id); } }, h('b', {}, `${r.ch.no}.${si + 1}  ${r.sec.title}`), h('small', {}, `${PARTS.find((x) => x.id === r.ch.part).name} · ${r.snippet}`)));
         }
         body.appendChild(list);
         return;
       }
       const grid = h('div', { class: 'mx-chapters' });
-      MANUAL.forEach((ch, i) => grid.appendChild(h('button', { class: 'mx-card', onclick: () => this.openManual(i) },
+      for (const ch of partChapters(this.manualPart)) grid.appendChild(h('button', { class: 'mx-card', onclick: () => this.openManual(MANUAL.indexOf(ch)) },
         h('span', { class: 'mx-no' }, String(ch.no)),
-        h('div', {}, h('b', {}, ch.title), h('span', {}, ch.blurb), h('small', {}, `${ch.sections.length} sections`)))));
+        h('div', {}, h('b', {}, ch.title), h('span', {}, ch.blurb), h('small', {}, `${ch.sections.length} sections`))));
       body.appendChild(grid);
     };
-    el.appendChild(searchBox('Search the manual: Modbus, timer, PB …', draw));
-    el.appendChild(body);
+    el.append(hero, parts);
+    search = searchBox(PARTS.find((x) => x.id === this.manualPart).search, draw);
+    el.append(search, body);
+    fillHero();
     draw('');
   }
 
