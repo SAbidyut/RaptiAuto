@@ -4,6 +4,12 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.20 — realistic breaker and power supply, clear push buttons, steadier full-screen menu
+
+- **3D lab:** the MCB / circuit breakers and the Delta DRP24 V power supply are redrawn (stepped housing, terminal wells, ridged toggle with ON/OFF window; knob with scale, vents) and the overlapping texts are fixed.
+- **Operator console:** the sockets of every console module are now at the top (back) of the module, so the patch cords leave over the back edge and no longer lie across the buttons.
+- **Full-screen menu:** the round ☰ button never moves when the menus open or close, the bar opens beside it on the side where it fits — no more mis-taps when it is dragged to the edge of the screen.
+
 ## New in 2.19 — program output on its own screen, versioned releases
 
 - The output panel that slid over the bottom of the Pi circuit (and its button in the menus) is gone. A program's output lives on the **Output** screen; pressing Run opens it beside the circuit or the code (landscape), or tells you where it is (portrait).

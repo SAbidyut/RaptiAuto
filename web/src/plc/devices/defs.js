@@ -94,7 +94,7 @@ export function wireColorFor(sig) { return SIG_COLOR[sig] || '#f97316'; }
 
 // field modules on the operator console: 64 × 86 mm plates with 4 mm banana sockets
 const OUTPUT_PROP = { id: 'output', label: 'Output', type: 'select', options: { PNP: 'PNP (switches +24 V)', NPN: 'NPN (switches 0 V)' } };
-const sockRow = (ids, labels, sig) => row(ids, { x0: -((ids.length - 1) * 17) / 2, x1: ((ids.length - 1) * 17) / 2, y: 17, z: 6, dir: FRONT, sig, kind: 'sock', labels });
+const sockRow = (ids, labels, sig) => row(ids, { x0: -((ids.length - 1) * 17) / 2, x1: ((ids.length - 1) * 17) / 2, y: 69, z: 6, dir: FRONT, sig, kind: 'sock', labels }); // top of the module = toward the back of the console (the modules are built turned, see three/models.js)
 
 export const DEVICE_DEFS = {
   // ---------------------------------------------------------------- PLC

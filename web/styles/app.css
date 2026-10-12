@@ -691,21 +691,16 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 
 /* ---------------------------------------------------------------- full screen without menus: a small handle shows them again */
 .fs-handle { display: none; }
-.editor.fs .fs-handle, .lab.fs .fs-handle { display: grid; place-items: center; flex-shrink: 0; position: relative; z-index: 22; width: 36px; height: 36px; border-radius: 12px; color: #dbe5f7; background: rgba(10, 16, 32, .5); border: 1px solid rgba(148, 163, 184, .25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: .8; transition: opacity .15s, background .15s, transform .15s; touch-action: none; cursor: grab; }
+.editor.fs .fs-handle, .lab.fs .fs-handle { display: grid; place-items: center; position: absolute; left: 0; top: 0; z-index: 22; width: 36px; height: 36px; border-radius: 12px; color: #dbe5f7; background: rgba(10, 16, 32, .5); border: 1px solid rgba(148, 163, 184, .25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: .8; transition: opacity .15s, background .15s, transform .15s; touch-action: none; cursor: grab; }
 .editor.fs .fs-handle:active, .lab.fs .fs-handle:active { opacity: 1; background: rgba(34, 211, 238, .25); }
 .editor.fs:not(.fs-clean) .fs-handle, .lab.fs:not(.fs-clean) .fs-handle { opacity: 1; color: var(--accent); background: rgba(34, 211, 238, .1); }
 .editor.fs.fs-dragging .fs-handle, .lab.fs.fs-dragging .fs-handle { transform: scale(1.12); cursor: grabbing; }
-.editor.fs.fs-dragging .fs-dock, .lab.fs.fs-dragging .fs-dock { box-shadow: 0 22px 50px -14px rgba(0, 0, 0, .95); }
+.editor.fs.fs-dragging .fs-bar, .lab.fs.fs-dragging .fs-bar { box-shadow: 0 22px 50px -14px rgba(0, 0, 0, .95); }
 .fs-probe { position: absolute; visibility: hidden; pointer-events: none; width: 0; height: 0; padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); }
-/* the menu capsule: the ☰ button leads it (✕ while open); closed, only the round button is left */
+/* the bar floats next to the round button (ui/fsdock.js picks the side); its empty edge drags it too */
 .fs-dock { touch-action: none; width: max-content; }
-.fs-dock.dock-col { align-items: center; }
-.fs-dock.dock-row { align-items: center; }
-.editor.fs.fs-clean .fs-bar.fs-dock, .lab.fs.fs-clean .fs-bar.fs-dock { display: flex !important; padding: 0 !important; gap: 0 !important; background: none !important; border-color: transparent !important; box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; animation: none; }
-.fs-bar.fs-dock .fs-handle { margin: 0; }
-.editor.fs.fs-clean .fs-dock > :not(.fs-handle), .lab.fs.fs-clean .fs-dock > :not(.fs-handle) { display: none !important; }
-.editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar, .editor.fs.fs-clean:not(.runsplit) .serial-toolbar { display: none !important; }
-.lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
+.editor.fs.fs-clean .fs-bar, .editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar, .editor.fs.fs-clean:not(.runsplit) .serial-toolbar { display: none !important; }
+.lab.fs.fs-clean .lab-fs-bar, .lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
 .lab.fs:not(.fs-clean) .lab-tools { top: calc(52px + var(--safe-t)) !important; }
 
 /* several boards in one project: one code tab per board */
