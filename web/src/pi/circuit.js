@@ -5,8 +5,7 @@
 import { Editor } from '../ui/editor.js';
 import { CircuitCanvas } from '../ui/canvas.js';
 import { openLibrary } from '../ui/library.js';
-import { h, toast, dialog, Sheet } from '../ui/widgets.js';
-import { CodeEditor } from '../ui/code.js';
+import { h, toast, dialog } from '../ui/widgets.js';
 import { icon } from '../ui/icons.js';
 import { getDef, newId, worldBox, defaultProps } from '../components/registry.js';
 import { SimEngine } from '../sim/engine.js';
@@ -77,39 +76,12 @@ export class PiCircuit extends Editor {
 
   addComponent() {
     if (this.engine) { toast('Stop the program to change the circuit', 'warn'); return; }
-    openLibrary({ onPick: (def) => this.placePartNow(def), title: 'Add a part to the Pi' });
-  }
-
-  /** Arduino boards on the Pi canvas (slaves of the Pi over I²C or UART); each runs part.code. */
-  extraBoards() { const b = this.boardPart(); return this.project.parts.filter((p) => p !== b && getDef(p.type) && getDef(p.type).board); }
-
-  selectionChanged(sel) {
-    super.selectionChanged(sel);
-    if (!sel || sel.kind !== 'part' || this.engine) return;
-    const part = this.project.parts.find((p) => p.id === sel.id);
-    if (!part || part === this.boardPart() || !getDef(part.type) || !getDef(part.type).board) return;
-    const name = this.selBar.querySelector('.sel-name');
-    const btn = h('button', { class: 'sel-btn', html: `${icon('code', 20)}<span>Sketch</span>`, onclick: () => this.editSketch(part) });
-    if (name) name.after(btn); else this.selBar.prepend(btn);
-  }
-
-  /** Edit the Arduino sketch of a slave board on the Pi canvas. */
-  editSketch(part) {
-    const host = h('div', { class: 'pi-sketch' });
-    const before = part.code || '';
-    const sheet = new Sheet({
-      title: `Sketch · ${part.title || getDef(part.type).name}`, content: host, cls: 'sheet-tall pi-sketch-sheet', icon: 'code',
-      onClose: () => { if ((part.code || '') !== before) this.commit('Edit sketch'); },
-    });
-    sheet.open();
-    const ed = new CodeEditor(host, { code: before, fontSize: this.settings.fontSize || 14, onChange: (v) => { part.code = v; } });
-    void ed;
+    openLibrary({ onPick: (def) => this.placePartNow(def), noBoards: true, title: 'Add a part to the Pi' });
   }
 
   /** New parts go into free space above the board (the screen centre is usually the board). */
   placePartNow(def) {
     const b = this.boardPart();
-    if (def.board && this.extraBoards().length >= 2) { toast('Up to two Arduino boards can work with the Pi', 'warn'); return; }
     if (!b || def.layer === -1) { super.placePartNow(def); return; }
     const box = typeof def.box === 'function' ? def.box(defaultProps(def)) : def.box;
     const w = box[2] - box[0], hh = box[3] - box[1];
@@ -123,11 +95,6 @@ export class PiCircuit extends Editor {
     }
     if (!at) { super.placePartNow(def); return; }
     const part = { id: newId('p'), type: def.type, x: Math.round((at[0] - box[0]) / 10) * 10, y: Math.round((at[1] - box[1]) / 10) * 10, rot: 0, props: {} };
-    if (def.board) {
-      part.title = 'Arduino ' + (this.extraBoards().length + 1);
-      part.code = SLAVE_SKETCH;
-      setTimeout(() => toast('Arduino added: tap it, then Sketch to write its program. Wire SDA/SCL (I²C) or TX/RX crossed (UART) and GND to the Pi.'), 300);
-    }
     this.project.parts.push(part);
     this.commit('Add ' + def.name);
     this.canvas.select({ kind: 'part', id: part.id });
@@ -225,31 +192,3 @@ export class PiCircuit extends Editor {
     dialog({ title: e.electrical ? '⚡ Power cut' : 'Circuit error', body: `<p>${String(e.message).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</p>`, actions: [{ label: 'OK', value: true, cls: 'btn-primary' }] });
   }
 }
-
-const SLAVE_SKETCH = `// This Arduino works with the Raspberry Pi.
-// I2C slave: Pi GPIO2 (SDA) -> SDA, GPIO3 (SCL) -> SCL, GND -> GND
-// Python: from smbus2 import SMBus; SMBus(1).write_byte(8, 1)
-#include <Wire.h>
-
-volatile byte value = 0;
-
-void receiveEvent(int n) {
-  while (Wire.available()) value = Wire.read();
-}
-
-void requestEvent() {
-  Wire.write(value);
-}
-
-void setup() {
-  Wire.begin(8);                 // I2C address 8
-  Wire.onReceive(receiveEvent);
-  Wire.onRequest(requestEvent);
-  pinMode(LED_BUILTIN, OUTPUT);
-}
-
-void loop() {
-  digitalWrite(LED_BUILTIN, value ? HIGH : LOW);
-  delay(20);
-}
-`;

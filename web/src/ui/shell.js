@@ -544,7 +544,7 @@ export class Shell {
           h('span', { class: 'icon-btn sm', html: icon('forward', 20) })))));
     // examples: Raspberry Pi 4 / 5 and Pico, by topic, with a search box
     const all = this.piAll();
-    const cats = [['all', 'All'], ['pi', 'Pi 4 / 5'], ['pico', 'Pico'], ['IoT', 'IoT'], ['display', 'Displays'], ['breadboard', 'Breadboard'], ['master-slave', 'Master–Slave']];
+    const cats = [['all', 'All'], ['pi', 'Pi 4 / 5'], ['pico', 'Pico'], ['IoT', 'IoT'], ['display', 'Displays'], ['breadboard', 'Breadboard']];
     const match = (e, c) => c === 'all' || e.kind === c || e.tags.includes(c);
     if (!this.piCat) this.piCat = 'all';
     let q = '';

@@ -23,7 +23,7 @@ export const EXAMPLE_CATEGORIES = [
 
 const builders = [
   basics.blink, basics.ledResistor, basics.buttonLed, basics.trafficLight, basics.fadePot, basics.rgbLed,
-  basics.knightRider, basics.burnDemo, basics.serialCommands, basics.nightLight, basics.esp32Fade, basics.picoBlink,
+  basics.knightRider, basics.burnDemo, basics.serialCommands, basics.nightLight, basics.esp32Fade,
   basics.voltageDivider, projects.shiftRegister, projects.buzzerMelody,
   sensors.ultrasonic, sensors.dht22Monitor, sensors.pirAlarm, sensors.lm35Thermometer, sensors.gasAlarm, sensors.ds18b20Temp,
   sensors.mpu6050Tilt, sensors.joystick, sensors.plantWatering, projects.irRemote, projects.rotaryEncoder,

@@ -320,8 +320,8 @@
 
 /* ---------------------------------------------------------------- HMI tab */
 .hmi-view { background: #0a1020; }
-.hv-bar { display: flex; align-items: center; gap: 8px; padding: 7px 8px; flex-wrap: wrap; background: #0e1630; border-bottom: 1px solid var(--line2); flex-shrink: 0; }
-.hv-screens { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 120px; scrollbar-width: none; }
+.hv-bar { display: flex; align-items: center; gap: 8px; padding: 7px 8px; flex-wrap: nowrap; background: #0e1630; border-bottom: 1px solid var(--line2); flex-shrink: 0; }
+.hv-screens { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
 .hv-screens::-webkit-scrollbar { display: none; }
 .hv-screens .chip { height: 32px; flex-shrink: 0; }
 .hv-tools { display: flex; align-items: center; gap: 4px; }
@@ -342,8 +342,8 @@
 .hv-led { width: 7px; height: 7px; border-radius: 50%; background: #1f3a2a; }
 .hv-led.on { background: #36ff6a; box-shadow: 0 0 8px #36ff6a; }
 .hv-device { transform-origin: 50% 50%; will-change: transform; }
-.hv-zoom { position: absolute; left: calc(8px + var(--safe-l)); top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 16px; z-index: 5; background: rgba(10, 16, 32, .55); border: 1px solid rgba(148, 163, 184, .24); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-.hv-zoom button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; color: var(--text); }
+.hv-zoom { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 12px; flex-shrink: 0; background: rgba(148, 163, 184, .08); border: 1px solid var(--line2); }
+.hv-zoom button { width: 36px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--text); }
 .hv-zoom button:active { background: rgba(148, 163, 184, .2); }
 .hv-zoom button.hidden { display: none; }
 .hv-overlay { position: absolute; inset: 0; pointer-events: none; }

@@ -4,7 +4,7 @@ import {
   rect, circle, text, line, path, femaleHeader, maleHeader, smdLed, chipDIP, chipQFP, mountHole, pad, g,
   silk, silkBox, smdRow, smdElec, regulator, crystal, polyfuse, via, traces, smallChip,
 } from './draw.js';
-import { rowArt, nanoArt, esp32Art, nodemcuArt, picoBoardArt, bluePillArt, megaDetails } from './board-art.js';
+import { rowArt, nanoArt, esp32Art, nodemcuArt, bluePillArt, megaDetails } from './board-art.js';
 
 const range = (a, b) => { const r = []; for (let i = a; i <= b; i++) r.push(i); return r; };
 
@@ -397,31 +397,6 @@ register({
   update: UNO_UPDATE,
 });
 
-// Raspberry Pi Pico, rows 0.7" apart (USB at the left)
-const PICO_TOP = [['GP0'], ['GP1'], ['GND.1', 'GND'], ['GP2'], ['GP3'], ['GP4'], ['GP5'], ['GND.2', 'GND'], ['GP6'], ['GP7'], ['GP8'], ['GP9'], ['GND.3', 'GND'], ['GP10'], ['GP11'], ['GP12'], ['GP13'], ['GND.4', 'GND'], ['GP14'], ['GP15']];
-const PICO_BOT = [['VBUS'], ['VSYS'], ['GND.8', 'GND'], ['3V3_EN'], ['3V3'], ['ADC_VREF', 'VREF'], ['GP28'], ['AGND'], ['GP27'], ['GP26'], ['RUN'], ['GP22'], ['GND.7', 'GND'], ['GP21'], ['GP20'], ['GP19'], ['GP18'], ['GND.6', 'GND'], ['GP17'], ['GP16']];
-const PICO_PINS = dualRow(PICO_TOP, PICO_BOT, 0, 0, 70);
-const picoMap = {};
-for (let i = 0; i <= 22; i++) picoMap[i] = 'GP' + i;
-picoMap[26] = 'GP26'; picoMap[27] = 'GP27'; picoMap[28] = 'GP28'; picoMap[25] = 'LED';
-register({
-  type: 'rpi-pico', name: 'Raspberry Pi Pico', category: 'boards', tags: ['rp2040', 'raspberry pi', 'pico'],
-  description: 'RP2040 dual Cortex-M0+ · 133 MHz · 3.3V logic · 26 GPIO',
-  box: [-18, -8, 200, 78], pins: PICO_PINS.concat([{ id: 'LED', x: 20, y: 40, label: 'LED', noPlug: true }]),
-  internal: [['GND.1', 'GND.2', 'GND.3', 'GND.4', 'GND.6', 'GND.7', 'GND.8', 'AGND']],
-  board: {
-    name: 'Raspberry Pi Pico', arch: 'arm', family: 'rp2040', mhz: 133, vcc: 3.3, adcBits: 10, ledBuiltin: 25,
-    pinMap: picoMap, analogPins: [26, 27, 28], gpioAnalog: true, pwmPins: null, interruptPins: null,
-    i2c: { sda: 4, scl: 5 }, spi: { mosi: 19, miso: 16, sck: 18, ss: 17 }, gndPins: ['GND.1'],
-    supplies: [{ pin: '3V3', v: 3.3, r: 0.1, maxI: 0.3 }, { pin: 'VBUS', v: 5, r: 0.1 }, { pin: 'VSYS', v: 4.7, r: 0.2 }],
-    serialPorts: ['Serial', 'Serial1', 'Serial2'], eeprom: 4096, ram: 262144, flash: 2093056, rout: 40, rpull: 50000,
-    constants: { A0: 26, A1: 27, A2: 28, PIN_LED: 25 },
-    macros: { ARDUINO: 10819, ARDUINO_ARCH_RP2040: 1, ARDUINO_RASPBERRY_PI_PICO: 1, PICO_RP2040: 1 },
-  },
-  render: () => picoBoardArt(PICO_PINS),
-  update: UNO_UPDATE,
-});
-
 // STM32 Blue Pill, rows 0.6" apart
 const BP_TOP = [['PB12'], ['PB13'], ['PB14'], ['PB15'], ['PA8'], ['PA9'], ['PA10'], ['PA11'], ['PA12'], ['PA15'], ['PB3'], ['PB4'], ['PB5'], ['PB6'], ['PB7'], ['PB8'], ['PB9'], ['5V'], ['GND.1', 'GND'], ['3V3.1', '3V3']];
 const BP_BOT = [['VBAT'], ['PC13'], ['PC14'], ['PC15'], ['PA0'], ['PA1'], ['PA2'], ['PA3'], ['PA4'], ['PA5'], ['PA6'], ['PA7'], ['PB0'], ['PB1'], ['PB10'], ['PB11'], ['RST'], ['3V3.2', '3V3'], ['GND.2', 'GND'], ['GND.3', 'GND']];
@@ -479,4 +454,4 @@ register({
   update: () => {},
 });
 
-export const BOARD_TYPES = ['uno-r3', 'uno-r4-minima', 'uno-r4-wifi', 'nano', 'mega2560', 'leonardo', 'esp32-devkit', 'nodemcu-esp8266', 'rpi-pico', 'stm32-bluepill', 'attiny85'];
+export const BOARD_TYPES = ['uno-r3', 'uno-r4-minima', 'uno-r4-wifi', 'nano', 'mega2560', 'leonardo', 'esp32-devkit', 'nodemcu-esp8266', 'stm32-bluepill', 'attiny85'];

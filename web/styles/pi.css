@@ -369,14 +369,17 @@
 @media (min-width: 640px) { .pi-screen.fs .pi-circuit .pi-sim-status { top: calc(10px + var(--safe-t)); } }
 .pi-screen.fs.fs-clean .pi-circuit .pi-sim-status { display: none; }
 .pi-screen.fs.fs-clean .pi-filechip { display: none; }
-.pi-screen.fs:not(.fs-clean) .pane-thonny, .pi-screen.fs:not(.fs-clean) .pane-terminal, .pi-screen.fs:not(.fs-clean) .pane-desktop, .pi-screen.fs:not(.fs-clean) .pane-board { padding-left: calc(64px + var(--safe-l)); }
-.pi-screen.fs .pane-thonny, .pi-screen.fs .pane-terminal, .pi-screen.fs .pane-desktop, .pi-screen.fs .pane-board { padding-top: var(--safe-t); padding-right: calc(46px + var(--safe-r)); }
+/* two screens side by side (landscape, the tab bar opens / closes them) */
+.pi-screen.pi-split .pi-main { display: flex; }
+.pi-screen.pi-split .pi-pane.active { position: relative; inset: auto; flex: 1; min-width: 0; }
+.pi-screen.pi-split .pi-pane.active ~ .pi-pane.active { border-left: 1px solid var(--line2); }
+/* full screen: menus hidden → the screen uses every pixel (only the camera cut-out is kept clear); menus shown → room for the dock on the left and the ☰ handle on the right */
+.pi-screen.fs .pi-pane:not(.pane-pcircuit) { padding-top: var(--safe-t); }
+.pi-screen.fs .pi-pane.first:not(.pane-pcircuit) { padding-left: var(--safe-l); }
+.pi-screen.fs .pi-pane.last:not(.pane-pcircuit) { padding-right: var(--safe-r); }
+.pi-screen.fs:not(.fs-clean) .pi-pane.first:not(.pane-pcircuit) { padding-left: calc(64px + var(--safe-l)); }
+.pi-screen.fs:not(.fs-clean) .pi-pane.last:not(.pane-pcircuit) { padding-right: calc(46px + var(--safe-r)); }
 .pi-screen.fs .pi-out { padding-bottom: var(--safe-b); }
-
-/* Arduino sketch of a slave board on the Pi canvas */
-.pi-sketch-sheet .sheet-body { display: flex; flex-direction: column; padding: 0 0 6px; overflow: hidden; }
-.pi-sketch-sheet .sheet-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pi-sketch { position: relative; flex: 1; min-height: 0; border-top: 1px solid var(--line2); }
 
 /* ---- the Raspberry Pi Lab picture (home banner + top of the Pi page) */
 .pi-banner { border-color: rgba(225, 29, 72, .35); background: radial-gradient(110% 120% at 100% 0%, rgba(225, 29, 72, .28), transparent 60%), radial-gradient(90% 90% at 0% 100%, rgba(34, 197, 94, .2), transparent 60%), linear-gradient(160deg, #1a1530, #0b1224); }

@@ -10,7 +10,7 @@ import '../web/src/pi/circuit-parts.js';
 import { SimEngine } from '../web/src/sim/engine.js';
 import { CircuitHw } from '../web/src/pi/circuit-hw.js';
 import { autowire, defaultCircuit } from '../web/src/pi/autowire.js';
-import { bbTrafficLights, bbDoorbell, piI2cMaster, piUartMaster } from '../web/src/pi/bb-examples.js';
+import { bbTrafficLights, bbDoorbell } from '../web/src/pi/bb-examples.js';
 import { PI_EXAMPLES } from '../web/src/pi/examples.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -333,7 +333,7 @@ console.log('Circuit (wired on the canvas)');
 {
   // breadboard examples: the parts sit in the right holes and the LEDs / buttons work from Python
   const ex = (f) => PI_EXAMPLES.find((e) => e.file === f);
-  for (const [name, build] of [['traffic', bbTrafficLights], ['doorbell', bbDoorbell], ['i2c', piI2cMaster], ['uart', piUartMaster]]) {
+  for (const [name, build] of [['traffic', bbTrafficLights], ['doorbell', bbDoorbell]]) {
     for (const board of ['pi5', 'pi4']) {
       const c = build(board);
       const e = new SimEngine({ ...c, code: '' }, { external: true });
@@ -359,32 +359,6 @@ console.log('Circuit (wired on the canvas)');
     const o2 = await py(g, 'from gpiozero import Button\nprint("btn", Button(21).is_pressed)\n');
     check('breadboard button pressed → GPIO21 low', o2.includes('btn True'), o2);
     clearInterval(timer);
-    g.attachHw(null);
-    engine.stop();
-  }
-  for (const [kind, file] of [['I²C', 'i2c_master_arduino.py'], ['UART', 'uart_master_arduino.py']]) {
-    const c = (kind === 'I²C' ? piI2cMaster : piUartMaster)('pi5');
-    const engine = new SimEngine({ ...c, code: '' }, { external: true });
-    const r = engine.start();
-    check(`Pi + Arduino (${kind}) starts both`, r.ok && engine.boards.length === 2, JSON.stringify(r));
-    const g = new GpioSim('pi5');
-    g.attachHw(new CircuitHw(engine));
-    const timer = setInterval(() => engine.tick(performance.now()), 10);
-    await sleep(150);
-    const src = ex(file).code.replace('while True:', 'for _ in range(4):');
-    engine.input('btn', 'press', true);
-    const out = await py(g, src);
-    await sleep(60);
-    engine.input('btn', 'press', false);
-    clearInterval(timer);
-    const led = engine.parts.get('led');
-    if (kind === 'I²C') {
-      check('Pi I²C master: scan finds the Uno at 0x8', out.includes("['0x8']"), out);
-      check('Pi I²C master: reads the Uno button + count', out.includes('button DOWN | presses 1'), out);
-    } else {
-      check('Pi UART master: the Uno answers', /Uno says: OK led=\d presses=1/.test(out), out);
-    }
-    check(`Pi ${kind} master: the Uno's LED follows the Pi`, engine.boards[1].pins.get(16).out === 0 || engine.boards[1].pins.get(16).out === 1, JSON.stringify(led && led.visual));
     g.attachHw(null);
     engine.stop();
   }

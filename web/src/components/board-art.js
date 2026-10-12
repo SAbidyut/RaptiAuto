@@ -80,24 +80,6 @@ export function nodemcuArt(pins) {
   return s;
 }
 
-// ------------------------------------------------------------------ Raspberry Pi Pico (pins 8.5 in)
-export function picoBoardArt(pins) {
-  let s = `<g filter="url(#softShadow)">${rect(-14, -8, 210, 86, { fill: '#1a7f3c', rx: 4 })}</g>`;
-  s += traces('M-4 35 H20 M44 35 H85 M105 35 H128 M62 22 H85 V30', { stroke: 'rgba(255,255,255,.14)' });
-  s += microUsb(-20, 25, 20, 20);
-  s += tactile(26, 36, '', {}) + silk(26, 45.2, 'BOOTSEL', { size: 2.6 });
-  s += smdLed(46, 30, { cls: 'led-L', color: '#3bff6b', off: '#cdd8cd' }) + silk(46, 24.5, 'LED', { size: 2.4 });
-  s += crystal(58, 33, 14, '12.000');
-  s += chipQFP(95, 35, 20, { pins: 10, label: 'RP2040' });
-  s += rect(128, 27, 16, 16, { fill: '#222', rx: 1 }) + text(136, 35, 'W25Q', { size: 3.2, fill: '#999' });
-  s += smdRow([[118, 24, 'c'], [118, 46, 'r'], [150, 28, 'c'], [150, 34, 'r'], [150, 40, 'c'], [62, 42, 'r'], [68, 42, 'c']]);
-  s += regulator(152, 22, '');
-  s += text(176, 35, 'Pico', { size: 8, weight: 800, rot: -90, fill: '#f4fff6' });
-  for (const y of [24, 35, 46]) s += circle(186, y, 2.2, { fill: 'url(#gold)', stroke: '#9c7a2b', sw: 0.4 }) + circle(186, y, 0.8, { fill: '#10281c' });
-  s += rowArt(pins, { yTop: 0, labelSize: 3 });
-  return s;
-}
-
 // ------------------------------------------------------------------ STM32 Blue Pill
 export function bluePillArt(pins) {
   let s = `<g filter="url(#softShadow)">${rect(-20, -8, 222, 76, { fill: '#1e4fb4', rx: 3 })}</g>`;

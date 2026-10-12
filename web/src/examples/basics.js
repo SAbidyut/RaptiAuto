@@ -445,30 +445,6 @@ void loop() {
   };
 }
 
-export function picoBlink() {
-  const pico = P('rpi-pico', 0, 0, {}, 0, 'pico');
-  return {
-    id: 'pico-blink', name: 'Raspberry Pi Pico Blink', category: 'iot', level: 'beginner',
-    description: 'Blink the on-board LED (GP25) of a Raspberry Pi Pico using the Arduino core.',
-    parts: [pico], wires: [],
-    code: `// Raspberry Pi Pico — blink the onboard LED
-void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
-  Serial.begin(115200);
-}
-
-void loop() {
-  digitalWrite(LED_BUILTIN, HIGH);
-  Serial.println("LED on");
-  delay(300);
-  digitalWrite(LED_BUILTIN, LOW);
-  Serial.println("LED off");
-  delay(300);
-}
-`,
-  };
-}
-
 export function voltageDivider() {
   const bat = P('battery-9v', 20, 30, {}, 0, 'bat');
   const bb = P('breadboard-mini', 130, 60, {}, 0, 'bb');

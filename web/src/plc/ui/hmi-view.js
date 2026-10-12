@@ -66,8 +66,7 @@ export class HmiView {
       this.dupBtn = h('button', { class: 'icon-btn sm', title: 'Duplicate', html: icon('copy', 18), onclick: () => this.duplicate() }),
       this.delBtn = h('button', { class: 'icon-btn sm', title: 'Delete', html: icon('trash', 18), onclick: () => this.deleteSel() }),
       h('button', { class: 'icon-btn sm', title: 'Screen settings', html: icon('settings', 18), onclick: (e) => this.screenMenu(e.currentTarget) }));
-    this.bar = h('div', { class: 'hv-bar' }, this.seg, this.screens, this.tools);
-    this.frameEl = h('div', { class: 'hv-device' });
+        this.frameEl = h('div', { class: 'hv-device' });
     this.canvasWrap = h('div', { class: 'hv-screen' });
     this.overlay = h('div', { class: 'hv-overlay' });
     this.offMsg = h('div', { class: 'hv-off hidden' });
@@ -77,7 +76,8 @@ export class HmiView {
       h('button', { title: 'Zoom in', 'aria-label': 'Zoom in', html: icon('zoomIn', 20), onclick: () => this.zoomBy(1.4) }),
       h('button', { title: 'Zoom out', 'aria-label': 'Zoom out', html: icon('zoomOut', 20), onclick: () => this.zoomBy(1 / 1.4) }),
       this.zoomFit = h('button', { class: 'hidden', title: 'Fit to screen', 'aria-label': 'Fit to screen', html: icon('fit', 20), onclick: () => this.resetZoom() }));
-    this.stage = h('div', { class: 'hv-stage' }, this.frameEl, this.zoomBar);
+    this.bar = h('div', { class: 'hv-bar' }, this.seg, this.screens, this.tools, this.zoomBar);
+    this.stage = h('div', { class: 'hv-stage' }, this.frameEl);
     this.bindZoom();
     this.info = h('div', { class: 'hv-info' });
     this.el.append(this.bar, this.stage, this.info);

@@ -34,6 +34,7 @@ export class Editor {
     this.history = [];
     this.future = [];
     this.tab = 'circuit';
+    this.panes = null; // landscape: the screens the user chose with the tab bar (null = automatic)
     this.fullscreen = false;
     this.warnings = [];
     this.audio = new AudioEngine();
@@ -91,9 +92,8 @@ export class Editor {
     this.serial = new SerialMonitor(this.serialPane, { onSend: (t) => this.sendSerial(t) });
 
     // bottom nav
-    const tab = (id, ic, label) => h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span><i class="badge hidden"></i>` });
-    this.nav = h('nav', { class: 'ed-nav' }, tab('circuit', 'circuit', 'Circuit'), tab('code', 'code', 'Code'), tab('serial', 'terminal', 'Serial'), tab('iot', 'globe', 'IoT'),
-      h('button', { class: 'nav-tab split-toggle', title: 'Side by side', onclick: () => this.toggleSplit(), html: `${icon('columns', 22)}<span>Split</span>` }));
+    const tab = (id, ic, label) => h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.toggleTab(id), html: `${icon(ic, 22)}<span>${label}</span><i class="badge hidden"></i>` });
+    this.nav = h('nav', { class: 'ed-nav' }, tab('circuit', 'circuit', 'Circuit'), tab('code', 'code', 'Code'), tab('serial', 'terminal', 'Serial'), tab('iot', 'globe', 'IoT'));
 
     // status bar (simulation)
     this.status = h('div', { class: 'sim-status hidden' });
@@ -102,11 +102,10 @@ export class Editor {
     this.fsBar = h('div', { class: 'fs-bar' },
       h('button', { class: 'fs-btn', title: 'Exit fullscreen', html: icon('fullscreenExit', 20), onclick: () => this.setFullscreen(false) }),
       this.fsRun = h('button', { class: 'fs-btn fs-run', html: icon('play', 20), onclick: () => this.toggleRun() }),
-      h('button', { class: 'fs-btn', 'data-tab': 'circuit', html: icon('circuit', 20), onclick: () => this.setTab('circuit') }),
-      h('button', { class: 'fs-btn', 'data-tab': 'code', html: icon('code', 20), onclick: () => this.setTab('code') }),
-      h('button', { class: 'fs-btn', 'data-tab': 'serial', html: icon('terminal', 20), onclick: () => this.setTab('serial') }),
-      h('button', { class: 'fs-btn fs-iot', 'data-tab': 'iot', html: icon('globe', 20), onclick: () => this.setTab('iot') }),
-      h('button', { class: 'fs-btn split-toggle', title: 'Side by side', 'aria-label': 'Side by side', html: icon('columns', 20), onclick: () => this.toggleSplit() }));
+      h('button', { class: 'fs-btn', 'data-tab': 'circuit', html: icon('circuit', 20), onclick: () => this.toggleTab('circuit') }),
+      h('button', { class: 'fs-btn', 'data-tab': 'code', html: icon('code', 20), onclick: () => this.toggleTab('code') }),
+      h('button', { class: 'fs-btn', 'data-tab': 'serial', html: icon('terminal', 20), onclick: () => this.toggleTab('serial') }),
+      h('button', { class: 'fs-btn fs-iot', 'data-tab': 'iot', html: icon('globe', 20), onclick: () => this.toggleTab('iot') }));
 
     // full screen hides every menu; this small handle brings them back
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
@@ -168,9 +167,9 @@ export class Editor {
   }
 
   /**
-   * Wide screens (landscape) can show the circuit and the code side by side ("split").
-   * Normal landscape defaults to split; full screen defaults to one panel at a time so each
-   * job gets the whole display. Both choices are remembered (settings.split / settings.splitFs).
+   * Landscape can show two screens side by side. Automatic: circuit + code (normal landscape), or in
+   * full screen only circuit + Serial Monitor while a sketch with Serial runs. The tab bar / dock
+   * overrides it: a tap opens a screen beside the one on show, a second tap closes it (toggleTab).
    */
   updateLayout() {
     const r = this.root.getBoundingClientRect();
@@ -179,10 +178,11 @@ export class Editor {
       this.wide = wide;
       this.root.classList.toggle('wide', wide);
     }
+    const chosen = wide && !!this.panes && this.panes.includes(this.tab);
     // Full screen + running a sketch that uses Serial: circuit and Serial Monitor together (side by
     // side in landscape, stacked in portrait). Sketches without Serial keep the circuit alone.
     // Stopped: one panel at a time. The code tab always gets the whole screen.
-    const runsplit = this.fullscreen && !!this.engine && this.tab !== 'code' && (this.usesSerial || this.serialSeen);
+    const runsplit = !chosen && this.fullscreen && !!this.engine && this.tab !== 'code' && (this.usesSerial || this.serialSeen);
     if (runsplit !== this.runsplit) {
       this.runsplit = runsplit;
       this.root.classList.toggle('runsplit', runsplit);
@@ -192,29 +192,68 @@ export class Editor {
       }
       requestAnimationFrame(() => this.canvas.applyView());
     }
-    const split = wide && !runsplit && (this.fullscreen ? this.settings.splitFs === true : this.settings.split !== false);
+    const vis = this.visibleTabs(wide, runsplit);
+    const split = wide && !runsplit && vis.length > 1;
     if (split !== this.split) {
       this.split = split;
       this.root.classList.toggle('split', split);
       requestAnimationFrame(() => this.canvas.applyView());
     }
-    for (const b of this.root.querySelectorAll('.split-toggle')) b.classList.toggle('on', split);
+    const key = vis.join();
+    if (key !== this.visKey) {
+      const prev = this.visKey;
+      this.visKey = key;
+      for (const [id, pane] of [['circuit', this.circuitPane], ['code', this.codePane], ['serial', this.serialPane], ['iot', this.iotHost]]) pane.classList.toggle('show', vis.includes(id));
+      if (prev !== undefined) requestAnimationFrame(() => {
+        this.canvas.applyView();
+        if (vis.includes('serial')) { this.serial.redraw(); if (this.serial.mode === 'plotter') this.serial.drawPlot(); }
+      });
+    }
+    for (const b of this.nav.children) if (b.dataset.tab) b.classList.toggle('active', vis.includes(b.dataset.tab) || (runsplit && b.dataset.tab !== 'code'));
     for (const b of this.fsBar.querySelectorAll('[data-tab]')) {
-      b.classList.toggle('active', b.dataset.tab === this.tab || (runsplit && b.dataset.tab !== 'code'));
+      b.classList.toggle('active', vis.includes(b.dataset.tab) || (runsplit && b.dataset.tab !== 'code'));
     }
   }
 
-  toggleSplit() {
-    if (this.fullscreen) this.settings.splitFs = !this.split;
-    else this.settings.split = !this.split;
-    this.app.saveSettings();
-    this.updateLayout();
+  /** The screens on show: the chosen ones, else automatic (see updateLayout). */
+  visibleTabs(wide, runsplit) {
+    const t = this.tab;
+    if (!wide) return [t];
+    if (this.panes && this.panes.includes(t)) return this.panes;
+    if (runsplit) return ['circuit', 'serial'];
+    const auto = this.fullscreen ? this.settings.splitFs === true : this.settings.split !== false;
+    if (!auto) return [t];
+    return t === 'circuit' ? ['circuit', 'code'] : ['circuit', t];
+  }
+
+  /**
+   * Tab bar / dock tap. Upright phone: show that screen. Landscape (also in full screen): a tap
+   * opens the screen beside the one on show, a second tap closes it again; two screens at most,
+   * the last one always stays, a third swaps the second one (the first stays).
+   */
+  toggleTab(t) {
+    if (t === 'iot' && !this.hasWifi()) t = 'circuit';
+    if (!this.wide) { this.setTab(t); return; }
+    let cur = [...this.visibleTabs(true, this.runsplit && !(this.panes && this.panes.includes(this.tab)))];
+    if (cur.includes(t)) {
+      if (cur.length < 2) { Native.vibrate(5); return; }
+      cur = cur.filter((x) => x !== t);
+    } else if (cur.length < 2) cur.push(t);
+    else cur[1] = t;
+    this.panes = cur;
+    this.setTab(cur[cur.length - 1]);
     Native.vibrate(8);
-    toast(this.split ? 'Circuit and code side by side' : 'One panel at a time — full width');
   }
 
   setTab(t) {
     if (t === 'iot' && !this.hasWifi()) t = 'circuit';
+    if (this.panes) {
+      if (!this.wide) this.panes = null;
+      else if (!this.panes.includes(t)) {
+        const i = this.panes.indexOf(this.tab);
+        this.panes = i >= 0 && this.panes.length > 1 ? this.panes.map((x, k) => (k === i ? t : x)) : [t];
+      }
+    }
     this.tab = t;
     this.root.classList.remove('tab-circuit', 'tab-code', 'tab-serial', 'tab-iot');
     this.root.classList.add('tab-' + t);
@@ -235,6 +274,7 @@ export class Editor {
 
   setFullscreen(on) {
     this.fullscreen = on;
+    this.panes = null; // full screen starts automatic again
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
     if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ (top right) for the menus'); }
@@ -764,7 +804,7 @@ export class Editor {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
-    if (this.tab === 'code' && (this.fullscreen || !this.split)) this.setTab('circuit');
+    if (this.tab === 'code' && !(this.wide && this.panes && this.panes.length > 1) && (this.fullscreen || !this.split)) this.setTab('circuit');
     this.updateLayout();
   }
 

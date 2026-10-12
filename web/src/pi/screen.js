@@ -36,6 +36,8 @@ export class PiScreen {
     this.audio = new AudioEngine();
     try { this.audio.enabled = localStorage.getItem('rapti.pi.mute') !== '1'; } catch (e) { /* ignore */ }
     this.tab = 'circuit';
+    this.panes = null; // landscape: the screens the user chose with the tab bar (null = one screen)
+    this.vis = ['circuit'];
     this.fullscreen = false;
     this.build();
     this.offSys = this.sys.on((what) => this.onSys(what));
@@ -57,14 +59,14 @@ export class PiScreen {
     const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu', html: icon('dots'), onclick: (e) => this.menu(e.currentTarget) });
     this.top = h('header', { class: 'ed-top pi-top' }, back, h('div', { class: 'ed-titles' }, h('div', { class: 'pi-title' }, 'Raspberry Pi Lab', this.runDot), this.boardChip), this.runBtn, menuBtn);
     this.main = h('main', { class: 'pi-main' });
-    this.panes = {
+    this.panes_ = {
       circuit: h('div', { class: 'pi-pane pane-pcircuit' }),
       board: h('div', { class: 'pi-pane pane-board' }),
       desktop: h('div', { class: 'pi-pane pane-desktop' }),
       terminal: h('div', { class: 'pi-pane pane-terminal' }),
       thonny: h('div', { class: 'pi-pane pane-thonny' }),
     };
-    for (const p of Object.values(this.panes)) this.main.appendChild(p);
+    for (const p of Object.values(this.panes_)) this.main.appendChild(p);
     this.nav = h('nav', { class: 'ed-nav pi-nav' });
     // full screen: a small dock of buttons and the ☰ handle that brings the menus back
     const fb = (ic, title, fn, extra = {}) => h('button', { class: 'fs-btn', title, 'aria-label': title, html: icon(ic, 20), onclick: fn, ...extra });
@@ -72,9 +74,9 @@ export class PiScreen {
     this.fsOut = fb('terminal', 'Output', () => this.toggleOutput());
     this.fsBar = h('div', { class: 'fs-bar pi-fsbar' },
       fb('fullscreenExit', 'Exit full screen', () => this.setFullscreen(false)), this.fsRun,
-      fb('circuit', 'Circuit', () => this.setTab('circuit'), { 'data-tab': 'circuit' }),
-      fb('code', 'Thonny', () => this.setTab('thonny'), { 'data-tab': 'thonny' }),
-      fb('chip', 'Pinout', () => this.setTab('board'), { 'data-tab': 'board' }),
+      fb('circuit', 'Circuit', () => this.toggleTab('circuit'), { 'data-tab': 'circuit' }),
+      fb('code', 'Thonny', () => this.toggleTab('thonny'), { 'data-tab': 'thonny' }),
+      fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }),
       this.fsOut);
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
     this.root.append(this.top, this.main, this.nav, this.fsBar, this.fsHandle);
@@ -82,53 +84,111 @@ export class PiScreen {
     // Thonny and the desktop are shared by every tab; the terminal tab has its own shell
     this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex) });
     this.desktop = new Desktop({ sys: this.sys, thonny: this.thonny });
-    this.panes.desktop.appendChild(this.desktop.el);
+    this.panes_.desktop.appendChild(this.desktop.el);
     this.buildCircuitPane();
     this.buildBoardPane();
     this.drawNav();
     this.drawBoard();
     this.updateRun();
+    this.ro = new ResizeObserver(() => this.updateLayout());
+    this.ro.observe(this.root);
   }
 
   drawNav() {
     this.nav.innerHTML = '';
     for (const [id, ic, label] of this.isPico ? TABS_PICO : TABS_PI) {
-      this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span>` }));
+      this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.toggleTab(id), html: `${icon(ic, 22)}<span>${label}</span>` }));
     }
     this.fsBar.querySelector('[data-tab="thonny"]').hidden = false;
   }
 
-  setTab(id) {
-    const prev = this.tab;
+  /**
+   * Screens on show: one on an upright phone; in landscape (also in full screen) the ones chosen with
+   * the tab bar — a tap opens a screen beside the one on show, a second tap closes it.
+   */
+  visibleTabs() {
+    if (this.wide && this.panes && this.panes.includes(this.tab)) return this.panes;
+    return [this.tab];
+  }
+
+  toggleTab(id) {
     if (this.isPico && (id === 'desktop' || id === 'terminal')) id = 'circuit';
+    if (!this.wide) { this.setTab(id); return; }
+    let cur = [...this.visibleTabs()];
+    if (cur.includes(id)) {
+      if (cur.length < 2) { Native.vibrate(5); return; }
+      cur = cur.filter((x) => x !== id);
+    } else if (cur.length < 2 && !this.clash(cur[0], id)) cur.push(id);
+    else if (cur.length < 2) cur = [id];
+    else cur[1] = id; // the main screen stays, the second one is swapped
+    if (cur.length > 1 && this.clash(cur[0], cur[1])) cur = [id];
+    this.panes = cur;
+    this.setTab(cur[cur.length - 1]);
+    Native.vibrate(8);
+  }
+
+  /** Thonny can only be in one place: the Desktop (which can open it in a window) and the Thonny tab are not shown together. */
+  clash(a, b) { return (a === 'desktop' && b === 'thonny') || (a === 'thonny' && b === 'desktop'); }
+
+  updateLayout() {
+    const r = this.root.getBoundingClientRect();
+    const wide = r.width >= 760 && r.width > r.height * 1.05;
+    if (wide === this.wide) return;
+    this.wide = wide;
+    this.root.classList.toggle('wide', wide);
+    this.setTab(this.tab);
+  }
+
+  setTab(id) {
+    if (this.isPico && (id === 'desktop' || id === 'terminal')) id = 'circuit';
+    if (this.panes) {
+      if (!this.wide) this.panes = null;
+      else if (!this.panes.includes(id)) {
+        const i = this.panes.indexOf(this.tab);
+        this.panes = i >= 0 && this.panes.length > 1 ? this.panes.map((x, k) => (k === i ? id : x)) : [id];
+      }
+    }
+    const prevVis = this.vis || [this.tab];
     this.tab = id;
-    for (const [k, p] of Object.entries(this.panes)) p.classList.toggle('active', k === id);
-    this.nav.querySelectorAll('.nav-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
-    this.fsBar.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
+    const vis = this.visibleTabs();
+    this.vis = vis;
+    const was = (k) => prevVis.includes(k), is = (k) => vis.includes(k);
+    const split = vis.length > 1;
+    this.root.classList.toggle('pi-split', split);
+    const shown = Object.keys(this.panes_).filter((k) => is(k));
+    for (const [k, p] of Object.entries(this.panes_)) {
+      p.classList.toggle('active', is(k));
+      p.classList.toggle('first', k === shown[0]);
+      p.classList.toggle('last', k === shown[shown.length - 1]);
+    }
+    this.nav.querySelectorAll('.nav-tab').forEach((b) => b.classList.toggle('active', is(b.dataset.tab)));
+    this.fsBar.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', is(b.dataset.tab)));
     this.root.dataset.tab = id;
-    if (prev === 'desktop' && id !== 'desktop') this.desktop.hidden();
-    if (id === 'thonny') {
-      this.panes.thonny.appendChild(this.thonny.el);
-      this.thonny.shown();
-    } else if (prev === 'thonny' || (prev === 'desktop' && !this.desktop.thonnyWin())) this.thonny.hidden();
-    if (id === 'desktop') this.desktop.shown();
-    if (id === 'terminal') {
+    if (was('desktop') && !is('desktop')) this.desktop.hidden();
+    if (is('thonny')) {
+      if (!was('thonny') || id === 'thonny') { this.panes_.thonny.appendChild(this.thonny.el); this.thonny.shown(); }
+    } else if (was('thonny') || (was('desktop') && !is('desktop') && !this.desktop.thonnyWin())) this.thonny.hidden();
+    if (is('desktop') && (!was('desktop') || id === 'desktop')) this.desktop.shown();
+    if (is('terminal') && (!was('terminal') || id === 'terminal')) {
       if (!this.term) {
         this.term = new Terminal({ sys: this.sys, openThonny: (p) => { this.setTab('thonny'); if (p) this.thonny.open(p); }, openFile: (p) => { this.setTab('desktop'); this.desktop.openPath(p); }, openUrl: (u) => { this.setTab('desktop'); this.desktop.open('chromium', u || 'http://start.rapti.net/'); } });
-        this.panes.terminal.appendChild(this.term.el);
+        this.panes_.terminal.appendChild(this.term.el);
       }
       setTimeout(() => this.term.con.focus(), 80);
     }
-    if (id === 'circuit') this.circuit.shown();
-    if (id === 'board') this.refresh(true);
-    if (id !== 'circuit' && this.circuit) { if (this.circuit.canvas.wiring) this.circuit.canvas.cancelWiring(); }
+    if (is('circuit') && (!was('circuit') || id === 'circuit')) this.circuit.shown();
+    if (is('board') && (!was('board') || id === 'board')) this.refresh(true);
+    if (!is('circuit') && this.circuit) { if (this.circuit.canvas.wiring) this.circuit.canvas.cancelWiring(); }
+    if (vis.join() !== prevVis.join() && this.circuit) {
+      setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 60);
+    }
   }
 
   // ---------------------------------------------------------------- circuit pane
   buildCircuitPane() {
     this.circuit = new PiCircuit(this.app, { name: 'Pi circuit', parts: [], wires: [], code: '' }, this);
     this.circuit.load(this.loadCircuit(this.sys.board), { undoable: false });
-    this.circuit.mount(this.panes.circuit);
+    this.circuit.mount(this.panes_.circuit);
     // the file Run starts, and the program's output
     this.fileChip = h('button', { class: 'pi-filechip', onclick: () => this.fileSheet() });
     this.mini = new Console({ cls: 'pb-mini' });
@@ -303,7 +363,7 @@ export class PiScreen {
 
   // ---------------------------------------------------------------- pinout pane
   buildBoardPane() {
-    const p = this.panes.board;
+    const p = this.panes_.board;
     this.svgWrap = h('div', { class: 'pb-svg' });
     this.zoom = 1;
     const zbtn = (ic, d) => h('button', { class: 'pb-zoom', html: icon(ic, 18), onclick: () => { this.zoom = Math.max(1, Math.min(2.6, this.zoom + d)); this.svgWrap.style.setProperty('--z', this.zoom); } });
@@ -522,7 +582,7 @@ export class PiScreen {
       this.mini.clear();
       this.chosenFile = null;
       this.drawFileChip();
-      this.panes.board.scrollTop = 0;
+      this.panes_.board.scrollTop = 0;
     } else if (what === 'files') this.drawFileChip();
     else if (what === 'input') { if (this.tab === 'circuit' || this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin())) this.setTab('thonny'); }
     else if (what === 'run' || what === 'proc') { this.updateRun(); this.drawFileChip(); }
@@ -558,6 +618,7 @@ export class PiScreen {
 
   unmount() {
     cancelAnimationFrame(this.raf);
+    if (this.ro) this.ro.disconnect();
     if (this.unback) this.unback();
     this.unback = null;
     this.thonny.hidden();

@@ -205,20 +205,12 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .nav-tab.active::before { content: ''; position: absolute; top: -4px; width: 28px; height: 3px; border-radius: 3px; background: var(--grad); }
 .badge { position: absolute; top: 5px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 
-/* wide / landscape "split": circuit + code side by side (toggle with .split-toggle) */
+/* wide / landscape "split": two screens side by side (the tab bar opens / closes them) */
 .editor.split .ed-main { display: flex; }
-.editor.split .pane { position: relative; inset: auto; display: flex; }
-.editor.split .pane-circuit { flex: 1.25; border-right: 1px solid var(--line); }
-.editor.split .pane-code, .editor.split .pane-serial, .editor.split .pane-iot { flex: 1; display: none; }
-.editor.split.tab-circuit .pane-code, .editor.split.tab-code .pane-code, .editor.split.tab-serial .pane-serial, .editor.split.tab-iot .pane-iot { display: flex; }
-.editor.split.tab-iot .pane-code { display: none; }
-.split-toggle { display: none !important; }
-.editor.wide .nav-tab.split-toggle { display: flex !important; flex: 0 0 76px; }
-.editor.wide .fs-btn.split-toggle { display: grid !important; }
-.split-toggle.on { color: var(--accent) !important; }
-.fs-btn.split-toggle.on { background: rgba(34, 211, 238, .12); }
-.fs-bar .split-toggle { margin-top: 4px; position: relative; }
-.fs-bar .split-toggle::before { content: ''; position: absolute; top: -6px; left: 8px; right: 8px; height: 1px; background: var(--line2); }
+.editor.split .pane { position: relative; inset: auto; display: none; flex: 1; min-width: 0; min-height: 0; }
+.editor.split .pane.show { display: flex; }
+.editor.split .pane-circuit { flex: 1.25; }
+.editor.split .pane.show ~ .pane.show { border-left: 1px solid var(--line); }
 
 /* fullscreen */
 .fs-bar { display: none; }
@@ -248,7 +240,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .editor.fs.runsplit .pane-circuit, .editor.fs.runsplit .pane-serial { display: flex; }
 .editor.fs.runsplit .pane-circuit { flex: 1.45; border-right: 1px solid var(--line2); }
 .editor.fs.runsplit .pane-serial { flex: 1; }
-.editor.wide.runsplit .fs-btn.split-toggle { display: none !important; }
 .editor.fs.runsplit .sim-status { left: calc(100% * 1.45 / 2.45 / 2); }
 @media (orientation: portrait) {
   .editor.fs.runsplit .ed-main { flex-direction: column; }
@@ -263,7 +254,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 /* circuit pane */
 .canvas-host { position: absolute; inset: 0; background: radial-gradient(130% 90% at 50% 0%, #0f1a36 0%, var(--canvas-bg) 55%, #070c1a 100%); overflow: hidden; }
 .circuit-svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
-.side-tools { position: absolute; right: calc(10px + var(--safe-r)); top: 10px; display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 16px; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); z-index: 3; }
+.side-tools { max-height: calc(100% - 16px); overflow-y: auto; scrollbar-width: none; position: absolute; right: calc(10px + var(--safe-r)); top: 10px; display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 16px; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); z-index: 3; }
 .editor.fs .side-tools { top: calc(10px + var(--safe-t)); }
 .tool { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; color: #c7d2e8; transition: background .15s, transform .1s; }
 .tool:active { background: rgba(148, 163, 184, .18); transform: scale(.9); }
