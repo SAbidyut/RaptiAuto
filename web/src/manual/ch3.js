@@ -110,7 +110,7 @@ ${table(['Mistake', 'What you see'], [
   ['COM2 settings differ between master and slave', 'Time-out on COM2 (M1129).'],
 ])}
 ${tryIt('Open the <b>Blank lab</b>, add a push button and a pilot lamp, wire them as shown above, write <code>X0 → OUT Y0</code>, Download and press the button. That is the whole chain from input to output.')}
-${open('blank', 'Open the blank lab')}`,
+${open('blank', 'Open the starter lab (PLC + power)')}`,
     },
   ],
 };

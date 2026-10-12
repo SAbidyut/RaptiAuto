@@ -50,7 +50,7 @@ ${steps(
   'Wire as in the table. Write the ladder. Download. Simulate.',
   'In <b>Operate</b> mode press START, tap the sensor ten times (each tap is a part). Watch C0 in the Monitor tab.')}
 ${tryIt('Add an HMI with a numeric display on <code>C0</code> (that is a word device too!) and a button for START. Chapter 5 tells you how.')}
-${open('blank', 'Open the blank lab')}`,
+${open('blank', 'Open the starter lab (PLC + power)')}`,
     },
     {
       id: 'p2', title: 'Project 2 — Tank filling with two level switches',

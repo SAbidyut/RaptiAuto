@@ -233,6 +233,7 @@ export class LabScreen {
     const plc = this.plcDevice();
     const plcs = plcDevices(this.project);
     if (plcs.length > 1) { this.subEl.textContent = `${plcName(this.project, plc)} ▾`; this.subEl.classList.add('multi-plc'); return; }
+    if (!this.project.devices.length) { this.subEl.textContent = 'Empty lab · add parts with ＋'; this.subEl.classList.remove('multi-plc'); return; }
     const parts = [plc ? DEVICE_DEFS[plc.type].short : 'No PLC'];
     if (this.project.devices.some((d) => d.type === 'ms300')) parts.push('MS300');
     if (this.project.devices.some((d) => d.type === 'dop-107bv')) parts.push('DOP-107');

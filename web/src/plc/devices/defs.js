@@ -90,7 +90,17 @@ const SIG_COLOR = {
   L: '#7c4a1e', N: '#2563eb', PE: 'pe', '+24': '#dc2626', '0V': '#1e3a8a', in: '#f97316', ss: '#dc2626', out: '#e5e7eb', com: '#dc2626',
   an: '#a855f7', mot: '#111827', ctl: '#f97316', ac: '#7c4a1e',
 };
-export function wireColorFor(sig) { return SIG_COLOR[sig] || '#f97316'; }
+/** Motor phase wires follow the R-Y-B convention: phase 1 red, phase 2 yellow, phase 3 blue. */
+const PHASE_COLOR = ['#dc2626', '#facc15', '#2563eb'];
+export function phaseOf(portId) {
+  const m = /^(?:U|L1|T1|U\/T1)$/.test(portId) ? 0 : /^(?:V|L2|T2|V\/T2)$/.test(portId) ? 1 : /^(?:W|L3|T3|W\/T3)$/.test(portId) ? 2 : -1;
+  return m;
+}
+/** Default colour of a wire for a signal; `portId` picks the phase colour for the motor-circuit (3~) terminals. */
+export function wireColorFor(sig, portId) {
+  if (sig === 'mot' && portId) { const k = phaseOf(portId); if (k >= 0) return PHASE_COLOR[k]; }
+  return SIG_COLOR[sig] || '#f97316';
+}
 
 // field modules on the operator console: 64 × 86 mm plates with 4 mm banana sockets
 const OUTPUT_PROP = { id: 'output', label: 'Output', type: 'select', options: { PNP: 'PNP (switches +24 V)', NPN: 'NPN (switches 0 V)' } };

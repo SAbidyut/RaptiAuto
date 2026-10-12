@@ -13,7 +13,7 @@ import { aboutPage, RAPTI } from './about.js';
 import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
-import { LAB_EXAMPLES, buildExample } from '../plc/examples.js';
+import { LAB_EXAMPLES, buildExample, emptyLab } from '../plc/examples.js';
 import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from '../pi/examples.js';
 import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } from '../pi/boards.js';
@@ -751,27 +751,12 @@ export class Shell {
     this.app.openLab(p);
   }
 
+  /** New PLC project: an empty bench — nothing is placed or wired, the student adds every part. */
   newLab() {
-    const content = h('div', { class: 'board-list lab-new' });
-    for (const [type, m] of Object.entries(PLC_MODELS)) {
-      const def = DEVICE_DEFS[type];
-      content.appendChild(h('button', { class: 'board-item', onclick: () => {
-        sheet.close();
-        const p = buildExample('blank');
-        p.name = `${m.short} lab ${listLabs().length + 1}`;
-        p.fromExample = null;
-        const plc = p.devices.find((d) => d.id === 'plc');
-        plc.type = type;
-        saveLab(p);
-        this.app.openLab(p);
-      } },
-        h('div', { class: 'bi-thumb', html: plcArt(m) }),
-        h('div', { class: 'bi-body' }, h('b', {}, `Delta ${m.short}`), h('p', {}, def.description),
-          h('div', { class: 'bi-specs' }, h('span', { class: 'tag' }, `${m.inputs} DI`), h('span', { class: 'tag' }, `${m.outputs} relay DO`), m.ai ? h('span', { class: 'tag' }, `${m.ai} AI / ${m.ao} AO`) : null, h('span', { class: 'tag' }, 'RS-232 · RS-485 · USB')))));
-    }
-    content.appendChild(h('p', { class: 'muted small' }, 'The new lab starts with the PLC, a Delta 24 V supply, the MCB and the programming laptop already wired. Add the HMI, VFD, motor, buttons and lamps from the ＋ menu.'));
-    const sheet = new Sheet({ title: 'Choose a Delta PLC', content, cls: 'sheet-tall', icon: 'cpu' });
-    sheet.open();
+    const p = emptyLab(`Lab ${listLabs().length + 1}`);
+    p.fromExample = null;
+    saveLab(p);
+    this.app.openLab(p);
   }
 
   labInfo() {

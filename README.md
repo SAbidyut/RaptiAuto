@@ -4,6 +4,11 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.25 — an empty PLC bench, R-Y-B motor wires
+
+- **PLC Lab → New project** now opens an **empty bench**: no device and no wire is placed for you. The student adds every part (MCB, supply, PLC, VFD, motor …) and wires it. A card in the middle ("An empty bench") has the **Add a device** button. The old pre-wired start is still in the examples as **Starter lab (PLC + power)**.
+- Default colours of motor-circuit wires follow **R-Y-B**: U / L1 / T1 red, V / L2 / T2 yellow, W / L3 / T3 blue (in the 3D lab, the 2D schematic and the "auto" colour of the wiring bar).
+
 ## New in 2.24 — calmer full-screen switch
 
 - Entering and leaving full screen (Arduino editor, Pi lab, PLC lab) now goes behind a soft curtain: the screen fades out, the layout and the system bars switch and settle unseen, then it fades back in — nothing jumps around on the way.

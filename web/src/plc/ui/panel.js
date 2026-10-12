@@ -67,6 +67,7 @@ export class PanelView {
     this.restoreView(this.scene.mode, true);
     this.refresh();
     this.updateTaskPill();
+    this.updateEmpty();
     if (this.no3d) setTimeout(() => this.hint('3D needs WebGL 2, which this phone does not have — showing the 2D wiring schematic.', 6000), 500);
     else if (!localStorage.getItem('raptiauto.plc.hinted')) {
       try { localStorage.setItem('raptiauto.plc.hinted', '1'); } catch (e) { /* ignore */ }
@@ -223,11 +224,17 @@ export class PanelView {
     this.selBar = h('div', { class: 'sel-bar hidden' });
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
+    // an empty bench: nothing is placed for you — this card says where to start
+    this.emptyEl = h('div', { class: 'lab-empty hidden' },
+      h('div', { class: 'le-ic', html: icon('plug', 30) }),
+      h('b', {}, 'An empty bench'),
+      h('p', {}, 'Nothing is placed or wired for you. Add what your project needs — for example the main switch (MCB), a 24 V supply, a PLC, a VFD and a motor — then wire them.'),
+      h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>Add a device</span>`, onclick: () => this.openLibrary() }));
     this.chooser = h('div', { class: 'port-chooser hidden' });
     this.taskPill = h('button', { class: 'task-pill hidden', onclick: () => this.lab.showTasks() });
     // Network view legend: what the packets mean and the live state of the bus
     this.netCard = h('div', { class: 'net-legend hidden' });
-    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill, this.netCard);
+    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.emptyEl, this.chooser, this.taskPill, this.netCard);
     this.setMode('wire');
   }
 
@@ -281,7 +288,10 @@ export class PanelView {
     this.cardAcc = 0;
     if (this.potCard && this.potCard.upd) this.potCard.upd();
     this.updateNetCard();
+    this.updateEmpty();
   }
+
+  updateEmpty() { this.emptyEl.classList.toggle('hidden', this.lab.project.devices.length > 0); }
 
   updateTaskPill() {
     const t = this.lab.tasks;
@@ -655,7 +665,7 @@ export class PanelView {
     bar.innerHTML = '';
     const pal = h('div', { class: 'wire-colors' });
     for (const [c, label] of WIRE_COLORS) {
-      const sw = c === 'auto' ? `<span class="auto-dot" style="background:${wireColorFor(port.sig)}"></span>` : '';
+      const sw = c === 'auto' ? `<span class="auto-dot" style="background:${wireColorFor(port.sig, port.id)}"></span>` : '';
       pal.appendChild(h('button', { class: 'color-dot sm' + (this.wireColor === c ? ' active' : '') + (c === 'auto' ? ' auto' : '') + (c === 'pe' ? ' pe' : ''), title: label, style: { background: c === 'auto' || c === 'pe' ? '' : c }, html: sw, onclick: (e) => { this.wireColor = c; for (const x of pal.children) x.classList.remove('active'); e.currentTarget.classList.add('active'); } }));
     }
     const kind = port.kind === 'comm' ? `${busName(port.bus)} cable` : 'wire';

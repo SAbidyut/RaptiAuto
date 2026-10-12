@@ -859,7 +859,7 @@ export const LAB_EXAMPLES = [
     },
   },
   {
-    id: 'blank', name: 'Blank lab (PLC + power)', level: 'beginner', tags: ['Empty'],
+    id: 'blank', name: 'Starter lab (PLC + power)', level: 'beginner', tags: ['Empty'],
     description: 'A powered DVP16ES2 with its 24 V supply and the programming laptop. Add devices and write your own program.',
     build() {
       const b = builder();
@@ -868,6 +868,11 @@ export const LAB_EXAMPLES = [
     },
   },
 ];
+
+/** A new lab: an empty bench — no device, no wire. The student adds what the project needs. */
+export function emptyLab(name = 'My lab') {
+  return finish({ name, id: null }, builder(), program([rung('', [''])], {}), { noDownload: true });
+}
 
 export function buildExample(id) {
   const ex = LAB_EXAMPLES.find((e) => e.id === id);
