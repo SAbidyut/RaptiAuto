@@ -144,7 +144,7 @@ export class VfdView {
     this.knob.style.setProperty('--a', (-135 + 270 * k).toFixed(1) + 'deg');
     const rt = this.rt();
     const P = rt ? rt.vfd.params : { ...defaultParams(), ...(dev.state.params || {}) };
-    this.knobVal.textContent = (k * P['01-00']).toFixed(1) + ' Hz' + (P['00-20'] === 7 ? '' : ' ·off');
+    this.knobVal.innerHTML = (k * P['01-00']).toFixed(1) + ' Hz' + (P['00-20'] === 7 ? '' : '<br>dial off');
     this.knobVal.classList.toggle('off', P['00-20'] !== 7);
   }
 

@@ -135,7 +135,7 @@ export class Shell {
         item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
         item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
         group('Help'),
-        item('manual', 'Manual — PLC, VFD, HMI, Modbus', 'book', h('span', { class: 'dr-new-badge' }, 'NEW')),
+        item('manual', 'Manual — PLC, Arduino, Pi', 'book', h('span', { class: 'dr-new-badge' }, 'NEW')),
         item('guide', 'Guide — how to use', 'help'),
         item('settings', 'Settings', 'settings'),
         group('RAPTI'),
@@ -204,18 +204,7 @@ export class Shell {
     el.appendChild(this.labBanner());
     el.appendChild(this.piBanner());
 
-    const tile = (page, label, sub, ic, tone, fn) => h('button', { class: 'qa-tile tone-' + tone, onclick: fn || (() => this.go(page)) },
-      h('span', { class: 'qa-ic', html: icon(ic, 22) }), h('b', {}, label), h('small', {}, sub));
-    el.appendChild(h('section', { class: 'home-sec' }, secHead('Menu', 'Everything in RaptiAuto', 'grid'),
-      h('div', { class: 'qa-grid' },
-        tile('projects', 'My Projects', `${listProjects().length} saved`, 'folder', 'cyan'),
-        tile('examples', 'Examples', `${EXAMPLES.length + PI_EXAMPLES.length + PICO_EXAMPLES.length + LAB_EXAMPLES.length} projects`, 'book', 'violet'),
-        tile('plclab', 'PLC Lab', 'Delta · 3D', 'cpu', 'blue'),
-        tile('pilab', 'Raspberry Pi', 'Pi 5 · Pi 4 · Pico', 'terminal', 'pink'),
-        tile('components', 'Components', `${partCount()}+ parts`, 'layers', 'green'),
-        tile('manual', 'Manual', 'PLC · VFD · HMI · Modbus', 'book', 'amber'),
-        tile('guide', 'Guide', 'How to use', 'help', 'cyan'),
-        tile('about', 'About RAPTI', 'Courses · contact', 'graduation', 'pink'))));
+    // the menu of tiles that used to sit here now lives in the ☰ menu bar (the drawer) at the top left
 
     const recent = listProjects().slice(0, 3).map((m) => loadProject(m.id)).filter(Boolean);
     if (recent.length) {

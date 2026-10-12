@@ -383,7 +383,8 @@
 .vv-face { padding: 10px 12px 14px; border-radius: 10px; background: #131417; border: 3px solid #2b2e33; box-shadow: inset 0 2px 6px #000; }
 .vv-logo { display: flex; align-items: center; gap: 5px; color: #f1f4f8; margin: 0 0 6px 18px; }
 .vv-logo b, .vv-cover-logo b { font-family: var(--display); font-weight: 800; letter-spacing: .5px; font-size: 14px; }
-.vv-top { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 6px; }
+.vv-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start; column-gap: 8px; }
+.vv-top > .vv-leds-l, .vv-top > .vv-leds-r { padding-top: 4px; }
 .vv-leds-l, .vv-leds-r { display: flex; flex-direction: column; gap: 5px; }
 .vv-leds-l span, .vv-leds-r span { display: flex; align-items: center; gap: 4px; font-family: var(--display); font-size: 10px; font-weight: 800; color: #d5dae2; line-height: 1; }
 .vv-leds-l i, .vv-leds-r i { width: 7px; height: 5px; border-radius: 2px; background: #33373d; }
@@ -391,15 +392,15 @@
 .vv-leds-r span[data-led="STOP"].on i { background: #ff3b30; box-shadow: 0 0 7px #ff3b30; }
 .vv-window { padding: 4px 6px; border-radius: 4px; background: #0b0303; box-shadow: inset 0 2px 6px #000; min-width: 0; }
 .vv-disp { width: 100%; display: block; aspect-ratio: 400 / 120; }
-.vv-dial { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.vv-dial { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 60px; padding: 2px 0 0; }
 .vv-knob { --a: -135deg; position: relative; width: 46px; height: 46px; border-radius: 50%; touch-action: none; cursor: grab;
   background: radial-gradient(circle at 40% 35%, #4a4d53, #232528 70%); box-shadow: 0 0 0 3px #131417, 0 0 0 5px rgba(238, 241, 245, .85), 0 3px 6px #000;
-  -webkit-mask: none; }
+  -webkit-mask: none; margin: 4px 0 2px; }
 .vv-knob::before { content: ''; position: absolute; inset: -7px; border-radius: 50%; background: repeating-conic-gradient(from -135deg, transparent 0 4deg, rgba(0, 0, 0, .0) 4deg 6deg); }
 .vv-knob i { position: absolute; left: 50%; top: 50%; width: 3px; height: 20px; margin-left: -1.5px; border-radius: 2px; background: #a5abb3; transform-origin: 50% 0; transform: rotate(calc(var(--a) + 180deg)); }
-.vv-knob-val { font-size: 9.5px; font-weight: 700; color: #9ee7ff; white-space: nowrap; }
+.vv-knob-val { font-size: 9.5px; font-weight: 700; color: #9ee7ff; text-align: center; line-height: 1.2; max-width: 60px; }
 .vv-knob-val.off { color: #6b7280; }
-.vv-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 14px; }
+.vv-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 14px; margin-top: 18px; }
 .vv-key { height: 46px; border-radius: 7px; font-family: var(--display); font-weight: 800; font-size: 16px; line-height: 1.05; touch-action: none; user-select: none; -webkit-user-select: none;
   background: linear-gradient(180deg, #e4e6ea, #b9bdc4); color: #14161a; box-shadow: 0 3px 0 #6c7078, inset 0 1px 0 rgba(255, 255, 255, .5); }
 .vv-key:active, .vv-key.down { transform: translateY(2px); box-shadow: 0 1px 0 #6c7078; filter: brightness(1.08); }
@@ -676,11 +677,12 @@
 }
 /* ladder / HMI / VFD / monitor: their own tool bars move below the cut-out (the bar colour fills the strip
    behind the camera) and leave room on the right for the ☰ handle */
-.lab.fs .lad-bar { padding-top: calc(6px + var(--safe-t)); padding-right: calc(52px + var(--safe-r)); }
-.lab.fs .hv-bar { padding-top: calc(7px + var(--safe-t)); padding-right: calc(52px + var(--safe-r)); }
-.lab.fs .mv-head { padding-top: calc(8px + var(--safe-t)); padding-right: calc(52px + var(--safe-r)); }
+/* the round menu button floats over the screen and can be dragged anywhere — the bars only step aside while it sits in the top right corner */
+.lab.fs .lad-bar { padding-top: calc(6px + var(--safe-t)); }
+.lab.fs .hv-bar { padding-top: calc(7px + var(--safe-t)); }
+.lab.fs .mv-head { padding-top: calc(8px + var(--safe-t)); }
+.lab.fs[data-dock-x="r"][data-dock-y="t"] .lad-bar, .lab.fs[data-dock-x="r"][data-dock-y="t"] .hv-bar, .lab.fs[data-dock-x="r"][data-dock-y="t"] .mv-head { padding-right: calc(48px + var(--safe-r)); }
 .lab.fs .pane-vfd { padding-top: var(--safe-t); }
-.lab.fs .pane-vfd .vv-body { padding-right: calc(52px + var(--safe-r)); }
 .lab.fs .lab-pane:not(.pane-panel) { padding-right: var(--safe-r); padding-bottom: var(--safe-b); }
 .lr-tag { fill: #c4b5fd; font-family: var(--mono); font-weight: 800; }
 .lad-bar .lb-hot b { color: #fbbf24; }
