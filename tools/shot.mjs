@@ -590,6 +590,65 @@ const scenarios = {
     console.log('panel keys', JSON.stringify(out));
     await page.screenshot({ path: join(outDir, 'vfd-knobcard.png') });
   },
+  async labnet(page, id = 'modbus-network', target = '', ms = 2600) {
+    // the Network view while the lab runs: packets, tags, x-ray; optionally zoomed to a device
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(2500);
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 150; i++) s.step(20); });
+    await page.evaluate(() => window.__rapti.lab.views.panel.toggleNet(true)); await sleep(900);
+    if (target) { await page.evaluate((t) => window.__rapti.lab.scene.focus(t, false), target); }
+    await sleep(+ms);
+    await page.screenshot({ path: join(outDir, `labnet-${id}${target ? '-' + target : ''}.png`) });
+  },
+  async labnetmon(page, id = 'modbus-network', open = 'dtb') {
+    // Monitor → Network: the bus as a chain with live states, one station opened (register map)
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(2000);
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 200; i++) s.step(20); });
+    await page.evaluate(() => window.__rapti.lab.views.monitor.setSub('network')); await sleep(900);
+    await page.screenshot({ path: join(outDir, `labnetmon-${id}.png`) });
+    if (open) {
+      await page.evaluate((o) => { const m = window.__rapti.lab.views.monitor.net; const r = m.rows.find((x) => x.n.dev.id === o); if (r) r.dot.closest('.nw-main').click(); r && r.regs.scrollIntoView(); }, open); await sleep(900);
+      await page.screenshot({ path: join(outDir, `labnetmon-${id}-${open}.png`) });
+    }
+  },
+  async labpinout(page, id = 'modbus-network', which = 'COM2') {
+    // the connection sheet of a comm cable (pin-out, settings of both ends)
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(2000);
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 150; i++) s.step(20); });
+    await page.evaluate((w) => { const l = window.__rapti.lab; const c = l.project.conns.find((x) => x.comm && (x.a.port === w || x.b.port === w)); l.views.panel.select({ kind: 'conn', id: c.id }); }, which); await sleep(500);
+    await page.screenshot({ path: join(outDir, `labpinout-bar-${which}.png`) });
+    await page.evaluate(() => [...document.querySelectorAll('.sel-bar .sel-btn')].find((b) => /Pin-out/.test(b.textContent)).click()); await sleep(900);
+    await page.screenshot({ path: join(outDir, `labpinout-${which}.png`) });
+  },
+  async lab2dnet(page, id = 'modbus-network') {
+    // the 2D schematic of a Modbus lab, then its Network view, then the DTB symbol close up
+    await page.evaluate(() => { window.__rapti.settings.labView = '2d'; });
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(1800);
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 200; i++) s.step(20); }); await sleep(600);
+    await page.screenshot({ path: join(outDir, `lab2dnet-${id}.png`) });
+    await page.evaluate(() => window.__rapti.lab.views.panel.toggleNet(true)); await sleep(900);
+    await page.screenshot({ path: join(outDir, `lab2dnet-${id}-net.png`) });
+    await page.evaluate(() => { const l = window.__rapti.lab; l.scene.focus('dtb', false); }); await sleep(700);
+    await page.screenshot({ path: join(outDir, `lab2dnet-${id}-dtb.png`) });
+  },
+  async labhmi(page, id = 'modbus-network') {
+    await page.evaluate((id) => window.__rapti.home.openLabExample(id), id); await sleep(1800);
+    await page.click('.lab .run-btn'); await sleep(600);
+    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 400; i++) s.step(20); });
+    await page.evaluate(() => window.__rapti.lab.setTab('hmi')); await sleep(1200);
+    await page.screenshot({ path: join(outDir, `labhmi-${id}-1.png`) });
+    await page.evaluate(() => { const h = window.__rapti.lab.sys.hmiRt.hmi; h.screen = 1; h.dirty = true; }); await sleep(1200);
+    await page.screenshot({ path: join(outDir, `labhmi-${id}-2.png`) });
+  },
+  async liblab(page) {
+    await page.evaluate(() => window.__rapti.home.openLabExample('blank')); await sleep(2500);
+    await page.click('.lab-tools .tool[title="Add device"]'); await sleep(1500);
+    await page.evaluate(() => { const c = [...document.querySelectorAll('.lib-cat')].find((x) => /Modbus/.test(x.textContent)); c.scrollIntoView(); }); await sleep(1500);
+    await page.screenshot({ path: join(outDir, 'liblab-modbus.png') });
+  },
   async labfocus(page, id = 'vfd-modbus-hmi', target = 'plc') {
     await scenarios.labopen(page, id);
     await page.click('.lab .run-btn'); await sleep(1200);
@@ -607,6 +666,8 @@ for (const spec of list) {
     else if (name === 'labhero') await scenarios.labhero(page, arg, arg2);
     else if (name === 'labselect' || name === 'labzoom') await scenarios[name](page, arg);
     else if (name === 'labplc') await scenarios.labplc(page, arg, arg2);
+    else if (name === 'labnet') await scenarios.labnet(page, arg, arg2, arg3);
+    else if (name === 'labpinout' || name === 'labnetmon' || name === 'lab2dnet' || name === 'labhmi') await scenarios[name](page, arg, arg2);
     else await scenarios[name](page, arg, arg2 ? +arg2 : undefined);
   } catch (e) {
     errors.push(`[scenario ${spec}] ${e.message}`);

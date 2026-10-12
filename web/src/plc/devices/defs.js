@@ -4,6 +4,8 @@
 // (mounting) face, x → right, y → up, z → front. Port positions are used by the 3D models,
 // cable routing and picking; the simulator only uses port ids.
 
+import { MB_PROPS } from '../sim/mbdevices.js';
+
 const FRONT = [0, 0, 1];
 const up = (k = 0.55) => norm([0, k, 1]);
 const down = (k = 0.55) => norm([0, -k, 1]);
@@ -333,6 +335,42 @@ export const DEVICE_DEFS = {
     ],
   },
 
+  // ---------------------------------------------------------------- Modbus RS-485 slaves (DIN rail 2)
+  'dtb4848': {
+    type: 'dtb4848', name: 'Delta DTB4848 temperature controller', short: 'DTB4848', part: 'DTB4848VR · PID · RS-485', brand: 'Delta', category: 'modbus', sim: 'tc', zone: 'rail2', max: 3,
+    size: [56, 124, 76],
+    description: '48 × 48 mm PID temperature controller (100–240 V AC on L / N) with a thermocouple in a small oven and the 500 W heater on OUT1. RS-485 on D+ / D−, Modbus ASCII or RTU (factory setting: station 1, 9600 bps 7E1 ASCII). Registers: 1000H PV, 1001H SV, 1002H / 1003H range, 1005H control (0 PID, 1 ON/OFF, 2 manual), 1012H output 1 %, bit 0814H RUN / STOP — all in 0.1 °C. Tap ▲ / ▼ to change SV, tap the display for RUN / STOP.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, ...MB_PROPS],
+    defaults: { label: 'OVEN', station: 1, baud: '9600', format: '7E1', protocol: 'ASCII' }, state: { sv: 120, run: true, mode: 0 },
+    ports: () => [
+      ...row(['L', 'N'], { x0: -9, x1: 9, y: 113, z: 66, dir: up(0.6), sig: (id) => id }),
+      { id: 'RS485', label: 'RS-485 (D+ D−)', kind: 'comm', bus: 'rs485', conn: 'term2', pins: ['D+', 'D−'], pos: [0, 9, 66], dir: down(0.6), max: 2 },
+    ],
+  },
+  'th-rs485': {
+    type: 'th-rs485', name: 'RS-485 temperature & humidity sensor', short: 'T/H sensor', part: 'Modbus RTU · 10–30 V DC', brand: '', category: 'modbus', sim: 'mbth', zone: 'rail2', max: 4,
+    size: [54, 100, 38],
+    description: 'Temperature and humidity transmitter with an LCD and an RS-485 Modbus RTU interface: V+ / V− (10–30 V DC) and A+ / B−. Registers (function 03 or 04): 0000H temperature, 0001H humidity, 0002H dew point, in 0.1 °C / 0.1 %RH. Factory setting: station 1, 9600 bps 8N1. Tap it to change the temperature and humidity.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, ...MB_PROPS],
+    defaults: { label: 'CABINET', station: 1, baud: '9600', format: '8N1', protocol: 'RTU' }, state: { temp: 26.5, rh: 55 },
+    ports: () => [
+      { id: 'V+', label: 'V+ (24 V)', kind: 'term', pos: [-16, 8, 36], dir: down(0.6), sig: '+24', pitch: 7 },
+      { id: 'V-', label: 'V− (0 V)', kind: 'term', pos: [-9, 8, 36], dir: down(0.6), sig: '0V', pitch: 7 },
+      { id: 'RS485', label: 'RS-485 (A+ B−)', kind: 'comm', bus: 'rs485', conn: 'term2', pins: ['A+', 'B−'], pos: [9, 8, 36], dir: down(0.6), max: 2 },
+    ],
+  },
+  'em-rs485': {
+    type: 'em-rs485', name: 'Energy meter 1-phase (Modbus)', short: 'Energy meter', part: 'DIN rail · 230 V · RS-485', brand: '', category: 'modbus', sim: 'meter', zone: 'rail2', max: 2,
+    size: [36, 90, 66],
+    description: 'DIN-rail energy meter on the main incomer: L / N for the voltage, a current transformer for the power the panel takes (drives, supplies, PLCs, the oven heater). RS-485 A+ / B−, Modbus RTU (factory setting: station 1, 9600 bps 8N1). Registers (03 or 04): 0000H voltage (0.1 V), 0001H current (0.01 A), 0002H power (W), 0003H power factor (0.01), 0004H frequency (0.01 Hz), 0005H / 0006H energy in Wh (32-bit, low word first).',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, ...MB_PROPS],
+    defaults: { label: 'MAIN', station: 1, baud: '9600', format: '8N1', protocol: 'RTU' }, state: { wh: 0 },
+    ports: () => [
+      ...row(['L', 'N'], { x0: -8, x1: 8, y: 82, z: 65, dir: up(0.6), sig: (id) => id }),
+      { id: 'RS485', label: 'RS-485 (A+ B−)', kind: 'comm', bus: 'rs485', conn: 'term2', pins: ['A+', 'B−'], pos: [0, 8, 65], dir: down(0.6), max: 2 },
+    ],
+  },
+
   // ---------------------------------------------------------------- machines
   'motor': {
     type: 'motor', name: '3-phase induction motor', short: 'Motor 0.75 kW', part: '0.75 kW · 4-pole · 1420 rpm', brand: '', category: 'motor', sim: 'motor', zone: 'motor', max: 3,
@@ -371,6 +409,7 @@ export const CATEGORIES = [
   { id: 'switchgear', name: 'Contactors, relays & panel parts', icon: 'magnet' },
   { id: 'field', name: 'Field devices', icon: 'button' },
   { id: 'sensor', name: 'Industrial sensors', icon: 'sensor' },
+  { id: 'modbus', name: 'Modbus RS-485 devices', icon: 'network' },
   { id: 'motor', name: 'Motors', icon: 'settings' },
   { id: 'pc', name: 'Computer', icon: 'display' },
 ];
@@ -378,7 +417,7 @@ export const CATEGORIES = [
 export const getDeviceDef = (type) => DEVICE_DEFS[type] || null;
 
 /** Devices that carry a user label (START, KM1, LS1 …) shown with their name. */
-export const hasLabel = (def) => !!def && ['field', 'sensor', 'switchgear'].includes(def.category);
+export const hasLabel = (def) => !!def && ['field', 'sensor', 'switchgear', 'modbus'].includes(def.category);
 
 export function deviceProps(dev) {
   const d = DEVICE_DEFS[dev.type];

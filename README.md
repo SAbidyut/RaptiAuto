@@ -4,6 +4,18 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.12 — Modbus network in 3D
+
+- **Modbus RS-485 devices for the PLC Lab** (＋ → *Modbus RS-485 devices*): a **Delta DTB4848** PID temperature controller heating a small oven (PV red / SV green display, OUT1 / AT / ALM LEDs, SET ◀ ▼ ▲, the heater glows with its output), an **RS-485 temperature & humidity sensor** with an LCD and an **energy meter** on the main incomer that measures what the panel takes (drives, supplies, PLCs, the 500 W oven heater). Each has a station address, baud rate, data format (8N1 / 8E1 / 7E1 …) and RTU / ASCII in its settings, RS-485 terminals printed D+ / D− or A+ / B−, and TX / RX LEDs that blink with every frame.
+- **One RS-485 line, many slaves:** the PLC COM2 (MODRW) is the master of drives, other PLCs and these devices on a daisy chain (each RS-485 port takes two cables, their wires go into the same terminals). Every slave answers with its own register map: DTB4848 1000H PV, 1001H SV, 1002H / 1003H range, 1005H control (PID / ON-OFF / manual), 1012H output %, bit 0814H RUN / STOP; sensor 0000H temperature, 0001H humidity, 0002H dew point (function 03 or 04); meter 0000H V, 0001H A, 0002H W, 0003H PF, 0004H Hz, 0005H / 0006H Wh (32-bit, low word first). Like the real thing: a wrong address stays silent, an unknown register answers exception 02, a value out of range 03, an unsupported function 01; a different baud rate / format is not understood (time-out), and **two slaves with the same address both answer and their replies collide**. Lab check explains each of these.
+- **MODRW speaks every function:** 01 / 02 (read bits, packed 16 to a register), 03 / 04 (read words), 05 / 15 (write bits), 06 / 16 (write words) — also against a DVP slave PLC.
+- **Network view (the Network chip in the Lab tab):** the 3D panel becomes an x-ray of the communication — power wiring, ducts and the devices that do not communicate fade out, the scene dims, and the **RS-485 cable glows violet, RS-232 amber, USB blue**. Every device carries a tag with its role and address (MASTER, ID 1 … ID 4, the serial format), every comm port its name (COM2 · RS-485 · D+ D− SG, RJ45, mini-DIN 8, D-sub 9, mini-USB), the line its bus label, and the two ends of the RS-485 line show their **120 Ω terminating resistors**. Labels keep their size on screen and switch to a compact badge when far away.
+- **Every frame travels the real cable:** while the lab runs, each request of the master is an **amber packet** running from PLC COM2 through the ducts and the daisy-chained terminals to the station it is addressed to, the reply a **green packet** back; an exception or a time-out flashes **red** ("no reply"). The HMI ↔ PLC polls run on the RS-232 cable the same way. Zoomed in, each packet shows what it carries ("ID 2 ◂ Read PV, SV 1000H", "▸ PV 146.9 °C · SV 150.0 °C"). A legend card shows the bus format, the master and live TX / RX / time-out counters.
+- **Monitor → Network:** every comm line as it is cabled — the RS-485 bus drawn as a chain from the master to the last station with its 120 Ω ends, the RS-232 HMI link and the USB programming link — with the live state of each station (OK / no reply / idle), its last values, and (tap it) its **register map with live values**.
+- **Cable pin-outs:** tap a communication cable → **Pin-out**: both connectors drawn with their pins and the wires between them (RS-485 D+ → D+ / SG+ on the MS300 RJ45 pin 5, D− → pin 4, GND pin 3; RS-232 crossed TX ↔ RX: DVP COM1 mini-DIN pins 4 / 5 / 8 ↔ DOP COM1 D-sub pins 3 / 2 / 5), the station and format both ends are set to, and the rules of the bus.
+- **New lab exercise "Modbus RTU network: PLC · VFD · DTB · sensor · meter · HMI"** with 6 tasks: the oven controller holds 150 °C, the PLC starts the MS300 conveyor (station 1) only when the oven is ready, writes the HMI set value to the DTB (FC06), switches it with the RUN bit (FC05), reads the cabinet climate and the energy; two HMI screens (line + network). Also in the 2D schematic, where the Network view fades everything but the communication.
+- Other: the daisy-chained RS-485 cables on PLC COM2 land in the same D+ / D− / SG terminals; rail 2 never puts a device on the middle wire duct; MS300 replies are decoded in the comm log ("H 30.00 Hz · 1.20 A").
+
 ## New in 2.11
 
 - **IoT everywhere — the Arduino side.** A simulated network lives inside the app: a Wi-Fi router (`RaptiNet`, password `rapti1234`, plus a few more networks), DHCP and DNS, a small "internet" of services (weather, public IP, time, ThingSpeak, Blynk, Telegram, IFTTT, httpbin, crypto prices …), an MQTT broker and the web servers your boards run. ESP32, ESP8266 (NodeMCU) and Uno R4 WiFi sketches use the usual libraries: `WiFi` (+`WiFiMulti`, scan, soft-AP), `WiFiClient` / `WiFiClientSecure`, `WiFiServer`, `WebServer` / `ESP8266WebServer`, `HTTPClient`, `PubSubClient`, **`ArduinoJson`**, `ThingSpeak`, `Blynk` + `BlynkTimer`, `UniversalTelegramBot`, `NTPClient`, `configTime()` / `getLocalTime()`, `ESPmDNS`, `Preferences`, `BluetoothSerial`, `ESP.getFreeHeap()` … Everything runs in the sketch's virtual time and fails like the real thing (wrong password, no `handleClient()`, HTTPS without `setInsecure()`, MQTT buffer too small, `#include <WiFi.h>` on an Uno, an ESP8266 header on an ESP32).
@@ -78,7 +90,7 @@ A virtual industrial-automation trainer with Delta equipment, built for touch sc
 - **HMI (DOPSoft-style):** screens with buttons, lamps, numeric display/input with an on-screen keypad, meters, bars, trends, motor icons, screen buttons and alarm banners; drag/resize designer; Delta DVP protocol on COM1/COM2 with comm-error handling.
 - **MS300 drive:** keypad and speed dial as on the real drive (F / H / U pages, parameter mode), about 90 parameters with the manual's numbers (see 2.9), keypad / dial / AVI / UP-DOWN / RS-485 / multi-step frequency, keypad / terminal (2- and 3-wire) / RS-485 run command, S-curve ramps, stall prevention, DC braking, motor current and slip, ocA/ocd/ovd/oL/EoL1/EF/CE10 faults with the fault record, Modbus registers 2000H/2001H/2002H/21xxH.
 - **Monitor:** device monitor (X/Y/M/T/C/D), watch list, and a communication analyser showing real Modbus RTU / ASCII frames with CRC / LRC.
-- **Lab exercises:** start/stop latch, motor starter with contactor + overload relay, traffic light timers, part counter with HMI, VFD FWD/REV multi-speed, VFD speed via Modbus RTU + HMI, analog speed (pot → EX2 → AVI), and a blank lab.
+- **Lab exercises:** start/stop latch, motor starter with contactor + overload relay, traffic light timers, part counter with HMI, VFD FWD/REV multi-speed, VFD speed via Modbus RTU + HMI, two PLCs master → slave, the Modbus RTU network (PLC · VFD · DTB4848 · sensor · energy meter · HMI), analog speed (pot → EX2 → AVI), and a blank lab.
 
 ## Features
 
@@ -107,7 +119,7 @@ Other scripts:
 | --- | --- |
 | `node tests/examples.mjs` | Run every example headless, with functional checks |
 | `node tests/devices.mjs` | Device and library tests |
-| `node tests/plc.mjs` | PLC lab: ladder/IL, the DVP instruction set (32-bit, float, clock, pulse …), CPU, Modbus, VFD keypad, wiring and full lab simulations |
+| `node tests/plc.mjs` | PLC lab: ladder/IL, the DVP instruction set (32-bit, float, clock, pulse …), CPU, Modbus (every MODRW function, DTB4848 / sensor / meter slaves, collisions, format mismatches), VFD keypad, wiring and full lab simulations |
 | `node tests/schematic.mjs` | 2D wiring schematic: layout, wire routing through the ducts, window / crossing selection |
 | `node tests/pi.mjs` | Raspberry Pi lab: MicroPython engine, gpiozero, RPi.GPIO, Pico machine, stop / Ctrl+C, the >>> shell, Python driving a wired circuit (LED, button, MCP3008, HC-SR04, DHT22, I²C LCD) and example auto-wiring |
 | `tools/micropython/build.sh` | Rebuild `web/vendor/micropython/` (MicroPython WebAssembly, needs the Emscripten SDK) |
@@ -123,9 +135,9 @@ Other scripts:
 - `web/src/components/`: component definitions (artwork plus simulation models).
 - `web/src/ui/`: the app screens.
 - `web/src/examples/`: the example gallery.
-- `web/src/plc/sim/`: PLC lab simulation (DVP CPU, ladder compiler/IL, MS300 drive, Modbus, HMI runtime, lab system).
+- `web/src/plc/sim/`: PLC lab simulation (DVP CPU, ladder compiler/IL, MS300 drive, Modbus, the RS-485 slaves `mbdevices.js`, HMI runtime, lab system).
 - `web/src/plc/devices/`: Delta device catalogue (ports, terminals), the automatic 3D layout and the 3D cable router (`routing.js`).
-- `web/src/plc/three/`: three.js scene, procedural device models, cables.
-- `web/src/plc/ui/`: lab screen, 3D panel, 2D wiring schematic (`schematic.js`, switched by `scene-switch.js`), ladder editor, HMI designer, VFD view, monitor.
+- `web/src/plc/three/`: three.js scene, procedural device models (`models-modbus.js` for the RS-485 slaves), cables, and `network.js` — the data packets and the Network view.
+- `web/src/plc/ui/`: lab screen, 3D panel, 2D wiring schematic (`schematic.js`, switched by `scene-switch.js`), ladder editor, HMI designer, VFD view, monitor (with `net-monitor.js`, the Network tab), the cable pin-out sheet (`comm-sheet.js`, data in `comm-info.js`).
 - `web/src/pi/`: the Raspberry Pi lab (board art, GPIO simulator, the circuit tab `circuit.js` with the board parts `circuit-parts.js`, the GPIO ↔ circuit bridge `circuit-hw.js` and example auto-wiring `autowire.js`, Python process, terminal, Thonny, desktop); `web/src/pi/py/` holds the Python libraries made for it; loaded as `pi.js` on first use.
 - `web/src/ui/gestures.js`: double-tap zoom and the window / crossing selection box shared by both simulators.

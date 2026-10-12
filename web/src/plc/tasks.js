@@ -54,6 +54,14 @@ export const LAB_TASKS = {
     { text: 'Find the “Write D100…” and “Read C0” frames in Monitor → Comm log', check: (c) => c.lab.tab === 'monitor' && c.lab.views.monitor.sub === 'log' && !!(c.cpu && c.cpu.running) },
     { text: 'Tap the PLC chip at the top and open PLC 2 · Slave in the Ladder tab', check: (c) => c.P.activePlc === 'plc2' && c.lab.tab === 'ladder' },
   ],
+  'modbus-network': [
+    { text: 'Simulate and open the Network view (the Network chip in the Lab tab): watch the frames travel to stations 1–4', check: (c) => !!(c.cpu && c.cpu.running && c.lab.views.panel.netView) },
+    { text: 'Press START: the conveyor waits for the oven (OVEN READY), then runs at 30 Hz', check: (c) => !!(c.cpu && c.cpu.M[1] && near(hz(c), 30, 0.3)) },
+    { text: 'Set the oven to 180 °C on the HMI — the PLC writes SV (1001H) to the DTB4848', check: (c) => !!(c.dev('dtb') && c.dev('dtb').state.sv === 180) },
+    { text: 'Tap the T/H sensor and make the cabinet 42 °C — the ALARM lamp flashes', check: (c) => { const ok = !!(c.cpu && c.cpu.D[50] > 400 && c.cpu.M[3]); if (ok) c.memo.hot = true; return ok; } },
+    { text: 'Give the T/H sensor station 1 in its settings: two slaves answer and their replies collide', hint: 'Lab check (⚠) explains it. Put it back to 3 afterwards', check: (c) => !!(c.dev('th') && +c.dev('th').props.station === 1 && c.sys && c.sys.issues.some((i) => /station 1 is used by/.test(i.text))) },
+    { text: 'Open Monitor → Network and find the DTB4848 register map (PV 1000H, SV 1001H)', check: (c) => c.lab.tab === 'monitor' && c.lab.views.monitor.sub === 'network' },
+  ],
   'analog-speed': [
     { text: 'Press START and turn the SPEED pot to 80 % — the drive runs at 40 Hz', check: (c) => near(hz(c), 40, 0.6) },
     { text: 'Watch D1110 (AI CH0) in Monitor → Devices', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },

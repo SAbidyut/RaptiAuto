@@ -936,5 +936,103 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   check('MO1 (running) lights the lamp through MCM', s.rts.get('mol').on);
 }
 
+// ---------------------------------------------------------------- Modbus RS-485 network (DTB4848, T/H sensor, energy meter)
+{
+  const { s, run } = sim('modbus-network');
+  run(3000);
+  const cpu = s.plc.cpu;
+  check('modbus-network: no issues on the bus', !s.issues.some((i) => i.level !== 'info'), s.issues.map((i) => i.text).join(' | '));
+  check('DTB4848 (station 2): PV 1000H / SV 1001H read into D30 / D31', cpu.D[31] === 1500 && cpu.D[30] > 250, `D30=${cpu.D[30]} D31=${cpu.D[31]}`);
+  check('T/H sensor (station 3): 31.5 °C, 48.0 %RH in D50 / D51', Math.abs(cpu.D[50] - 315) <= 1 && Math.abs(cpu.D[51] - 480) <= 2, `D50=${cpu.D[50]} D51=${cpu.D[51]}`);
+  check('energy meter (station 4): 230 V in D60, power in D62', Math.abs(cpu.D[60] - 2300) < 10 && cpu.D[62] > 20, `D60=${cpu.D[60]} D62=${cpu.D[62]}`);
+  check('the log names the registers: "Read PV, SV (1000H ×2)"', s.log.some((l) => l.dir === 'TX' && l.info === 'Read PV, SV (1000H ×2)'));
+  check('the log decodes a reply: "Temp 31.5 °C · RH 48.0 %RH"', s.log.some((l) => l.dir === 'RX' && /^Temp 31\.\d °C · RH 48\.\d %RH$/.test(l.info)));
+  check('every frame carries the device ids (3D packets)', s.log.filter((l) => l.link === 'COM2' && l.dir === 'TX').every((l) => l.ids && l.ids.from === 'plc' && l.ids.to && l.ids.txn));
+  // write SV from the HMI register D40 → the PLC writes 1001H
+  cpu.D[40] = 1800; run(600);
+  check('MODRW FC06 writes SV 180.0 °C to the DTB', s.rts.get('dtb').dev.state.sv === 180, 'sv=' + s.rts.get('dtb').dev.state.sv);
+  // FC05: RUN / STOP bit 0814H
+  cpu.M[13] = 0; run(600);
+  check('MODRW FC05 bit 0814H stops the DTB (SV shows StoP, heater off)', s.rts.get('dtb').dev.state.run === false && s.rts.get('dtb').mb.out === 0);
+  cpu.M[13] = 1; run(600);
+  check('…and runs it again', s.rts.get('dtb').dev.state.run === true);
+  // the oven reaches the set value and the conveyor starts
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false);
+  run(40000);
+  const dtb = s.rts.get('dtb').mb;
+  check('the DTB PID holds the oven near SV (±3 °C)', Math.abs(dtb.pv - 180) < 3, 'pv=' + dtb.pv.toFixed(1));
+  check('OVEN READY → the PLC runs the MS300 conveyor at 30 Hz over RS-485', cpu.M[1] === 1 && Math.abs(s.byKind('vfd')[0].vfd.f - 30) < 0.1, `M1=${cpu.M[1]} f=${s.byKind('vfd')[0].vfd.f}`);
+  check('the energy meter sees the drive + heater (> 100 W) and counts Wh', cpu.D[62] > 100 && s.rts.get('em').dev.state.wh > 0.5, `P=${cpu.D[62]} Wh=${s.rts.get('em').dev.state.wh}`);
+  check('the oven heater shows in the meter load', s.panelLoad() > 100);
+}
+{
+  // the same station twice → both answer, replies collide → time-out + an issue
+  const { s, run } = sim('modbus-network', (p) => { p.devices.find((d) => d.id === 'th').props.station = 1; });
+  run(3000);
+  check('two slaves at station 1: issue "station 1 is used by …"', s.issues.some((i) => /station 1 is used by MS300 and T\/H sensor/.test(i.text)), s.issues.map((i) => i.text).join(' | '));
+  check('…and the master gets no valid reply (M1129)', s.log.some((l) => l.dir === 'ERR' && /collided/.test(l.info)));
+}
+{
+  // a slave with another serial format does not understand the frames
+  const { s, run } = sim('modbus-network', (p) => { p.devices.find((d) => d.id === 'em').props.format = '8N1'; });
+  run(3000);
+  check('format mismatch 8N1 vs 8E1: the meter does not answer', s.log.some((l) => l.dir === 'ERR' && /Format mismatch: PLC 9600 8E1 RTU ≠ Energy meter MAIN 9600 8N1 RTU/.test(l.info)));
+  check('…and Lab check says so', s.issues.some((i) => /Energy meter MAIN is set to 9600 8N1 RTU/.test(i.text)));
+  check('the other stations still answer', Math.abs(s.plc.cpu.D[50] - 315) <= 1);
+}
+{
+  // exceptions and function codes on a DTB / sensor directly
+  const { s, run } = sim('modbus-network');
+  run(1500);
+  const dtb = s.rts.get('dtb').mb, th = s.rts.get('th').mb;
+  check('DTB: unknown register → exception 02', dtb.modbus({ fc: 3, addr: 0x1100, count: 1 }).exception === 2);
+  check('DTB: PV is read-only → exception 02', dtb.modbus({ fc: 6, addr: 0x1000, values: [5] }).exception === 2);
+  check('DTB: SV above the upper limit → exception 03', dtb.modbus({ fc: 6, addr: 0x1001, values: [9000] }).exception === 3);
+  check('DTB: function 04 not supported → exception 01', dtb.modbus({ fc: 4, addr: 0x1000, count: 1 }).exception === 1);
+  check('sensor: function 04 reads the same registers', th.modbus({ fc: 4, addr: 0, count: 2 }).data.length === 2);
+  check('DTB: FC01 reads the RUN bit', dtb.modbus({ fc: 1, addr: 0x0814, count: 1 }).data[0] === 1);
+}
+{
+  // MODRW FC01 packs bits into the data register; a PLC slave answers FC01 / FC05
+  const { s, run } = sim('plc-master-slave', (p) => {
+    const R = p.program.rungs;
+    R.push(rung('', ['M1000 => MODRW K2 K1 H500 D200 K8']), rung('', ['M1000 => MODRW K2 K5 H800 D210 K1']), rung('', ['M1000 => MOV K1 D210']));
+    p.plc.downloaded = JSON.parse(JSON.stringify(p.program));
+  });
+  run(2000);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(1500);
+  const m = s.plc.cpu, sl = s.rts.get('plc2').cpu;
+  check('FC05 MODRW sets the slave\'s M0', sl.M[0] === 1);
+  check('FC01 MODRW reads the slave\'s Y0–Y7 into D200 (bit 0 = Y0)', (m.D[200] & 1) === sl.Y[0] && sl.Y[0] === 1, `D200=${m.D[200]} Y0=${sl.Y[0]}`);
+}
+{
+  // the sensor needs 10–30 V DC; without it the master times out on station 3
+  const { s, run } = sim('modbus-network', (p) => { p.conns = p.conns.filter((c) => !(c.a.dev === 'th' && c.a.port === 'V-') && !(c.b.dev === 'th' && c.b.port === 'V-')); });
+  run(2500);
+  check('unpowered sensor: "has no power" + time-out on station 3', s.issues.some((i) => /T\/H sensor CABINET has no power/.test(i.text)) && s.log.some((l) => l.dir === 'ERR' && /T\/H sensor CABINET has no power/.test(l.info)));
+}
+{
+  // undo / redo hands the simulator new device objects: the slaves must follow them
+  const { p, s, run } = sim('modbus-network');
+  run(1500);
+  p.devices = JSON.parse(JSON.stringify(p.devices));
+  s.sync();
+  s.plc.cpu.D[40] = 1650; run(800);
+  check('after undo / redo the DTB writes go to the new device object', p.devices.find((d) => d.id === 'dtb').state.sv === 165 && s.plc.cpu.D[31] === 1650, `sv=${p.devices.find((d) => d.id === 'dtb').state.sv} D31=${s.plc.cpu.D[31]}`);
+}
+{
+  // Modbus network tasks
+  const t = taskRunner('modbus-network');
+  t.run(3000);
+  t.lab.views.panel = { netView: true };
+  check('task modbus-network #1 (Network view)', t.done(0));
+  t.s.act('start', 'press', true); t.run(100); t.s.act('start', 'press', false); t.run(30000);
+  check('task modbus-network #2 (oven ready, conveyor 30 Hz)', t.done(1));
+  t.s.plc.cpu.D[40] = 1800; t.run(800);
+  check('task modbus-network #3 (SV 180 written)', t.done(2));
+  t.s.act('th', 'thSet', { temp: 42 }); t.run(1200);
+  check('task modbus-network #4 (cabinet hot)', t.done(3));
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');
 process.exit(failures ? 1 : 0);

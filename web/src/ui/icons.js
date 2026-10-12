@@ -98,6 +98,7 @@ const P = {
   power: '<path d="M18.4 6.6a9 9 0 1 1-12.8 0"/><path d="M12 2v10"/>',
   download2: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
   screen: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 7h5M6 10h8M6 13h3"/>',
+  network: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="2.5" y="16" width="6" height="5" rx="1"/><rect x="15.5" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M5.5 16v-4h13v4"/>',
   activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   move: '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
   magnet: '<path d="M6 15A6 6 0 0 0 18 15V4h-4v11a2 2 0 0 1-4 0V4H6z"/><path d="M6 8h4M14 8h4"/>',

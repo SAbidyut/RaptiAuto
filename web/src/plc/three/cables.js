@@ -37,10 +37,35 @@ function peTexture() {
   return peBase;
 }
 
-const COMM_COLORS = { rs485: 0x5b6470, rs232: 0x23262c, usb: 0x2b2e35 };
+const COMM_COLORS = { rs485: 0x6a4c9c, rs232: 0x23262c, usb: 0x2b2e35 };
+
+/**
+ * RS-485 wires on screw terminals: a sleeve `shift` mm to the side (+X) of the terminals with one
+ * ferrule wire per terminal (D+ white, D− blue, SG black), bent from the sleeve into the terminal.
+ */
+function screwWires(g, n, shift) {
+  const cols = [0xf2f2f2, 0x2563eb, 0x1b1d22];
+  const pitch = n === 3 ? 5.5 : 6;
+  const lift = shift ? 20 : 15; // sleeve height above the terminal
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * pitch;
+    const m = mat('rsw' + i, { color: cols[i], roughness: 0.6 });
+    const fer = new THREE.Mesh(cyl(0.9, 0.9, 6, 8), MAT.steel); fer.position.set(x, 3, 0); g.add(fer);
+    // insulated wire from the ferrule to the sleeve (straight up, or bent toward a sleeve to the side)
+    const a = new THREE.Vector3(x, 6, 0), b = new THREE.Vector3(x * 0.8 + shift, lift - 3, 0);
+    const len = a.distanceTo(b);
+    const w = new THREE.Mesh(cyl(1.15, 1.15, len, 8), m);
+    w.position.copy(a).add(b).multiplyScalar(0.5);
+    w.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    g.add(w);
+  }
+  const sl = new THREE.Mesh(rbox(n === 3 ? 15 : 11, 6, 4.6, 1.8), mat('rsSleeve', { color: 0x3a3f47, roughness: 0.7 }));
+  sl.position.set(shift, lift, 0);
+  g.add(sl);
+}
 
 /** Connector body for comm cables (+Y = out of the port). Returns {group, len}. */
-function connector(kind) {
+function connector(kind, shift = 0) {
   const g = new THREE.Group();
   let len = 14;
   const add = (geo, m, x, y, z) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = true; g.add(me); return me; };
@@ -71,16 +96,10 @@ function connector(kind) {
       add(box(7, 6, 3), MAT.steel, 0, 3, 0);
       add(rbox(11, 16, 7, 2), MAT.blackPlastic, 0, 13, 0);
       len = 21; break;
-    case 'term3': {
-      // RS-485 cable on screw terminals D+ / D− / SG: three ferrule wires out of a sleeve
-      const cols = [0xf2f2f2, 0x2563eb, 0x1b1d22];
-      [-5.5, 0, 5.5].forEach((x, i) => {
-        add(cyl(0.9, 0.9, 6, 8), MAT.steel, x, 3, 0);
-        add(cyl(1.15, 1.15, 7, 8), mat('rsw' + i, { color: cols[i], roughness: 0.6 }), x, 9.5, 0);
-      });
-      add(rbox(15, 6, 4.6, 1.8), mat('rsSleeve', { color: 0x3a3f47, roughness: 0.7 }), 0, 15, 0);
-      len = 16; break;
-    }
+    case 'term3': case 'term2':
+      // RS-485 cable on screw terminals: D+ / D− / SG (or a pair D+ / D−, A+ / B−)
+      screwWires(g, kind === 'term3' ? 3 : 2, shift);
+      len = shift ? 20 : 16; break;
     case 'plug3':
       add(rbox(16, 12, 9, 1.5), MAT.greenPlug, 0, 6, 0);
       add(box(16, 2, 6), MAT.steel, 0, 12.5, 0);
@@ -91,9 +110,18 @@ function connector(kind) {
   return { group: g, len };
 }
 
-function orientAt(obj, pos, dir) {
+/** Place a fitting at pos with +Y along dir and (when given) +X along the device's side axis. */
+function orientAt(obj, pos, dir, side = null) {
   obj.position.copy(pos);
-  obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  const y = dir.clone().normalize();
+  if (side) {
+    const x = V(side);
+    x.addScaledVector(y, -x.dot(y)).normalize();
+    const z = new THREE.Vector3().crossVectors(x, y);
+    obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    return;
+  }
+  obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), y);
 }
 
 const FILLET = { wire: 7, patch: 11, comm: 15, motor: 10, mains: 18 };
@@ -186,8 +214,8 @@ export function buildCable(conn, route) {
   for (const f of route.ends) {
     const p = V(f.pos), d = V(f.dir).normalize();
     if (f.kind === 'conn') {
-      const c = connector(f.conn);
-      orientAt(c.group, p, d);
+      const c = connector(f.conn, f.shift || 0);
+      orientAt(c.group, p, d, f.side);
       group.add(c.group);
     } else if (f.kind === 'plug') {
       const plug = new THREE.Group();

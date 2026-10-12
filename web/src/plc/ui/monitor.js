@@ -3,6 +3,7 @@
 import { h, toast, promptDialog, popupMenu } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { parseOperand, fmtAddr, addrSortKey, SPECIAL } from '../sim/address.js';
+import { NetMonitor } from './net-monitor.js';
 
 export class MonitorView {
   constructor(lab) {
@@ -12,20 +13,28 @@ export class MonitorView {
     this.paused = false;
     this.el = h('section', { class: 'monitor-view' });
     this.seg = h('div', { class: 'segmented mv-seg' },
-      ...[['devices', 'cpu', 'Devices'], ['watch', 'target', 'Watch'], ['log', 'terminal', 'Comm log']].map(([id, ic, label]) =>
-        h('button', { class: 'seg' + (id === this.sub ? ' active' : ''), 'data-s': id, html: `${icon(ic, 15)}<span>${label}</span>`, onclick: () => { this.sub = id; for (const b of this.seg.children) b.classList.toggle('active', b.dataset.s === id); this.render(true); } })));
+      ...[['devices', 'cpu', 'Devices'], ['watch', 'target', 'Watch'], ['network', 'network', 'Network'], ['log', 'terminal', 'Comm log']].map(([id, ic, label]) =>
+        h('button', { class: 'seg' + (id === this.sub ? ' active' : ''), 'data-s': id, html: `${icon(ic, 15)}<span>${label}</span>`, onclick: () => this.setSub(id) })));
+    this.net = new NetMonitor(lab);
     this.head = h('div', { class: 'mv-head' }, this.seg);
     this.body = h('div', { class: 'mv-body' });
     this.el.append(this.head, this.body);
   }
 
-  onShow() { this.render(true); }
+  setSub(id) {
+    this.sub = id;
+    for (const b of this.seg.children) b.classList.toggle('active', b.dataset.s === id);
+    if (this.lab.tab !== 'monitor') this.lab.setTab('monitor');
+    else this.render(true);
+  }
+
+  onShow() { for (const b of this.seg.children) b.classList.toggle('active', b.dataset.s === this.sub); this.render(true); }
   onSimStart() { this.render(true); }
   onSimStop() { this.render(true); }
 
   frame(dt) {
     this.acc = (this.acc || 0) + dt;
-    if (this.acc < (this.sub === 'log' ? 0.3 : 0.2)) return;
+    if (this.acc < (this.sub === 'log' || this.sub === 'network' ? 0.3 : 0.2)) return;
     this.acc = 0;
     this.render(false);
   }
@@ -46,6 +55,11 @@ export class MonitorView {
   render(full) {
     if (!this.visible) return;
     if (this.sub === 'log') { this.renderLog(full); return; }
+    if (this.sub === 'network') {
+      if (full || this.body.firstChild !== this.net.el) { this.body.innerHTML = ''; this.body.appendChild(this.net.el); this.logEls = null; this.devEls = null; this.watchEls = null; this.lastKey = null; }
+      this.net.render(full);
+      return;
+    }
     const sys = this.lab.sys;
     const cpu = this.cpu();
     if (!sys || !cpu) {

@@ -7,6 +7,7 @@ import {
 } from './kit.js';
 import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps } from '../devices/defs.js';
 import { drawSegDisplay } from './sevenseg.js';
+import { MODBUS_BUILDERS } from './models-modbus.js';
 
 const LAMP_COLORS = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
 const CAP_COLORS = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#1b1d22', white: '#e9ecef' };
@@ -1258,7 +1259,7 @@ function buildLaptop(dev, ctx) {
   return { group, controls: [screen], update() { return false; } };
 }
 
-const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop };
+const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop, ...MODBUS_BUILDERS };
 
 export function buildModel(dev, ctx) {
   const def = DEVICE_DEFS[dev.type];

@@ -342,6 +342,124 @@ export const LAB_EXAMPLES = [
     },
   },
   {
+    id: 'modbus-network', name: 'Modbus RTU network: PLC · VFD · DTB · sensor · meter · HMI', level: 'advanced', tags: ['Modbus', 'RS-485', 'MODRW', 'DTB', 'HMI'], featured: true,
+    description: 'One RS-485 bus, one master and four slaves: the PLC (COM2) runs the MS300 conveyor drive (station 1), sets and reads the DTB4848 oven controller (station 2), reads the cabinet temperature / humidity sensor (station 3) and the energy meter (station 4). The HMI talks to the PLC on COM1. Open the Network view to watch every frame travel along the cables.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      // rail 2, right → left: the drive, the oven controller, the sensor, the energy meter
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-20': 1, '00-21': 2, '09-00': 1, '09-01': 9.6, '09-04': 14, '01-12': 4, '01-13': 4 } });
+      const com = { baud: '9600', format: '8E1', protocol: 'RTU' };
+      b.dev('dtb', 'dtb4848', { label: 'OVEN', station: 2, ...com }, { sv: 150, run: true, mode: 0 });
+      b.dev('th', 'th-rs485', { label: 'CABINET', station: 3, ...com }, { temp: 31.5, rh: 48 });
+      b.dev('em', 'em-rs485', { label: 'MAIN', station: 4, ...com }, { wh: 0 });
+      b.dev('motor', 'motor', { load: 35 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('lrun', 'lamp', { label: 'CONVEYOR', color: 'green' });
+      b.dev('lrdy', 'lamp', { label: 'OVEN READY', color: 'yellow' });
+      b.dev('lalm', 'lamp', { label: 'ALARM', color: 'red' });
+      // power: drive from the MCB, meter + oven controller from the supply's L / N, sensor on 24 V
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('psu', 'L', 'em', 'L'); b.w('psu', 'N', 'em', 'N');
+      b.w('em', 'L', 'dtb', 'L'); b.w('em', 'N', 'dtb', 'N');
+      b.w('psu', '+V1', 'th', 'V+'); b.w('th', 'V-', 'psu', '-V1');
+      b.w('vfd', 'U/T1', 'motor', 'U'); b.w('vfd', 'V/T2', 'motor', 'V'); b.w('vfd', 'W/T3', 'motor', 'W'); b.w('vfd', 'PE', 'motor', 'PE');
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lrdy', 'X1'); b.w('plc', 'Y2', 'lalm', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lrdy', 'X2', '#1e3a8a'); b.w('lrdy', 'X2', 'lalm', 'X2', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      // communication: HMI on COM1 (RS-232); the RS-485 bus is a daisy chain PLC COM2 → meter → sensor → DTB → drive
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      b.w('plc', 'COM2', 'em', 'RS485');
+      b.w('em', 'RS485', 'th', 'RS485');
+      b.w('th', 'RS485', 'dtb', 'RS485');
+      b.w('dtb', 'RS485', 'vfd', 'RS485');
+      const prog = program([
+        rung('First scan: COM2 = 9600 bps 8E1 (H87), Modbus RTU (M1143) — every slave is set the same; conveyor 30.00 Hz, oven 150.0 °C, oven RUN', ['M1002 =>| MOV H87 D1120', '=>| SET M1120', '=>| SET M1143', '=>| MOV K3000 D10', '=>| MOV K1500 D40', '=> SET M13']),
+        rung('Line latch: START (X0) or HMI START (M10); STOP (X1, NC) or HMI STOP (M11) stop it', ['X0| X1 /M11 => OUT M0', 'M10|', 'M0']),
+        rung('Oven ready threshold D32 = SV − 5.0 °C (DTB values are in 0.1 °C)', ['M1000 => SUB D31 K50 D32']),
+        rung('Oven ready (M1): PV (D30) has reached the threshold', ['D30>=D32 => OUT M1']),
+        rung('The conveyor runs while the line is on and the oven is ready', ['M0 M1 => OUT M2']),
+        rung('Command word for the drive (2000H): H12 = RUN FWD, H1 = STOP', ['M2 => MOV H12 D0']),
+        rung('', ['/M2 => MOV H1 D0']),
+        rung('Station 1 · MS300: write the command word (function 06, 2000H)', ['M1000 => MODRW K1 K6 H2000 D0 K1']),
+        rung('Station 1 · MS300: write the frequency command (2001H, 0.01 Hz)', ['M1000 => MODRW K1 K6 H2001 D10 K1']),
+        rung('Station 1 · MS300: read output frequency + current (2103H, 2104H) → D20, D21', ['M1000 => MODRW K1 K3 H2103 D20 K2']),
+        rung('Station 2 · DTB4848: read PV + SV (1000H, 1001H) → D30, D31', ['M1000 => MODRW K2 K3 H1000 D30 K2']),
+        rung('Station 2 · DTB4848: write the HMI set value D40 to SV (1001H)', ['M1000 => MODRW K2 K6 H1001 D40 K1']),
+        rung('Station 2 · DTB4848: RUN / STOP bit 0814H (function 05) from the HMI switch M13', ['M13 => MOV K1 D41']),
+        rung('', ['/M13 => MOV K0 D41']),
+        rung('', ['M1000 => MODRW K2 K5 H814 D41 K1']),
+        rung('Station 3 · T/H sensor: read temperature + humidity (0000H, 0001H) → D50, D51', ['M1000 => MODRW K3 K3 H0 D50 K2']),
+        rung('Station 4 · energy meter: read voltage, current, power (0000H…0002H) → D60…D62', ['M1000 => MODRW K4 K3 H0 D60 K3']),
+        rung('Station 4 · energy meter: read the energy in Wh, 32-bit (0005H low, 0006H high) → D64, D65', ['M1000 => MODRW K4 K3 H5 D64 K2']),
+        rung('Cabinet too hot: above 40.0 °C', ['D50>K400 => OUT M3']),
+        rung('CONVEYOR lamp', ['M2 => OUT Y0']),
+        rung('OVEN READY lamp', ['M1 => OUT Y1']),
+        rung('ALARM lamp flashes on a COM2 time-out (M1129) or a hot cabinet (M3)', ['M1129| M1013 => OUT Y2', 'M3']),
+      ], {
+        X0: 'START button', X1: 'STOP button (NC)', Y0: 'CONVEYOR lamp', Y1: 'OVEN READY lamp', Y2: 'ALARM lamp',
+        M0: 'Line on', M1: 'Oven ready', M2: 'Conveyor running', M3: 'Cabinet too hot', M10: 'HMI START', M11: 'HMI STOP', M13: 'HMI oven RUN switch',
+        D0: 'VFD command word', D10: 'Conveyor speed (0.01 Hz)', D20: 'VFD output frequency (0.01 Hz)', D21: 'VFD output current (0.01 A)',
+        D30: 'Oven PV (0.1 °C)', D31: 'Oven SV (0.1 °C)', D32: 'Ready threshold', D40: 'HMI oven set value (0.1 °C)', D41: 'Oven RUN bit',
+        D50: 'Cabinet temperature (0.1 °C)', D51: 'Cabinet humidity (0.1 %RH)', D60: 'Mains voltage (0.1 V)', D61: 'Mains current (0.01 A)', D62: 'Power (W)', D64: 'Energy (Wh, 32-bit)',
+      });
+      const hdr = (title, other, screen) => [
+        E('rect', 12, 10, 776, 58, { fill: '#10224a', stroke: '#2b4470', radius: 14, title: '' }),
+        E('text', 28, 22, 360, 36, { text: title, size: 24, color: '#e2e8f0', align: 'left', bold: true }),
+        E('clock', 390, 22, 230, 36, { fmt: 'datetime', size: 15, color: '#93c5fd', align: 'right' }),
+        E('goto', 640, 18, 136, 42, { text: other, screen }),
+      ];
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Line', bg: '#0b1630', elements: [
+            ...hdr('OVEN + CONVEYOR', 'NETWORK ▶', 1),
+            E('rect', 12, 80, 384, 240, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'OVEN · DTB4848 · ID 2' }),
+            E('meter', 24, 112, 190, 150, { word: 'D30', dec: 1, unit: '°C', label: 'PV', min: 0, max: 250 }),
+            E('num', 224, 112, 160, 52, { word: 'D31', dec: 1, unit: '°C', label: 'SV (READ)' }),
+            E('input', 224, 170, 160, 52, { word: 'D40', dec: 1, unit: '°C', label: 'SET SV', min: 0, max: 250 }),
+            E('button', 224, 230, 160, 40, { text: 'OVEN RUN', bit: 'M13', mode: 'toggle', color: 'blue' }),
+            E('lamp', 224, 274, 160, 36, { bit: 'M1', text: 'READY', onColor: '#eab308', offColor: '#334155', shape: 'rect' }),
+            E('rect', 404, 80, 384, 240, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'CONVEYOR · MS300 · ID 1' }),
+            E('button', 418, 112, 170, 60, { text: 'START', bit: 'M10', mode: 'momentary', color: 'green' }),
+            E('button', 418, 180, 170, 60, { text: 'STOP', bit: 'M11', mode: 'momentary', color: 'red' }),
+            E('input', 418, 248, 170, 60, { word: 'D10', dec: 2, unit: 'Hz', label: 'SPEED', min: 0, max: 50 }),
+            E('num', 600, 112, 176, 56, { word: 'D20', dec: 2, unit: 'Hz', label: 'OUTPUT' }),
+            E('num', 600, 176, 176, 56, { word: 'D21', dec: 2, unit: 'A', label: 'CURRENT' }),
+            E('motor', 640, 236, 80, 80, { bit: 'M2', text: '' }),
+            E('trend', 12, 330, 776, 140, { word: 'D30', word2: 'D31', dec: 1, min: 0, max: 250, span: 60, label: 'OVEN PV / SV (°C)' }),
+          ],
+        }, {
+          id: 's2', name: 'Network', bg: '#0b1630', elements: [
+            ...hdr('RS-485 · MODBUS RTU', '◀ LINE', 0),
+            E('text', 16, 72, 770, 26, { text: 'Master: PLC COM2 · 9600 bps 8E1 · daisy chain PLC → ID 4 → ID 3 → ID 2 → ID 1', size: 15, color: '#93c5fd', align: 'left', bold: false }),
+            E('rect', 12, 104, 384, 150, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'ID 1 · MS300 DRIVE' }),
+            E('num', 24, 136, 176, 56, { word: 'D20', dec: 2, unit: 'Hz', label: '2103H' }),
+            E('num', 208, 136, 176, 56, { word: 'D21', dec: 2, unit: 'A', label: '2104H' }),
+            E('rect', 404, 104, 384, 150, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'ID 2 · DTB4848 OVEN' }),
+            E('num', 416, 136, 176, 56, { word: 'D30', dec: 1, unit: '°C', label: 'PV 1000H' }),
+            E('num', 600, 136, 176, 56, { word: 'D31', dec: 1, unit: '°C', label: 'SV 1001H' }),
+            E('rect', 12, 262, 384, 150, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'ID 3 · T/H SENSOR' }),
+            E('num', 24, 294, 176, 56, { word: 'D50', dec: 1, unit: '°C', label: 'TEMP 0000H' }),
+            E('num', 208, 294, 176, 56, { word: 'D51', dec: 1, unit: '%', label: 'RH 0001H' }),
+            E('rect', 404, 262, 384, 150, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'ID 4 · ENERGY METER' }),
+            E('num', 416, 294, 116, 56, { word: 'D60', dec: 1, unit: 'V', label: '0000H' }),
+            E('num', 538, 294, 116, 56, { word: 'D62', dec: 0, unit: 'W', label: '0002H' }),
+            E('num', 660, 294, 116, 56, { word: 'D64', dec: 3, unit: 'kWh', label: '0005H' }),
+            E('num', 416, 354, 116, 52, { word: 'D61', dec: 2, unit: 'A', label: '0001H' }),
+            E('alarm', 12, 422, 776, 48, { bit: 'M1129', text: 'COM2 TIME-OUT — a slave does not answer (check Monitor → Network)' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
     id: 'analog-speed', name: 'Analog speed: pot → EX2 → VFD', level: 'advanced', tags: ['Analog', 'EX2', 'AVI'],
     description: 'A DVP20EX2 reads a speed pot on AI channel 0 (D1110) and drives the MS300 AVI input from AO channel 0 (D1116). START/STOP run the drive through MI1.',
     build() {

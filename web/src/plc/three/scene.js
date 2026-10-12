@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { setupLights, buildEnvironment, buildDucts } from './environment.js';
 import { buildModel, disposeModel } from './models.js';
 import { buildCable, buildPlainCable, disposeCable, setCableFlow, setCableHighlight } from './cables.js';
+import { NetOverlay } from './network.js';
 import { layoutDevices, toWorld, dirToWorld } from '../devices/layout.js';
 import { routeLab } from '../devices/routing.js';
 import { DEVICE_DEFS, devicePorts, deviceProps, hasLabel } from '../devices/defs.js';
@@ -109,6 +110,9 @@ export class LabScene {
     this.cableGroup = new THREE.Group();
     this.markerGroup = new THREE.Group();
     this.scene.add(this.world, this.cableGroup, this.markerGroup);
+    // data packets on the comm cables and the Network view (three/network.js)
+    this.net = new NetOverlay(this);
+    this.scene.add(this.net.group);
     this.ducts = null;
     this.mains = null;
     this.env = null;
@@ -182,6 +186,7 @@ export class LabScene {
     for (const m of this.models.values()) disposeModel(m.model);
     for (const c of this.cables.values()) disposeCable(c);
     this.setDucts(null);
+    this.net.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss && this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
@@ -255,6 +260,8 @@ export class LabScene {
     this.setDucts(routed);
     if (this.selConn) { const c = this.cables.get(this.selConn); if (c) setCableHighlight(c, true); }
     for (const id of this.multiConns || []) { const c = this.cables.get(id); if (c) setCableHighlight(c, true); }
+    this.net.rebuild();
+    this.net.reapply();
     this.renderer.shadowMap.needsUpdate = true;
     this.dirty = true;
   }
@@ -301,6 +308,7 @@ export class LabScene {
       const f = c.userData.flow;
       if (f) { f.offset.x -= dt * (c.userData.flowMode === 'data' ? 1.6 : 0.45); dirty = true; }
     }
+    if (this.net.tick(dt, this.system, this.running)) dirty = true;
     if (this.markers && this.markers.length) {
       const k = 1 + Math.sin(this.t * 6) * 0.18;
       for (const m of this.markers) if (m.userData.pulse) m.scale.setScalar(m.userData.base * k);
@@ -372,14 +380,25 @@ export class LabScene {
     return null;
   }
 
-  setSystem(sys) { this.system = sys; this.dirty = true; }
-  setRunning(on) { this.running = on; this.dirty = true; }
+  setSystem(sys) { this.system = sys; this.net.clearPackets(); this.dirty = true; }
+  setRunning(on) { this.running = on; if (!on) this.net.clearPackets(); this.dirty = true; }
+
+  /** Network view on / off (x-ray, tags, terminators); the camera frames the communicating devices. */
+  setNetView(on, fly = true) {
+    this.net.setOn(on);
+    // a darker scene: the glowing cables, packets, displays and LEDs stand out
+    this.renderer.toneMappingExposure = on ? 0.5 : 1.08;
+    this.renderer.shadowMap.needsUpdate = true;
+    if (on && fly) this.focus('network');
+    this.dirty = true;
+  }
 
   /** Update cable flow animations from the simulator (called a few times a second). */
   updateFlows(liveConn, busyLinks) {
     for (const [id, cab] of this.cables) {
       const conn = this.project.conns.find((c) => c.id === id);
       if (!conn || cab.userData.hl) continue;
+      if (conn.comm && this.net.on) continue; // the Network view lets them glow in their bus colour
       const mode = !this.running ? null : conn.comm ? (busyLinks(conn) ? 'data' : null) : liveConn(conn) ? 'flow' : null;
       if (setCableFlow(cab, mode)) this.dirty = true;
     }
@@ -404,6 +423,11 @@ export class LabScene {
       for (const e of this.models.values()) if (e.place && e.place.zone === 'console') box.expandByObject(e.model.group);
       dir = new THREE.Vector3(0, 0.95, 0.75);
       margin = 1.18;
+    } else if (target === 'network') {
+      box.copy(this.net.bounds());
+      if (box.isEmpty()) return this.focus('overview', animate, dur);
+      dir = portrait ? new THREE.Vector3(0, 0.55, 1) : new THREE.Vector3(0, 0.3, 1);
+      margin = portrait ? 1.04 : 1.1;
     } else if (target === 'panel') {
       box.expandByPoint(new THREE.Vector3(-470, 60, 0)).expandByPoint(new THREE.Vector3(470, 690, 140));
       dir = new THREE.Vector3(0, 0.12, 1);
@@ -610,6 +634,7 @@ export class LabScene {
     if (this.selConn) { const c = this.cables.get(this.selConn); if (c) setCableHighlight(c, false); }
     this.selConn = id;
     if (id) { const c = this.cables.get(id); if (c) setCableHighlight(c, true); }
+    if (this.net.on) this.net.applyGlow(true);
     this.dirty = true;
   }
 
@@ -629,6 +654,7 @@ export class LabScene {
       this.multiBoxes.push(b);
     }
     for (const id of connIds) { const c = this.cables.get(id); if (c) setCableHighlight(c, true); }
+    if (this.net.on) this.net.applyGlow(true);
     this.dirty = true;
   }
 
@@ -748,6 +774,7 @@ export class NullScene {
   zoomTo() {}
   zoomAt() {}
   setMarkers() {}
+  setNetView() {}
   resetPointers() {}
   modelOf() { return null; }
   portsNear() { return []; }

@@ -47,10 +47,12 @@ export function layoutDevices(devices) {
     out.set(d.id, { pos: [x + w / 2, S.rail1Y - h / 2, S.deviceZ], rot: [0, 0, 0], zone: 'rail1' });
     x += w + 16;
   }
-  // rail 2: drives from the right
+  // rail 2: drives from the right; a device never sits on the middle vertical duct (it goes on its left)
   x = S.duct.x1 - 38;
+  const mid = S.vducts.filter((v) => v.from <= 1 && v.to >= 2 && Math.abs(v.x) < S.duct.x1 - 40);
   for (const d of rail2) {
     const [w, h] = DEVICE_DEFS[d.type].size;
+    for (const v of mid) if (x - w < v.x + v.w / 2 + 10 && x > v.x - v.w / 2 - 10) x = v.x - v.w / 2 - 10;
     out.set(d.id, { pos: [x - w / 2, S.rail2Y - h / 2 + 10, S.deviceZ], rot: [0, 0, 0], zone: 'rail2' });
     x -= w + 40;
   }

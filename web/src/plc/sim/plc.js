@@ -770,7 +770,8 @@ export class PlcCpu {
   commRequest(e) {
     const a = e.a, W = (i) => this.getWord(a[i]);
     switch (e.t) {
-      case 'MODRW': return { station: W(0), fc: W(1), addr: W(2) & 0xFFFF, dreg: a[3].idx, n: Math.max(1, Math.min(16, W(4))) };
+      // FC 1 / 2 / 15 move bits (16 per data register, up to 64), the others words (up to 16)
+      case 'MODRW': { const fc = W(1); return { station: W(0), fc, addr: W(2) & 0xFFFF, dreg: a[3].idx, n: Math.max(1, Math.min([1, 2, 15].includes(fc) ? 64 : 16, W(4))) }; }
       case 'MODRD': return { station: W(0), fc: 3, addr: W(1) & 0xFFFF, dreg: 1050, n: Math.max(1, Math.min(7, W(2))) };
       case 'MODWR': return { station: W(0), fc: 6, addr: W(1) & 0xFFFF, n: 1, values: [W(2)] };
       // Delta drives: 2000H command word (H12 run FWD, H22 run REV, H01 stop), 2001H frequency
@@ -1287,7 +1288,15 @@ export class PlcCpu {
   modbusDone(req, res) {
     if (!this.powered) return;
     if (res.ok) {
-      if (req.fc === 3 && res.data) for (let i = 0; i < res.data.length; i++) this.D[req.dreg + i] = i16(res.data[i]);
+      if ((req.fc === 3 || req.fc === 4) && res.data) for (let i = 0; i < res.data.length; i++) this.D[req.dreg + i] = i16(res.data[i]);
+      // bits read with FC 1 / 2 are packed 16 to a register, the first bit in b0
+      if ((req.fc === 1 || req.fc === 2) && res.data) {
+        for (let w = 0; w < Math.ceil(res.data.length / 16); w++) {
+          let v = 0;
+          for (let b = 0; b < 16; b++) if (res.data[w * 16 + b]) v |= 1 << b;
+          this.D[req.dreg + w] = i16(v);
+        }
+      }
       this.M[1129] = 0; this.M[1140] = 0; this.D[1130] = 0;
     } else if (res.timeout) {
       this.M[1129] = 1;
