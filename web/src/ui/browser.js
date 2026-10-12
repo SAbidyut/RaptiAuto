@@ -1,10 +1,11 @@
 // A small web browser for the simulated network: address bar, back / forward / reload, bookmarks and a
 // sandboxed page view. Pages come from VirtualNet (a Raspberry Pi's Flask app, an ESP32's WebServer,
-// the simulated internet); their links, forms, fetch() and XMLHttpRequest are routed through the same
-// network, so a dashboard page with JavaScript works like on a real device. Used by the Raspberry Pi's
-// Chromium window and by the IoT tab of the Arduino editor.
+// the simulated internet — or, with the phone online, the real internet); their links, forms, fetch()
+// and XMLHttpRequest are routed through the same network, so a dashboard page with JavaScript works
+// like on a real device. Used by the Raspberry Pi's Chromium window and by the IoT tab of the editor.
 import { h } from './widgets.js';
 import { icon } from './icons.js';
+import { Native } from '../native.js';
 
 /** Runs inside the page (iframe): network calls, links and forms go to the parent browser. */
 const SHIM = (base) => `<script>(function(){
@@ -43,6 +44,8 @@ const ERRORS = {
   ERR_INVALID_URL: ['This page isn’t available', ['The web address is not valid'], 'sad'],
 };
 
+function decodeEntities(s) { return String(s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").trim(); }
+
 function errorHtml(url, res) {
   const code = res.error || 'ERR_FAILED';
   const [title, tips, art] = ERRORS[code] || ['This site can’t be reached', [res.statusText || ''], 'sad'];
@@ -76,7 +79,7 @@ export class VirtualBrowser {
   constructor(opts) {
     this.net = opts.net;
     this.origin = opts.origin || null;
-    this.home = opts.home || 'http://rapti.net/';
+    this.home = opts.home || 'http://start.rapti.net/';
     this.onTitle = opts.onTitle || (() => {});
     this.onUrl = opts.onUrl || (() => {});
     this.hist = [];
@@ -96,7 +99,10 @@ export class VirtualBrowser {
     this.homeBtn = btn('home', 'Home', () => this.go(this.home));
     this.urlInput = h('input', { class: 'vb-url', type: 'text', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', onkeydown: (e) => { if (e.key === 'Enter') { this.go(this.fixUrl(this.urlInput.value)); e.target.blur(); } }, onfocus: (e) => e.target.select() });
     this.lock = h('span', { class: 'vb-lock', html: icon('globe', 14) });
-    this.bar = h('div', { class: 'vb-bar' }, this.backBtn, this.fwdBtn, this.reloadBtn, this.homeBtn, h('div', { class: 'vb-omni' }, this.lock, this.urlInput));
+    // a real page that needs more than this little browser can do: open it in the phone's browser
+    this.extBtn = btn('external', 'Open in the phone\'s browser', () => { if (this.current) Native.openUrl(this.current.url); });
+    this.extBtn.classList.add('hidden');
+    this.bar = h('div', { class: 'vb-bar' }, this.backBtn, this.fwdBtn, this.reloadBtn, this.homeBtn, h('div', { class: 'vb-omni' }, this.lock, this.urlInput), this.extBtn);
     this.marks = h('div', { class: 'vb-marks' }, ...bookmarks.map(([label, url]) => h('button', { class: 'vb-mark', onclick: () => this.go(url) }, label)));
     this.progress = h('div', { class: 'vb-progress' });
     this.frame = h('iframe', { class: 'vb-frame', sandbox: 'allow-scripts allow-forms', title: 'page' });
@@ -112,7 +118,10 @@ export class VirtualBrowser {
     t = String(t || '').trim();
     if (!t) return this.home;
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return t;
-    if (/\s/.test(t) || (!/[.:]/.test(t) && t !== 'localhost')) return 'http://google.com/search?q=' + encodeURIComponent(t);
+    if (/\s/.test(t) || (!/[.:]/.test(t) && t !== 'localhost')) {
+      // online: a real search (DuckDuckGo's plain-HTML page works without cookies and JavaScript)
+      return this.net.isLive && this.net.isLive() ? 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(t) : 'http://google.com/search?q=' + encodeURIComponent(t);
+    }
     return 'http://' + t;
   }
 
@@ -149,16 +158,23 @@ export class VirtualBrowser {
     this.reloadBtn.innerHTML = icon('restart', 17);
     let html;
     let title = '';
+    const live = !!res.live;
+    // a real page that was redirected: show (and resolve links against) where it ended up
+    if (live && res.url && res.url !== entry.url) { entry.url = res.url; this.onUrl(entry.url); }
     if (res.failed) { html = errorHtml(entry.url, res); title = 'Problem loading page'; }
     else {
       const type = (res.headers['content-type'] || '').toLowerCase();
-      if (/html/.test(type)) html = await this.inline(res.body, entry.url);
+      if (live && /^image\//.test(type)) html = `<!doctype html><body style="margin:0;background:#0e0e0e;display:grid;place-items:center;min-height:100vh"><img src="${entry.url.replace(/"/g, '&quot;')}" style="max-width:100%">`;
+      else if (/html/.test(type)) html = live ? res.body : await this.inline(res.body, entry.url);
       else if (res.status >= 400 && !res.body) html = statusHtml(res);
       else html = textHtml(res.body, type, res.status);
       if (res.status >= 300 && res.status < 400 && res.headers.location) { this.go(new URL(res.headers.location, entry.url).href, { replace: true }); return; }
-      title = (/<title>([^<]*)<\/title>/i.exec(res.body) || [])[1] || entry.url.replace(/^https?:\/\//, '');
+      title = decodeEntities((/<title[^>]*>([^<]*)<\/title>/i.exec(res.body) || [])[1] || '') || entry.url.replace(/^https?:\/\//, '');
     }
-    this.render(html, entry.url);
+    this.extBtn.classList.toggle('hidden', !live);
+    this.lock.classList.toggle('live', live);
+    this.lock.title = live ? 'Real internet' : 'Simulated network';
+    this.render(html, entry.url, live);
     this.setTitle(title);
     this.urlInput.value = entry.url;
     this.updateButtons();
@@ -166,8 +182,9 @@ export class VirtualBrowser {
 
   setTitle(t) { this.title = t; this.onTitle(t); }
 
-  render(html, url) {
-    const shim = SHIM(url);
+  render(html, url, live = false) {
+    // a real page: its images, styles and scripts load from its own site
+    const shim = (live ? `<base href="${url.replace(/"/g, '&quot;')}">` : '') + SHIM(url);
     let doc;
     if (/<head[^>]*>/i.test(html)) doc = html.replace(/<head[^>]*>/i, (m) => m + shim);
     else if (/<html[^>]*>/i.test(html)) doc = html.replace(/<html[^>]*>/i, (m) => m + '<head>' + shim + '</head>');

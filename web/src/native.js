@@ -1,4 +1,5 @@
 // Bridge to the Android host (window.RaptiNative) with browser fallbacks.
+import { onNativeHttp } from './net/live.js';
 const N = () => (typeof window !== 'undefined' ? window.RaptiNative : undefined);
 
 let fileReqId = 0;
@@ -90,7 +91,7 @@ export const Native = {
   version() {
     const n = N();
     if (n) try { return n.getAppVersion(); } catch (e) { /* ignore */ }
-    return '2.12.0';
+    return '2.13.0';
   },
 
   exit() { const n = N(); if (n) try { n.exitApp(); } catch (e) { /* ignore */ } },
@@ -119,6 +120,7 @@ export function installNativeCallbacks(app) {
       document.documentElement.classList.toggle('kb-open', h > 0);
       app.onKeyboard && app.onKeyboard(h);
     },
+    onNativeHttp: (id, res) => onNativeHttp(id, res),
     onNativePause: () => app.onPause && app.onPause(),
     onNativeResume: () => app.onResume && app.onResume(),
   };

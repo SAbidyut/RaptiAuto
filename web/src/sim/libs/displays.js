@@ -2,7 +2,7 @@
 import { addLibrary, defineClass, PRINT_METHODS } from './registry.js';
 import { PrintMixin } from '../lang/core.js';
 import { glyph } from '../../components/font5x7.js';
-import { cstr, Ptr } from '../lang/values.js';
+import { cstr, Ptr, sprintf } from '../lang/values.js';
 
 const hex2 = (a) => '0x' + Number(a).toString(16).toUpperCase().padStart(2, '0');
 
@@ -56,7 +56,9 @@ class LcdBase {
   setBacklight(v) { if (this.dev) { this.dev.backlight = !!v; this.dev.touch(); } }
   printstr(s) { return this._write(cstr(s)); }
 }
-Object.assign(LcdBase.prototype, { print: PrintMixin.print, println: PrintMixin.println });
+// printf(): the Print class of the ESP32 / ESP8266 / RP2040 cores has it (not the AVR one)
+function printfOf(fmt, ...args) { return this._write(sprintf(fmt, args, false)); }
+Object.assign(LcdBase.prototype, { print: PrintMixin.print, println: PrintMixin.println, printf: printfOf });
 
 class LiquidCrystal extends LcdBase {
   constructor(rt, hw, args) {
@@ -266,7 +268,7 @@ class GFX {
     rx1.set(x); ry1.set(y); rw.set(w); rh.set(hh);
   }
 }
-Object.assign(GFX.prototype, { print: PrintMixin.print, println: PrintMixin.println });
+Object.assign(GFX.prototype, { print: PrintMixin.print, println: PrintMixin.println, printf: printfOf });
 function interp(y, ya, xa, yb, xb) { return yb === ya ? xa : xa + ((xb - xa) * (y - ya)) / (yb - ya); }
 
 class SSD1306Lib extends GFX {
@@ -455,11 +457,12 @@ class LEDMatrix {
 }
 Object.assign(LEDMatrix.prototype, { print: PrintMixin.print, println: PrintMixin.println });
 
-addLibrary((natives, rt, hw) => {
-  defineClass(natives, 'LiquidCrystal', { create: (r, args) => new LiquidCrystal(r, hw, args), methods: LCD_METHODS });
-  defineClass(natives, 'LiquidCrystal_I2C', { create: (r, args) => new LiquidCrystalI2C(r, hw, args), methods: LCD_METHODS });
+addLibrary((natives, rt, hw, board) => {
+  const pf = board && board.arch === 'avr' ? {} : { printf: { ret: 'uint', printf: 1, args: ['str'] } };
+  defineClass(natives, 'LiquidCrystal', { create: (r, args) => new LiquidCrystal(r, hw, args), methods: { ...LCD_METHODS, ...pf } });
+  defineClass(natives, 'LiquidCrystal_I2C', { create: (r, args) => new LiquidCrystalI2C(r, hw, args), methods: { ...LCD_METHODS, ...pf } });
   natives.classes.hd44780_I2Cexp = natives.classes.LiquidCrystal_I2C;
-  defineClass(natives, 'Adafruit_SSD1306', { create: (r, args) => new SSD1306Lib(r, hw, args), methods: GFX_METHODS });
+  defineClass(natives, 'Adafruit_SSD1306', { create: (r, args) => new SSD1306Lib(r, hw, args), methods: { ...GFX_METHODS, ...pf } });
   defineClass(natives, 'TM1637Display', {
     create: (r, args) => new TM1637Display(r, hw, args),
     methods: {

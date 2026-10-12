@@ -55,7 +55,7 @@ export const LAB_TASKS = {
     { text: 'Tap the PLC chip at the top and open PLC 2 · Slave in the Ladder tab', check: (c) => c.P.activePlc === 'plc2' && c.lab.tab === 'ladder' },
   ],
   'modbus-network': [
-    { text: 'Simulate and open the Network view (the Network chip in the Lab tab): watch the frames travel to stations 1–4', check: (c) => !!(c.cpu && c.cpu.running && c.lab.views.panel.netView) },
+    { text: 'Simulate and open the Network view (the Network chip in the Lab tab): find stations 1–4 on the RS-485 line', check: (c) => !!(c.cpu && c.cpu.running && c.lab.views.panel.netView) },
     { text: 'Press START: the conveyor waits for the oven (OVEN READY), then runs at 30 Hz', check: (c) => !!(c.cpu && c.cpu.M[1] && near(hz(c), 30, 0.3)) },
     { text: 'Set the oven to 180 °C on the HMI — the PLC writes SV (1001H) to the DTB4848', check: (c) => !!(c.dev('dtb') && c.dev('dtb').state.sv === 180) },
     { text: 'Tap the T/H sensor and make the cabinet 42 °C — the ALARM lamp flashes', check: (c) => { const ok = !!(c.cpu && c.cpu.D[50] > 400 && c.cpu.M[3]); if (ok) c.memo.hot = true; return ok; } },

@@ -49,6 +49,12 @@ const scenarios = {
     if (+scroll) { await page.evaluate((y) => document.querySelector('.page').scrollTo(0, y), +scroll); await sleep(300); }
     await page.screenshot({ path: join(outDir, `page-${id}${+scroll ? '-' + scroll : ''}.png`) });
   },
+  async exsearch(page, q = 'weather', scroll = 0) {
+    await page.evaluate(() => window.__rapti.home.go('examples')); await sleep(500);
+    if (q !== '-') { await page.fill('.page-tools .search-box input', q.replace(/_/g, ' ')); await sleep(900); }
+    if (+scroll) { await page.evaluate((y) => document.querySelector('.page').scrollTo(0, y), +scroll); await sleep(400); }
+    await page.screenshot({ path: join(outDir, `exsearch-${q}${+scroll ? '-' + scroll : ''}.png`) });
+  },
   async drawer(page) { await page.click('.app-bar .icon-btn[aria-label="Menu"]'); await sleep(500); await page.screenshot({ path: join(outDir, 'drawer.png') }); },
   async part(page, n = 3) {
     await scenarios.page(page, 'components');

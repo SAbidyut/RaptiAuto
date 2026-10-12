@@ -5,12 +5,15 @@ import { Shell } from './shell.js';
 import { Editor } from './editor.js';
 import { popBack, toast } from './widgets.js';
 import { SHARED_DEFS } from '../components/draw.js';
+import { LiveWeb, setLiveWeb } from '../net/live.js';
 
 export class App {
   constructor(root) {
     this.root = root;
     this.settings = loadSettings();
     Native.haptics = this.settings.haptics !== false;
+    // the simulated internet uses the phone's real one when online (Settings → Real internet)
+    setLiveWeb(new LiveWeb({ enabled: () => this.settings.realInternet !== false, setEnabled: (on) => { this.settings.realInternet = !!on; this.saveSettings(); } }));
     this.home = null; // the menu shell (Home, Projects, Examples, … pages)
     this.editor = null;
     this.lab = null;

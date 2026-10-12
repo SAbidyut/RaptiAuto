@@ -9,6 +9,7 @@ import * as multi from './multi.js';
 import * as iot from './iot.js';
 import * as iotCloud from './iot-cloud.js';
 import * as iotMore from './iot-more.js';
+import * as iotData from './iot-data.js';
 
 export const EXAMPLE_CATEGORIES = [
   { id: 'basics', name: 'Basics' },
@@ -34,6 +35,8 @@ const builders = [
   iot.iotEsp8266Relay, iot.iotR4Web,
   iotCloud.iotMqttLight, iotCloud.iotMqttDht, iotCloud.iotThingspeak, iotCloud.iotBlynk, iotCloud.iotTelegramPir, iotCloud.iotNtpClock, iotCloud.iotCryptoLcd, iotCloud.iotIftttDoor,
   iotMore.iotGasMqtt, iotMore.iotSoilPlant, iotMore.iotParkingWeb, iotMore.iotNeopixelWeb, iotMore.iotTwoBoardsMqtt, iotMore.iotWifiMulti, iotMore.iotIpLocation, iotMore.iotPrefsCounter,
+  iotData.iotAirQuality, iotData.iotPrayerTimes, iotData.iotCurrencyOled, iotData.iotIssTracker, iotData.iotSunsetLight, iotData.iotForecastDial,
+  iotData.iotWeatherNeopixel, iotData.iotQuoteLcd, iotData.iotTm1637Temp, iotData.iotEarthquakeAlert,
 ];
 
 export const EXAMPLES = [];

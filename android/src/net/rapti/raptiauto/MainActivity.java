@@ -33,7 +33,11 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -89,6 +93,8 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
         s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        // real web pages shown in the virtual Chromium may load http:// images and styles
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
 
         web.addJavascriptInterface(new Bridge(), "RaptiNative");
         web.setWebViewClient(new AppClient());
@@ -359,6 +365,93 @@ public class MainActivity extends Activity {
                     openExternal(url);
                 }
             });
+        }
+
+        /**
+         * A real HTTP request for the simulated internet (live data, real web pages), made here so
+         * that CORS and mixed-content rules of the WebView do not apply. The answer comes back as
+         * RaptiApp.onNativeHttp(id, {status, url, headers, body} | {error}).
+         */
+        @JavascriptInterface
+        public void httpRequest(final String id, final String method, final String url, final String headersJson, final String body) {
+            new Thread(new Runnable() {
+                public void run() {
+                    JSONObject out = new JSONObject();
+                    HttpURLConnection c = null;
+                    try {
+                        String target = url;
+                        String m = method == null || method.length() == 0 ? "GET" : method.toUpperCase();
+                        int code = 0;
+                        for (int hop = 0; hop < 6; hop++) {
+                            c = (HttpURLConnection) new URL(target).openConnection();
+                            c.setInstanceFollowRedirects(false);
+                            c.setConnectTimeout(8000);
+                            c.setReadTimeout(12000);
+                            c.setRequestMethod(m);
+                            c.setRequestProperty("Accept-Encoding", "identity");
+                            if (headersJson != null && headersJson.length() > 0) {
+                                JSONObject hs = new JSONObject(headersJson);
+                                Iterator<String> it = hs.keys();
+                                while (it.hasNext()) {
+                                    String k = it.next();
+                                    String lk = k.toLowerCase();
+                                    if (lk.equals("host") || lk.equals("content-length") || lk.equals("connection") || lk.equals("accept-encoding")) continue;
+                                    c.setRequestProperty(k, hs.optString(k));
+                                }
+                            }
+                            if (body != null && body.length() > 0 && !m.equals("GET") && !m.equals("HEAD")) {
+                                c.setDoOutput(true);
+                                OutputStream os = c.getOutputStream();
+                                os.write(body.getBytes("UTF-8"));
+                                os.close();
+                            }
+                            code = c.getResponseCode();
+                            String loc = c.getHeaderField("Location");
+                            if (code >= 300 && code < 400 && loc != null) {
+                                target = new URL(new URL(target), loc).toString();
+                                if (code == 303 || ((code == 301 || code == 302) && m.equals("POST"))) m = "GET";
+                                c.disconnect();
+                                continue;
+                            }
+                            break;
+                        }
+                        InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        if (in != null) {
+                            byte[] buf = new byte[16384];
+                            int n, total = 0;
+                            while ((n = in.read(buf)) > 0) {
+                                bos.write(buf, 0, n);
+                                total += n;
+                                if (total > 4 * 1024 * 1024) break;
+                            }
+                            in.close();
+                        }
+                        String type = c.getContentType();
+                        String cs = "UTF-8";
+                        if (type != null) {
+                            int i = type.toLowerCase().indexOf("charset=");
+                            if (i >= 0) cs = type.substring(i + 8).replace("\"", "").split(";")[0].trim();
+                        }
+                        String text;
+                        try { text = bos.toString(cs); } catch (Exception e) { text = bos.toString("UTF-8"); }
+                        JSONObject hs = new JSONObject();
+                        for (Map.Entry<String, List<String>> e : c.getHeaderFields().entrySet()) {
+                            if (e.getKey() == null || e.getValue() == null || e.getValue().isEmpty()) continue;
+                            hs.put(e.getKey().toLowerCase(), e.getValue().get(0));
+                        }
+                        out.put("status", code);
+                        out.put("url", c.getURL().toString());
+                        out.put("headers", hs);
+                        out.put("body", text);
+                    } catch (Exception e) {
+                        try { out.put("error", e.getClass().getSimpleName() + ": " + e.getMessage()); } catch (Exception ignored) { }
+                    } finally {
+                        if (c != null) c.disconnect();
+                    }
+                    js("RaptiApp.onNativeHttp(" + JSONObject.quote(id) + "," + out.toString() + ")");
+                }
+            }).start();
         }
 
         @JavascriptInterface

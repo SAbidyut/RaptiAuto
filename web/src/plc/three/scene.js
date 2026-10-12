@@ -110,7 +110,7 @@ export class LabScene {
     this.cableGroup = new THREE.Group();
     this.markerGroup = new THREE.Group();
     this.scene.add(this.world, this.cableGroup, this.markerGroup);
-    // data packets on the comm cables and the Network view (three/network.js)
+    // the Network view (three/network.js)
     this.net = new NetOverlay(this);
     this.scene.add(this.net.group);
     this.ducts = null;
@@ -380,8 +380,8 @@ export class LabScene {
     return null;
   }
 
-  setSystem(sys) { this.system = sys; this.net.clearPackets(); this.dirty = true; }
-  setRunning(on) { this.running = on; if (!on) this.net.clearPackets(); this.dirty = true; }
+  setSystem(sys) { this.system = sys; this.dirty = true; }
+  setRunning(on) { this.running = on; this.dirty = true; }
 
   /** Network view on / off (x-ray, tags, terminators); the camera frames the communicating devices. */
   setNetView(on, fly = true) {

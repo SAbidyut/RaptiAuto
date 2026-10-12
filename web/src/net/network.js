@@ -1,9 +1,17 @@
 // The virtual network the simulators share: a Wi-Fi router (192.168.1.x), a little "internet" of
 // simulated web services (weather, ThingSpeak, Blynk, Telegram, httpbin …), an MQTT broker and the
-// web servers that devices run (an ESP32 WebServer, a Raspberry Pi Flask app …). Nothing leaves the
-// phone: it is all in here, so a sketch or a Python program can use "the internet" offline.
+// web servers that devices run (an ESP32 WebServer, a Raspberry Pi Flask app …). Offline it is all in
+// here, so a sketch or a Python program can use "the internet" anywhere. With the phone online and
+// Settings → Real internet on (live.js), weather, time, IP, prices and any other site come from the
+// real internet; services that need your own account stay simulated (see simOnly).
 import { MqttBroker } from './mqtt.js';
 import { installServices } from './cloud.js';
+import { liveWeb } from './live.js';
+
+// account services stay simulated (their data shows in the IoT dashboard; nothing is posted for real)
+const SIM_ONLY = /(^|\.)(thingspeak\.com|blynk\.cloud|blynk-cloud\.com|telegram\.org|ifttt\.com|adafruit\.com|hooks\.slack\.com|discord(app)?\.com|webhook\.site|ntfy\.sh|pool\.ntp\.org)$/i;
+// services the simulator imitates with an API key: without a real key they answer with the real weather
+const KEYED = new Set(['api.openweathermap.org']);
 
 export const NETWORKS = [
   { ssid: 'RaptiNet', pass: 'rapti1234', ch: 6, rssi: -42 },
@@ -31,6 +39,7 @@ export const reasonOf = (code) => REASON[code] || '';
 export class VirtualNet {
   constructor(opts = {}) {
     this.opts = { strict: false, router: true, internet: true, ...opts };
+    this._live = 'live' in opts ? opts.live : undefined; // undefined: the app's live web (live.js)
     this.clock = opts.clock || (() => Date.now());
     this.devices = new Map();   // id → device
     this.servers = new Map();   // 'ip:port' → { dev, port, pending: [], name }
@@ -116,6 +125,16 @@ export class VirtualNet {
   setRouter(on) { this.opts.router = !!on; this.changed(); }
   setInternet(on) { this.opts.internet = !!on; this.changed(); }
 
+  /** The real internet behind this network (null in tests / when switched off). */
+  get live() { return this._live !== undefined ? this._live : liveWeb(); }
+  isLive() { const l = this.live; return !!(l && l.on && this.opts.internet && this.opts.router); }
+  /** A host that is always answered by the simulator (account services, the RAPTI pages of the simulator). */
+  simOnly(host) {
+    const h = String(host || '').toLowerCase();
+    if (SIM_ONLY.test(h) || /^time\./.test(h) || /^ntp\./.test(h)) return true;
+    return /\.rapti\.net$/.test(h) && !/^(www\.)?rapti\.net$/.test(h);
+  }
+
   /** Is device d on the Wi-Fi (router on and joined)? null = the user's phone / PC: always. */
   online(d) { return !d || (d.connected && this.opts.router); }
 
@@ -140,7 +159,7 @@ export class VirtualNet {
     if (d) return d.ip || '';
     if (h.endsWith('.local')) return '';
     if (!this.opts.internet || !this.opts.router) return '';
-    if (this.hasHost(h)) { const x = hash(h); return `${[34, 52, 104, 142, 151, 172][x % 6]}.${(x >> 8) & 255}.${(x >> 16) & 255}.${1 + ((x >> 24) % 250)}`; }
+    if (this.hasHost(h) || (this.isLive() && /\.[a-z]{2,}$/.test(h))) { const x = hash(h); return `${[34, 52, 104, 142, 151, 172][x % 6]}.${(x >> 8) & 255}.${(x >> 16) & 255}.${1 + ((x >> 24) % 250)}`; }
     return '';
   }
 
@@ -170,7 +189,7 @@ export class VirtualNet {
 
   /** Log a finished exchange. */
   record(req, res, ms) {
-    this.log.push({ t: this.clock(), from: req.fromName || 'browser', method: req.method, url: req.url, status: res.status, ms: Math.round(ms) });
+    this.log.push({ t: this.clock(), from: req.fromName || 'browser', method: req.method, url: req.url, status: res.status, ms: Math.round(ms), live: !!res.live });
     if (this.log.length > 120) this.log.splice(0, this.log.length - 120);
     this.changed();
   }
@@ -196,6 +215,7 @@ export class VirtualNet {
     if (!this.opts.router || (origin && !this.online(origin))) return { error: this.fail('ERR_INTERNET_DISCONNECTED', 'There is no Wi-Fi connection') };
     if (!this.opts.internet) return { error: this.fail('ERR_INTERNET_DISCONNECTED', 'The router has no internet') };
     if (host.endsWith('.local')) return { error: this.fail('ERR_NAME_NOT_RESOLVED', `${host} could not be resolved`) };
+    if (this.isLive() && !this.simOnly(host)) return { internet: true, live: true };
     if (!this.hasHost(host)) return { error: this.fail('ERR_NAME_NOT_RESOLVED', `${host}'s server DNS address could not be found`) };
     return { internet: true };
   }
@@ -224,7 +244,37 @@ export class VirtualNet {
     const r = this.route(u, origin);
     if (r.error) return r.error;
     if (r.server) return this.fail('ERR_CONNECTION_TIMED_OUT', 'Another device on the network can only answer web browsers, not programs, in this simulator');
+    if (r.live && !this.hostHandler(u.hostname)) return this.fail('ERR_TIMED_OUT', 'A real web request takes time: this call cannot wait for it');
     return this.serve(req, u, origin);
+  }
+
+  /**
+   * A request that goes out to the real internet. When that fails (offline, time-out, the server
+   * is down or busy, or a keyed service without a real key) the simulated service answers instead —
+   * the weather ones with the real weather when it is known.
+   */
+  async serveLive(req, u, origin, timeoutMs = 10000) {
+    const t0 = Date.now();
+    const host = u.hostname.toLowerCase();
+    const sim = this.hostHandler(host);
+    const res = await this.live.fetch(req, timeoutMs);
+    const fallback = res.failed || res.status >= 500 || res.status === 429 || (KEYED.has(host) && (res.status === 401 || res.status === 403));
+    if (fallback && sim) {
+      if (this.livePrepare) { try { await this.livePrepare(u); } catch (e) { /* simulated values */ } }
+      const s = this.serve(req, u, origin);
+      s.liveFallback = true;
+      return s;
+    }
+    if (res.failed) {
+      const f = this.fail(res.error, `${host}: ${res.statusText}`);
+      this.record({ ...req, fromName: origin ? origin.name : 'browser' }, f, Date.now() - t0);
+      return f;
+    }
+    res.headers = { ...res.headers };
+    res.statusText = reasonOf(res.status);
+    res.ms = Date.now() - t0;
+    this.record({ ...req, fromName: origin ? origin.name : 'browser' }, res, res.ms);
+    return res;
   }
 
   serve(req, u, origin) {
@@ -247,6 +297,7 @@ export class VirtualNet {
     if (!u) return Promise.resolve(this.fail('ERR_INVALID_URL', 'Invalid URL'));
     const r = this.route(u, origin);
     if (r.error) return Promise.resolve(r.error);
+    if (r.live) return this.serveLive(req, u, origin, Math.max(timeoutMs, 10000));
     if (!r.server) return Promise.resolve(this.serve(req, u, origin));
     return new Promise((resolve) => {
       const item = { req: { ...req, path: u.pathname + u.search, host: u.host, from: origin ? origin.name : 'browser' }, resolve, t0: this.clock(), done: false };
@@ -270,6 +321,7 @@ export class VirtualNet {
   snapshot() {
     return {
       router: this.opts.router, internet: this.opts.internet, strict: this.opts.strict, time: this.clock(),
+      live: this.isLive(), liveOn: this.live ? !!this.live.enabled() : undefined,
       devices: [...this.devices.values()].map((d) => ({ id: d.id, name: d.name, kind: d.kind, ip: d.ip, mac: this.macString(d), ssid: d.ssid, rssi: d.rssi, connected: d.connected && this.opts.router, hostname: d.hostname, ap: d.apOn ? { ssid: d.apSsid, ip: d.apIp } : null, bt: d.bt ? { name: d.bt.name, log: d.bt.log.slice(-40) } : null, servers: [...this.servers.values()].filter((s) => s.dev === d).map((s) => s.port), since: d.since })),
       http: this.log.slice(-40).reverse(),
       notes: this.notes.slice(-40).reverse(),

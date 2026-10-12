@@ -358,7 +358,7 @@ export class LabScreen {
         <p><b>2 · Program it.</b> In <b>Ladder</b> tap a cell, then a contact / coil / instruction button. Enter the device with the keypad (X/Y are octal). Press <b>Download</b> to write it to the PLC over USB.</p>
         <p><b>3 · Power it.</b> Press <b>Simulate</b>. Switch the MCB ON and the PLC to RUN. In <b>✋ Operate</b> mode press buttons, the HMI touch screen and the VFD keypad right in 3D.</p>
         <p><b>4 · Watch it.</b> Ladder shows live power flow, <b>Monitor</b> shows devices and the real Modbus frames on COM1 / COM2.</p>
-        <p><b>5 · See the communication.</b> The <b>Network</b> chip (bottom) shows only the RS-485 / RS-232 / USB links in 3D: station addresses, port names and every frame travelling along the cable — amber request, green reply, red error. Tap a comm cable for its <b>Pin-out</b>.</p>
+        <p><b>5 · See the communication.</b> The <b>Network</b> chip (bottom) shows only the RS-485 / RS-232 / USB links in 3D: station addresses, port names and the 120 Ω line ends; a port pulses green when its device answers, red when it does not. Tap a comm cable for its <b>Pin-out</b>.</p>
         <p class="muted">Pinch to zoom — or double-tap, hold and slide down / up (like Google Maps). In 3D drag to orbit and use two fingers to pan; in 2D drag to move. Use the chips at the bottom to jump to a device.</p>
         <p class="muted"><b>Select</b> (dashed-box tool, or press and hold, then drag): drag to the right for a <b>window</b> (only what is fully inside), to the left for a <b>crossing</b> box (everything it touches) — like AutoCAD.</p></div>`,
       actions: [{ label: 'Got it', value: true, cls: 'btn-primary' }],
