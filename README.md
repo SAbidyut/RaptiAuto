@@ -4,6 +4,14 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.15 — PLC manual, PID controller, Modbus examples
+
+- **Manual** (bottom bar: Home · Examples · Manual · About): nine English chapters for the PLC side — PLC programming, wiring, VFD (MS300) operation and control, HMI design step by step, Modbus (frames, registers, MODRW), PID control and tuning, guided projects and a reference. Over 40 small diagrams, live-coloured ladder figures, search, and "Open example" buttons that load the matching lab example.
+- **Delta DTB4848 PID temperature controller** now has tunable PB / Ti / Td registers and **auto-tune** (register 0813H / the AT chip in the device panel).
+- **Five new PLC examples:** `modbus-th-fan`, `modbus-energy-vfd`, `modbus-function-codes` (Modbus), `pid-oven-recipes`, `pid-tuning-lab` (PID), each with guided tasks.
+- Tapping the **RaptiAuto** name in the top bar opens About.
+- HMI zoom bar is smaller so it no longer overlaps the toolbar.
+
 ## New in 2.14 — tap-to-split screens everywhere, HMI pinch zoom, Pi full screen
 
 - **Full screen in landscape:** the Lab view (2D / oblique 3D) and a second tab (Ladder, HMI, VFD, Monitor) are shown side by side only **while the simulation runs**. With the simulation stopped, full screen shows one screen at a time. The layout follows Simulate / Stop at once.

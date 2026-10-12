@@ -73,9 +73,9 @@ export class HmiView {
     this.canvasWrap.append(this.lab.hmiCanvas, this.designCanvas, this.overlay, this.offMsg);
     this.frameEl.append(this.canvasWrap, h('div', { class: 'hv-brand', html: '<b>▲ DELTA</b><span>DOP-107BV · 7" TFT</span><em>PWR</em><i class="hv-led"></i><em>COM</em><i class="hv-led com"></i>' }));
     this.zoomBar = h('div', { class: 'hv-zoom' },
-      h('button', { title: 'Zoom in', 'aria-label': 'Zoom in', html: icon('zoomIn', 20), onclick: () => this.zoomBy(1.4) }),
-      h('button', { title: 'Zoom out', 'aria-label': 'Zoom out', html: icon('zoomOut', 20), onclick: () => this.zoomBy(1 / 1.4) }),
-      this.zoomFit = h('button', { class: 'hidden', title: 'Fit to screen', 'aria-label': 'Fit to screen', html: icon('fit', 20), onclick: () => this.resetZoom() }));
+      h('button', { title: 'Zoom in', 'aria-label': 'Zoom in', html: icon('zoomIn', 16), onclick: () => this.zoomBy(1.4) }),
+      h('button', { title: 'Zoom out', 'aria-label': 'Zoom out', html: icon('zoomOut', 16), onclick: () => this.zoomBy(1 / 1.4) }),
+      this.zoomFit = h('button', { class: 'hidden', title: 'Fit to screen', 'aria-label': 'Fit to screen', html: icon('fit', 16), onclick: () => this.resetZoom() }));
     this.bar = h('div', { class: 'hv-bar' }, this.seg, this.screens, this.tools, this.zoomBar);
     this.stage = h('div', { class: 'hv-stage' }, this.frameEl);
     this.bindZoom();

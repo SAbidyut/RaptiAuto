@@ -20,6 +20,7 @@ import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } 
 import { autowire } from '../pi/autowire.js';
 import { searchExamples, SEARCH_HINTS } from './example-search.js';
 import { piHeroArt } from './pi-hero.js';
+import { MANUAL, searchManual } from '../manual/index.js';
 
 export const PAGES = {
   home: { title: 'Home', icon: 'home' },
@@ -30,10 +31,11 @@ export const PAGES = {
   boards: { title: 'Boards', icon: 'chip' },
   components: { title: 'Components', icon: 'layers' },
   guide: { title: 'Guide', icon: 'help' },
+  manual: { title: 'Manual', icon: 'book' },
   settings: { title: 'Settings', icon: 'settings' },
   about: { title: 'About RAPTI', icon: 'graduation' },
 };
-const TABS = [['home', 'Home'], ['projects', 'Arduino'], ['plclab', 'PLC'], ['pilab', 'Pi'], ['examples', 'Examples']];
+const TABS = [['home', 'Home', 'home'], ['examples', 'Examples', 'sparkles'], ['manual', 'Manual', 'book'], ['about', 'About', 'info']];
 
 export class Shell {
   constructor(app) {
@@ -49,12 +51,10 @@ export class Shell {
       this.titleEl, this.actionsEl);
     this.host = h('main', { class: 'page-host' });
     this.nav = h('nav', { class: 'bottom-nav' });
-    for (const [id, label] of TABS) {
+    for (const [id, label, ic] of TABS) {
       this.nav.appendChild(h('button', { class: 'bn-item', 'data-page': id, onclick: () => this.go(id) },
-        h('span', { class: 'bn-ic', html: icon(PAGES[id].icon, 22) }), h('span', { class: 'bn-label' }, label)));
+        h('span', { class: 'bn-ic', html: icon(ic, 22) }), h('span', { class: 'bn-label' }, label)));
     }
-    this.nav.appendChild(h('button', { class: 'bn-item', onclick: () => this.openDrawer() },
-      h('span', { class: 'bn-ic', html: icon('menu', 22) }), h('span', { class: 'bn-label' }, 'Menu')));
     this.buildDrawer();
     this.root.append(this.bar, this.host, this.nav, this.scrim, this.drawer);
   }
@@ -77,6 +77,7 @@ export class Shell {
     if (!PAGES[page]) page = 'home';
     this.closeDrawer();
     const changed = page !== this.page;
+    if (page !== 'manual' && this.unbackManual) { this.unbackManual(); this.unbackManual = null; this.manualCh = null; }
     this.page = page;
     // Android back from any menu page returns to Home.
     if (page !== 'home' && !this.unbackPage) this.unbackPage = pushBack(() => { this.unbackPage = null; this.go('home'); });
@@ -92,9 +93,9 @@ export class Shell {
     this.extras = []; // non-scrolling overlays such as a page FAB
     this.actionsEl.innerHTML = '';
     this.titleEl.innerHTML = '';
-    if (this.page === 'home') this.titleEl.appendChild(h('div', { class: 'brand', html: `${logoMark(34, 'tb')}${wordmark()}` }));
+    if (this.page === 'home') this.titleEl.appendChild(h('button', { class: 'brand brand-btn', 'aria-label': 'About RaptiAuto', title: 'About', html: `${logoMark(34, 'tb')}${wordmark()}`, onclick: () => this.go('about') }));
     else this.titleEl.appendChild(h('h1', {}, PAGES[this.page].title));
-    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, pilab: this.pagePi, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, settings: this.pageSettings, about: this.pageAbout }[this.page];
+    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, pilab: this.pagePi, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, manual: this.pageManual, settings: this.pageSettings, about: this.pageAbout }[this.page];
     fill.call(this, pageEl);
     this.host.innerHTML = '';
     this.host.append(pageEl, ...this.extras);
@@ -134,6 +135,7 @@ export class Shell {
         item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
         item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
         group('Help'),
+        item('manual', 'Manual — PLC, VFD, HMI, Modbus', 'book', h('span', { class: 'dr-new-badge' }, 'NEW')),
         item('guide', 'Guide — how to use', 'help'),
         item('settings', 'Settings', 'settings'),
         group('RAPTI'),
@@ -211,7 +213,8 @@ export class Shell {
         tile('plclab', 'PLC Lab', 'Delta · 3D', 'cpu', 'blue'),
         tile('pilab', 'Raspberry Pi', 'Pi 5 · Pi 4 · Pico', 'terminal', 'pink'),
         tile('components', 'Components', `${partCount()}+ parts`, 'layers', 'green'),
-        tile('guide', 'Guide', 'How to use', 'help', 'amber'),
+        tile('manual', 'Manual', 'PLC · VFD · HMI · Modbus', 'book', 'amber'),
+        tile('guide', 'Guide', 'How to use', 'help', 'cyan'),
         tile('about', 'About RAPTI', 'Courses · contact', 'graduation', 'pink'))));
 
     const recent = listProjects().slice(0, 3).map((m) => loadProject(m.id)).filter(Boolean);
@@ -403,6 +406,85 @@ export class Shell {
       h('div', { class: 'rc-logo', html: icon('book', 24) }),
       h('div', { class: 'rc-text' }, h('b', {}, 'Practice with examples'), h('span', {}, `${EXAMPLES.length} ready-made projects to run and modify`)),
       h('span', { class: 'rc-go', html: icon('forward', 20) })));
+  }
+
+  // ---------------------------------------------------------------- manual
+  /** Open a chapter (index into MANUAL) and optionally scroll to a section id. */
+  openManual(ci, secId) {
+    this.manualCh = ci;
+    this.manualSec = secId || null;
+    if (!this.unbackManual) this.unbackManual = pushBack(() => { this.unbackManual = null; this.manualCh = null; this.render(); });
+    this.render();
+  }
+
+  closeManual() {
+    if (this.unbackManual) { this.unbackManual(); this.unbackManual = null; }
+    this.manualCh = null;
+    this.render();
+  }
+
+  pageManual(el) {
+    // chapter buttons inside the text: "Open this example"
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest && e.target.closest('[data-ex]');
+      if (b) this.openLabExample(b.dataset.ex);
+    });
+    if (this.manualCh === null || this.manualCh === undefined || !MANUAL[this.manualCh]) { this.manualIndex(el); return; }
+    const ci = this.manualCh, ch = MANUAL[ci];
+    const secs = ch.sections;
+    const jump = h('select', { class: 'mx-jump', 'aria-label': 'Jump to a section', onchange: (e) => { const t = el.querySelector('#' + e.target.value); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); e.target.selectedIndex = 0; } },
+      h('option', { value: '' }, 'Jump to …'), ...secs.map((s, i) => h('option', { value: `mx-${ch.id}-${s.id}` }, `${ch.no}.${i + 1}  ${s.title}`)));
+    el.appendChild(h('div', { class: 'mx-top' },
+      h('button', { class: 'icon-btn sm', 'aria-label': 'All chapters', title: 'All chapters', html: icon('back', 20), onclick: () => this.closeManual() }),
+      h('div', { class: 'mx-crumb' }, h('small', {}, `Chapter ${ch.no} of ${MANUAL.length}`), ch.title), jump));
+    const art = h('article', { class: 'mx-article' });
+    art.innerHTML = `<h1>${ch.title}</h1><p class="mx-lead">${ch.blurb}</p>` +
+      `<div class="mx-toc"><b>In this chapter</b>${secs.map((s, i) => `<a href="#" data-sec="mx-${ch.id}-${s.id}"><i>${ch.no}.${i + 1}</i>${s.title}</a>`).join('')}</div>` +
+      secs.map((s, i) => `<section><h2 id="mx-${ch.id}-${s.id}"><i>${ch.no}.${i + 1}</i>${s.title}</h2>${s.html}</section>`).join('');
+    art.addEventListener('click', (e) => {
+      const a = e.target.closest && e.target.closest('a[data-sec]');
+      if (a) { e.preventDefault(); const t = art.querySelector('#' + a.dataset.sec); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+    const prev = MANUAL[ci - 1], next = MANUAL[ci + 1];
+    art.appendChild(h('div', { class: 'mx-nav' },
+      prev ? h('button', { class: 'prev', onclick: () => this.openManual(ci - 1) }, '← Previous', h('b', {}, `${prev.no} · ${prev.title}`)) : h('span', { style: 'flex:1' }),
+      next ? h('button', { class: 'next', onclick: () => this.openManual(ci + 1) }, 'Next →', h('b', {}, `${next.no} · ${next.title}`)) : h('span', { style: 'flex:1' })));
+    el.appendChild(art);
+    if (this.manualSec) {
+      const id = `mx-${ch.id}-${this.manualSec}`;
+      this.manualSec = null;
+      requestAnimationFrame(() => { const t = el.querySelector('#' + id); if (t) t.scrollIntoView({ block: 'start' }); });
+    }
+  }
+
+  manualIndex(el) {
+    el.appendChild(h('section', { class: 'mx-hero' },
+      h('div', { class: 'hero-kicker', html: `${icon('book', 15)}<span>RaptiAuto manual</span>` }),
+      h('h2', {}, 'Learn PLC, VFD, HMI and Modbus'),
+      h('p', {}, 'From the first ladder rung to a Modbus network with a PID oven — nine chapters, with diagrams and examples that open with one tap.')));
+    const body = h('div');
+    const draw = (q) => {
+      body.innerHTML = '';
+      if (q.trim()) {
+        const hits = searchManual(q);
+        if (!hits.length) { body.appendChild(h('p', { class: 'mx-empty' }, `Nothing found for “${q.trim()}”`)); return; }
+        const list = h('div', { class: 'mx-hits' });
+        for (const r of hits) {
+          const ci = MANUAL.indexOf(r.ch), si = r.ch.sections.indexOf(r.sec);
+          list.appendChild(h('button', { class: 'mx-hit', onclick: () => this.openManual(ci, r.sec.id) }, h('b', {}, `${r.ch.no}.${si + 1}  ${r.sec.title}`), h('small', {}, r.snippet)));
+        }
+        body.appendChild(list);
+        return;
+      }
+      const grid = h('div', { class: 'mx-chapters' });
+      MANUAL.forEach((ch, i) => grid.appendChild(h('button', { class: 'mx-card', onclick: () => this.openManual(i) },
+        h('span', { class: 'mx-no' }, String(ch.no)),
+        h('div', {}, h('b', {}, ch.title), h('span', {}, ch.blurb), h('small', {}, `${ch.sections.length} sections`)))));
+      body.appendChild(grid);
+    };
+    el.appendChild(searchBox('Search the manual: Modbus, timer, PB …', draw));
+    el.appendChild(body);
+    draw('');
   }
 
   pageSettings(el) {

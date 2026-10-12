@@ -132,8 +132,9 @@ class Slave {
 /**
  * Delta DTB4848 (48 × 48 mm) PID temperature controller with a thermocouple in a small oven and a
  * heater on OUT1. Register map as in the DTB manual: 1000H PV, 1001H SV, 1002H / 1003H range, 1005H
- * control method, 1012H output 1 (%), bit 0814H RUN / STOP. Units of 0.1 °C. The oven: 3.2 °C per %
- * of heater power above ambient, time constant 30 s; PID: band 8 °C, Ti 30 s, Td 3 s.
+ * control method, 1009H PB, 100AH Ti, 100BH Td, 1012H output 1 (%), bit 0813H auto-tuning, bit 0814H
+ * RUN / STOP. Units of 0.1 °C. The oven: 3.2 °C per % of heater power above ambient, time constant
+ * 30 s. PID defaults: band 8 °C, Ti 30 s, Td 3 s — all three can be changed (HMI / PLC / auto-tune).
  */
 export class TempController extends Slave {
   constructor(dev, props) {
@@ -144,6 +145,8 @@ export class TempController extends Slave {
     this.amb = 25;
     this.pv = this.amb;
     this.out = 0; this.integ = 0; this.lastPv = this.pv; this.dF = 0; this.cycle = 0; this.onoff = false;
+    this.at = null; // auto-tuning in progress: {t, p0, d6}
+    this.atResult = '';
     this.fc4 = false;
     const t = (v) => Math.round(v * 10);
     const range = (raw, lo, hi) => { const v = s16(raw) / 10; return v < lo || v > hi ? null : v; };
@@ -153,14 +156,50 @@ export class TempController extends Slave {
       0x1002: { name: 'Upper limit', unit: '°C', k: 0.1, signed: true, get: () => t(S().hi), set: (raw) => { const s = S(), v = range(raw, s.lo + 1, 1300); if (v === null) return 3; s.hi = v; s.sv = Math.min(s.sv, v); return null; }, note: 'Upper limit of the temperature range' },
       0x1003: { name: 'Lower limit', unit: '°C', k: 0.1, signed: true, get: () => t(S().lo), set: (raw) => { const s = S(), v = range(raw, -200, s.hi - 1); if (v === null) return 3; s.lo = v; s.sv = Math.max(s.sv, v); return null; }, note: 'Lower limit of the temperature range' },
       0x1005: { name: 'Control', unit: '', get: () => S().mode, set: (raw) => { if (raw > 2) return 3; S().mode = raw; this.integ = 0; return null; }, note: '0 = PID, 1 = ON/OFF, 2 = manual output' },
+      0x1009: { name: 'PB', unit: '°C', k: 0.1, get: () => t(S().pb), set: (raw) => { if (raw < 1 || raw > 9999) return 3; S().pb = raw / 10; return null; }, note: 'Proportional band (0.1 … 999.9 °C): a smaller band = a stronger reaction' },
+      0x100A: { name: 'Ti', unit: 's', get: () => Math.round(S().ti), set: (raw) => { if (raw > 9999) return 3; S().ti = raw; this.integ = 0; return null; }, note: 'Integral time in seconds (0 = no integral action)' },
+      0x100B: { name: 'Td', unit: 's', get: () => Math.round(S().td), set: (raw) => { if (raw > 9999) return 3; S().td = raw; return null; }, note: 'Derivative time in seconds (0 = no derivative action)' },
       0x1012: { name: 'OUT1', unit: '%', k: 0.1, ro: true, rw: () => S().mode === 2, get: () => t(this.out), set: (raw) => { if (raw > 1000) return 3; S().manual = raw / 10; return null; }, note: 'Output 1 (heater) — writable in manual mode' },
     };
     this.bits = {
-      0x0814: { name: 'RUN', get: () => !!S().run, set: (v) => { S().run = v; if (!v) this.integ = 0; }, note: 'RUN / STOP (1 = RUN)' },
+      0x0813: { name: 'AT', get: () => !!this.at, set: (v) => { if (v) this.startAT(); else this.at = null; }, note: 'Auto-tuning: 1 = start, back to 0 when PB / Ti / Td are found' },
+      0x0814: { name: 'RUN', get: () => !!S().run, set: (v) => { S().run = v; if (!v) { this.integ = 0; this.at = null; } }, note: 'RUN / STOP (1 = RUN)' },
     };
   }
 
-  defaults(s) { s.sv = s.sv ?? 120; s.run = s.run ?? true; s.mode = s.mode ?? 0; s.manual = s.manual ?? 30; s.hi = s.hi ?? 400; s.lo = s.lo ?? 0; }
+  defaults(s) { s.sv = s.sv ?? 120; s.run = s.run ?? true; s.mode = s.mode ?? 0; s.manual = s.manual ?? 30; s.hi = s.hi ?? 400; s.lo = s.lo ?? 0; s.pb = s.pb ?? 8; s.ti = s.ti ?? 30; s.td = s.td ?? 3; }
+
+  get tuning() { return !!this.at; }
+
+  /** Auto-tuning: the heater is switched fully on for 12 s; the way the temperature rises (the ratio of
+   *  the rise after 12 s to the rise after 6 s) gives the oven's time constant and gain, from which
+   *  PB, Ti and Td follow (Ti = time constant, Td = 10 % of it, a closed loop 8 × faster than the oven). */
+  startAT() {
+    const s = this.dev.state;
+    if (!this.powered || !s.run || s.mode !== 0) return;
+    this.at = { t: 0, p0: this.pv, d6: null };
+    this.atResult = '';
+  }
+
+  stepAT(dt) {
+    const a = this.at;
+    this.out = 100;
+    a.t += dt;
+    if (a.d6 === null && a.t >= 6) a.d6 = this.pv - a.p0;
+    if (a.t < 12) return;
+    const d12 = this.pv - a.p0, r = a.d6 > 0 ? d12 / a.d6 : 0;
+    this.at = null;
+    if (a.d6 < 0.3 || r <= 1.02 || r >= 1.98) { this.atResult = 'failed'; return; }
+    const tau = -6 / Math.log(r - 1);
+    const full = a.d6 / (1 - Math.exp(-6 / tau)); // the rise the heater would give in the end
+    const K = (a.p0 + full - this.amb) / 100;     // °C per % of heater power
+    const s = this.dev.state;
+    s.ti = Math.max(1, Math.round(tau));
+    s.td = Math.max(0, Math.round(tau * 0.1));
+    s.pb = Math.max(0.5, Math.min(999.9, Math.round(12.5 * K * 10) / 10)); // PB = 100 / Kp with Kp = 8 / K
+    this.integ = 0;
+    this.atResult = 'done';
+  }
 
   step(dt) {
     super.step(dt);
@@ -169,7 +208,8 @@ export class TempController extends Slave {
     const heat = this.powered ? this.out : 0;
     this.pv += dt * (heat * 3.2 - (this.pv - this.amb)) / 30;
     if (!this.powered) { this.out = 0; return; }
-    if (!s.run) { this.out = 0; this.cycle = 0; return; }
+    if (!s.run) { this.out = 0; this.cycle = 0; this.at = null; return; }
+    if (this.at) { this.stepAT(dt); this.cycle = (this.cycle + dt) % 2; return; }
     const e = s.sv - this.pv;
     if (s.mode === 1) {
       // ON/OFF with a 1 °C hysteresis
@@ -178,13 +218,14 @@ export class TempController extends Slave {
     } else if (s.mode === 2) {
       this.out = clamp(s.manual, 0, 100);
     } else {
-      const PB = 8, Ti = 30, Td = 3;
+      const PB = Math.max(0.1, s.pb), Ti = s.ti, Td = s.td;
       // derivative on the measurement, filtered over about 1.5 s (no chatter, no kick when SV changes)
       const rate = dt > 0 ? (this.pv - this.lastPv) / dt : 0;
       this.lastPv = this.pv;
       this.dF += (rate - this.dF) * Math.min(1, dt / 1.5);
       // integrate only inside the proportional band (no wind-up while heating from cold)
-      if (Math.abs(e) < PB) this.integ = clamp(this.integ + (e * dt) / Ti, -PB, PB);
+      if (Ti <= 0) this.integ = 0;
+      else if (Math.abs(e) < PB) this.integ = clamp(this.integ + (e * dt) / Ti, -PB, PB);
       this.out = clamp((100 / PB) * (e + this.integ - Td * this.dF), 0, 100);
     }
     this.cycle = (this.cycle + dt) % 2;

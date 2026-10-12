@@ -946,7 +946,7 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   check('T/H sensor (station 3): 31.5 °C, 48.0 %RH in D50 / D51', Math.abs(cpu.D[50] - 315) <= 1 && Math.abs(cpu.D[51] - 480) <= 2, `D50=${cpu.D[50]} D51=${cpu.D[51]}`);
   check('energy meter (station 4): 230 V in D60, power in D62', Math.abs(cpu.D[60] - 2300) < 10 && cpu.D[62] > 20, `D60=${cpu.D[60]} D62=${cpu.D[62]}`);
   check('the log names the registers: "Read PV, SV (1000H ×2)"', s.log.some((l) => l.dir === 'TX' && l.info === 'Read PV, SV (1000H ×2)'));
-  check('the log decodes a reply: "Temp 31.5 °C · RH 48.0 %RH"', s.log.some((l) => l.dir === 'RX' && /^Temp 31\.\d °C · RH 48\.\d %RH$/.test(l.info)));
+  check('the log decodes a reply: "Temp 31.5 °C · RH 48.0 %RH"', s.log.some((l) => l.dir === 'RX' && /^Temp 31\.\d °C · RH 4[78]\.\d %RH$/.test(l.info)));
   check('every frame carries the device ids (3D packets)', s.log.filter((l) => l.link === 'COM2' && l.dir === 'TX').every((l) => l.ids && l.ids.from === 'plc' && l.ids.to && l.ids.txn));
   // write SV from the HMI register D40 → the PLC writes 1001H
   cpu.D[40] = 1800; run(600);
@@ -1032,6 +1032,103 @@ for (const ex of LAB_EXAMPLES) check(`tasks defined for "${ex.id}"`, Array.isArr
   check('task modbus-network #3 (SV 180 written)', t.done(2));
   t.s.act('th', 'thSet', { temp: 42 }); t.run(1200);
   check('task modbus-network #4 (cabinet hot)', t.done(3));
+}
+
+// ---------------------------------------------------------------- 2.14: Delta PID controller + Modbus examples
+{
+  // DTB4848: PID registers and auto-tuning
+  const { p, s, run } = sim('pid-tuning-lab');
+  const st = p.devices.find((d) => d.id === 'dtb').state, D = (i) => s.plc.cpu.D[i];
+  run(3000);
+  check('DTB: PB / Ti / Td read back (1009H … 100BH) = 8.0 / 30 / 3', D(24) === 80 && D(25) === 30 && D(26) === 3, [D(24), D(25), D(26)].join());
+  run(60000);
+  check('DTB: default PID reaches the SV (no big overshoot)', Math.abs(D(30) - 1200) <= 15, 'PV ' + D(30));
+  s.plc.cpu.D[20] = 300; s.plc.cpu.D[21] = 60; s.plc.cpu.D[22] = 0; s.plc.cpu.M[33] = 1; run(500); s.plc.cpu.M[33] = 0; run(500);
+  check('DTB: APPLY writes PB, Ti, Td with one FC16 request', st.pb === 30 && st.ti === 60 && st.td === 0, [st.pb, st.ti, st.td].join());
+  s.plc.cpu.M[34] = 1; run(300); s.plc.cpu.M[34] = 0; run(2000);
+  check('DTB: AUTO-TUNE (coil 0813H) starts and the coil reads back 1', st.pb === 30 && s.plc.cpu.D[43] === 1 && s.plc.cpu.Y[1] === 1);
+  run(14000);
+  check('DTB: auto-tune finishes and sets PB 30–50 °C, Ti ≈ 30 s, Td ≈ 3 s', st.pb >= 30 && st.pb <= 50 && st.pb !== 30 && Math.abs(st.ti - 30) <= 3 && Math.abs(st.td - 3) <= 1 && D(43) === 0, [st.pb, st.ti, st.td, D(43)].join());
+  s.plc.cpu.M[31] = 1; run(400); s.plc.cpu.M[31] = 0; run(1500);
+  check('DTB: control method 1005H = 1 (ON/OFF) written and read back', st.mode === 1 && D(35) === 1);
+  s.plc.cpu.M[32] = 1; run(400); s.plc.cpu.M[32] = 0; run(2500);
+  check('DTB: manual mode accepts the output 1012H = 30.0 %', st.mode === 2 && D(34) === 300, 'out ' + D(34));
+  const tcm = s.rts.get('dtb').mb;
+  check('DTB: PB range is checked (exception 03 for 0 and 10000)', tcm.modbus({ fc: 6, addr: 0x1009, values: [0] }).exception === 3 && tcm.modbus({ fc: 6, addr: 0x1009, values: [10000] }).exception === 3);
+}
+{
+  const { p, s, run } = sim('modbus-th-fan');
+  const D = (i) => s.plc.cpu.D[i];
+  run(3000);
+  check('th-fan: temperature / humidity read with FC03', D(50) === 270 && D(51) === 550, [D(50), D(51)].join());
+  check('th-fan: fan off at 27 °C, on above 30 °C', !s.plc.cpu.Y[0]);
+  s.act('th', 'thSet', { temp: 33 }); run(3000);
+  check('th-fan: fan on at 33 °C', s.plc.cpu.Y[0] === 1 && s.rts.get('lfan').on);
+  s.act('th', 'thSet', { temp: 28, rh: 80 }); run(3000);
+  check('th-fan: off again at 28 °C (hysteresis), humidity lamp on at 80 %', s.plc.cpu.Y[0] === 0 && s.plc.cpu.Y[1] === 1);
+  check('th-fan: no issues on the bus', !s.issues.some((i) => i.level !== 'info'), s.issues.map((i) => i.text).join(' | '));
+  p.conns = p.conns.filter((c) => !(c.a.dev === 'th' && c.a.port === 'V-') && !(c.b.dev === 'th' && c.b.port === 'V-')); s.sync(); run(4000);
+  check('th-fan: a dead sensor → time-out M1129 and the COMM FAIL lamp', s.plc.cpu.M[1129] === 1 && s.plc.cpu.Y[2] === 1);
+}
+{
+  const { s, run } = sim('modbus-energy-vfd');
+  const D = (i) => s.plc.cpu.D[i];
+  run(2500);
+  check('energy-vfd: meter voltage ≈ 230 V', D(60) > 2250 && D(60) < 2350, 'D60 ' + D(60));
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(15000);
+  const hz = s.byKind('vfd')[0].vfd.f;
+  check('energy-vfd: the drive runs at 30 Hz over Modbus', Math.abs(hz - 30) < 0.3 && D(20) === 3000, `hz ${hz} D20 ${D(20)}`);
+  check('energy-vfd: the meter sees the motor power (> 300 W) and the peak follows', D(62) > 300 && D(70) >= D(62), `P ${D(62)} peak ${D(70)}`);
+  s.plc.cpu.M[12] = 1; run(200); s.plc.cpu.M[12] = 0; run(40);
+  check('energy-vfd: RESET PEAK clears D70', D(70) <= D(62) + 5);
+  s.plc.cpu.D[10] = 4500; run(15000);
+  check('energy-vfd: speed 45 Hz written to 2001H', Math.abs(s.byKind('vfd')[0].vfd.f - 45) < 0.3);
+  check('energy-vfd: no issues', !s.issues.some((i) => i.level !== 'info'), s.issues.map((i) => i.text).join(' | '));
+}
+{
+  const { p, s, run } = sim('modbus-function-codes');
+  const st = p.devices.find((d) => d.id === 'dtb').state, D = (i) => s.plc.cpu.D[i], M = s.plc.cpu.M;
+  run(3000);
+  check('function codes: FC03 reads PV, SV, limits and output; FC01 reads the RUN coil', D(0) > 0 && D(1) === 1000 && D(4) === 4000 && D(5) === 0 && D(45) === 1 && s.plc.cpu.Y[0] === 1, [D(0), D(1), D(4), D(5), D(45)].join());
+  s.plc.cpu.D[10] = 1800; M[20] = 1; run(500); M[20] = 0; run(500);
+  check('function codes: FC06 writes SV', st.sv === 180 && D(1) === 1800);
+  s.plc.cpu.D[20] = 2000; s.plc.cpu.D[21] = 500; M[21] = 1; run(500); M[21] = 0; run(500);
+  check('function codes: FC16 writes both limits', st.hi === 200 && st.lo === 50 && D(4) === 2000 && D(5) === 500);
+  M[23] = 1; run(500); M[23] = 0; run(500);
+  check('function codes: FC05 STOP, FC01 reads 0', st.run === false && D(45) === 0 && s.plc.cpu.Y[0] === 0);
+  M[22] = 1; run(500); M[22] = 0; run(500);
+  check('function codes: FC05 RUN', st.run === true && D(45) === 1);
+  check('function codes: the comm log shows FC 01, 03, 05, 06 and 16', [1, 3, 5, 6, 16].every((fc) => s.log.some((l) => l.dir === 'TX' && typeof l.frame === 'string' && parseInt(l.frame.split(' ')[1], 16) === fc)), 'seen ' + [...new Set(s.log.filter((l) => l.dir === 'TX').map((l) => String(l.frame).split(' ')[1]))].join());
+}
+{
+  const { p, s, run } = sim('pid-oven-recipes');
+  const D = (i) => s.plc.cpu.D[i], M = s.plc.cpu.M, st = p.devices.find((d) => d.id === 'dtb').state;
+  run(2000);
+  s.act('start', 'press', true); run(100); s.act('start', 'press', false); run(2000);
+  check('pid oven: the belt waits while the oven is cold', M[1] === 0 && s.byKind('vfd')[0].vfd.f === 0);
+  run(60000);
+  check('pid oven: oven stable at 150 °C → the belt runs at 30 Hz', M[1] === 1 && Math.abs(s.byKind('vfd')[0].vfd.f - 30) < 0.3 && Math.abs(D(30) - 1500) < 50, `PV ${D(30)} M1 ${M[1]}`);
+  M[30] = 1; run(500); M[30] = 0; run(2000);
+  check('pid oven: recipe DRY writes SV 80 °C and 20 Hz', st.sv === 80 && D(10) === 2000 && D(90) === 1);
+  run(120000);
+  check('pid oven: the oven cools to 80 °C, stable again, belt 20 Hz', Math.abs(D(30) - 800) < 50 && Math.abs(s.byKind('vfd')[0].vfd.f - 20) < 0.3 || M[1] === 0, `PV ${D(30)} M1 ${M[1]} f ${s.byKind('vfd')[0].vfd.f}`);
+  check('pid oven: no issues', !s.issues.some((i) => i.level !== 'info'), s.issues.map((i) => i.text).join(' | '));
+}
+{
+  // tasks of the new examples
+  const t = taskRunner('modbus-th-fan');
+  t.run(3000);
+  check('task th-fan #1 (values arrive)', t.done(0));
+  t.s.act('th', 'thSet', { temp: 33 }); t.run(3000);
+  check('task th-fan #2 (fan starts)', t.done(1));
+  const t2 = taskRunner('modbus-function-codes');
+  t2.run(3000);
+  check('task function-codes #1 (PV / SV)', t2.done(0));
+  const t3 = taskRunner('pid-tuning-lab');
+  t3.run(70000);
+  check('task pid-tuning #1 (PV climbs to 120 °C)', t3.done(0));
+  t3.s.plc.cpu.D[40] = 1500; t3.run(1000);
+  check('task pid-tuning #2 (SV 150)', t3.done(1));
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall PLC lab tests passed');

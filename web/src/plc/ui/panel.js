@@ -1095,10 +1095,11 @@ export class PanelView {
     const range = h('input', { class: 'range', type: 'range', min: s.lo ?? 0, max: s.hi ?? 400, step: 1, value: Math.round(s.sv ?? 120) });
     const run = h('button', { class: 'chip', onclick: () => act({ run: !s.run }) });
     const modes = [[0, 'PID'], [1, 'ON/OFF'], [2, 'Manual 30 %']].map(([m, t]) => h('button', { class: 'chip', onclick: () => act({ mode: m }) }, t));
+    const tune = h('button', { class: 'chip', onclick: () => { if ((s.mode ?? 0) !== 0 || !s.run) { toast('Auto-tune needs PID mode and RUN', 'warn'); return; } act({ at: true }); toast('Auto-tuning: the heater is on for 12 s … PB / Ti / Td are then set', 'info', 4000); } }, 'Auto-tune');
     const upd = () => {
       const rt = this.scene.system && this.scene.system.rts.get(devId);
       const pv = rt && rt.mb && rt.mb.powered ? ` · PV ${rt.mb.pv.toFixed(1)}` : '';
-      val.textContent = `SV ${Math.round(s.sv)} °C${pv}`;
+      val.textContent = `SV ${Math.round(s.sv)} °C${pv} · PB ${(s.pb ?? 8).toFixed(1)} Ti ${Math.round(s.ti ?? 30)} Td ${Math.round(s.td ?? 3)}`;
       run.innerHTML = `${icon(s.run ? 'stop' : 'play', 14)}<span>${s.run ? 'RUN → STOP' : 'STOP → RUN'}</span>`;
       run.classList.toggle('active', !!s.run);
       modes.forEach((b, i) => b.classList.toggle('active', (s.mode ?? 0) === i));
@@ -1106,7 +1107,7 @@ export class PanelView {
     range.addEventListener('input', () => { act({ sv: +range.value }); this.masterWrites(devId, /^Write SV/); });
     this.potCard = h('div', { class: 'pot-card mb-card' },
       h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'DTB4848'} · set value`), val), range,
-      h('div', { class: 'chips-row mb-chips' }, run, ...modes),
+      h('div', { class: 'chips-row mb-chips' }, run, ...modes, tune),
       h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
     this.potCard.upd = upd;
     this.el.appendChild(this.potCard);

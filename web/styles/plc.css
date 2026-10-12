@@ -342,10 +342,14 @@
 .hv-led { width: 7px; height: 7px; border-radius: 50%; background: #1f3a2a; }
 .hv-led.on { background: #36ff6a; box-shadow: 0 0 8px #36ff6a; }
 .hv-device { transform-origin: 50% 50%; will-change: transform; }
-.hv-zoom { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 12px; flex-shrink: 0; background: rgba(148, 163, 184, .08); border: 1px solid var(--line2); }
-.hv-zoom button { width: 36px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--text); }
+.hv-zoom { display: flex; align-items: center; gap: 0; padding: 1px; border-radius: 10px; flex-shrink: 0; background: rgba(148, 163, 184, .08); border: 1px solid var(--line2); }
+.hv-zoom button { width: 28px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--text); }
 .hv-zoom button:active { background: rgba(148, 163, 184, .2); }
 .hv-zoom button.hidden { display: none; }
+.hv-bar { gap: 6px; }
+.hv-bar .segmented { flex-shrink: 0; }
+.hv-bar .segmented .seg { padding: 0 10px; gap: 5px; }
+.hv-bar .hv-screens .chip { padding: 0 10px; }
 .hv-overlay { position: absolute; inset: 0; pointer-events: none; }
 .hv-sel { position: absolute; border: 2px dashed #22d3ee; border-radius: 4px; pointer-events: auto; box-shadow: 0 0 0 2000px rgba(2, 6, 14, .12); touch-action: none; }
 .hv-sel-tag { position: absolute; left: -2px; bottom: calc(100% + 3px); white-space: nowrap; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #22d3ee; color: #04121a; }
