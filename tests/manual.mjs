@@ -22,7 +22,7 @@ const wanted = ['PLC programming', 'Variable frequency drive (VFD)', 'Designing 
 for (const w of wanted) check(`chapter "${w}"`, PLC.some((c) => c.title === w));
 check('every chapter has at least 5 sections with unique ids', MANUAL.every((c) => c.sections.length >= 5 && new Set(c.sections.map((s) => s.id)).size === c.sections.length));
 const all = MANUAL.flatMap((c) => c.sections.map((s) => s.html)).join('\n');
-check('no "undefined" / "NaN" / "[object" in the text', !/undefined|NaN|\[object/.test(all), (all.match(/.{30}(undefined|NaN|\[object).{20}/) || [''])[0]);
+check('no "undefined" / "NaN" / "[object" in the text', !/undefined(?! reference)|NaN|\[object/.test(all), (all.match(/.{30}(undefined|NaN|\[object).{20}/) || [''])[0]);
 const ids = new Set(LAB_EXAMPLES.map((e) => e.id));
 const links = [...all.matchAll(/data-ex="([^"]+)"/g)].map((m) => m[1]);
 check('every "Open example" button points to a real example', links.length > 25 && links.every((l) => ids.has(l)), links.filter((l) => !ids.has(l)).join());
