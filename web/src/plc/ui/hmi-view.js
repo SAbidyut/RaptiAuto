@@ -8,6 +8,7 @@ import { parseOperand, addrSortKey } from '../sim/address.js';
 import { renderHmi, HMI_BTN_COLORS } from './hmi-render.js';
 
 const SNAP = 10;
+const ZOOM_MIN = 0.5, ZOOM_MAX = 5;
 const COLORS = ['#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#22d3ee', '#a855f7', '#e2e8f0', '#334155', '#0b1630', '#13223f', '#1e293b'];
 
 const FIELDS = {
@@ -42,6 +43,8 @@ export class HmiView {
     this.designing = false;
     this.screen = 0;
     this.sel = null;
+    this.zoom = 1; this.panX = 0; this.panY = 0; // pinch zoom of the HMI picture (1 = fits the stage)
+    this.pointers = new Map(); // touches on the stage → {x, y}
     this.el = h('section', { class: 'hmi-view' });
     this.designCanvas = document.createElement('canvas');
     this.designCanvas.width = HMI_W; this.designCanvas.height = HMI_H;
@@ -70,7 +73,12 @@ export class HmiView {
     this.offMsg = h('div', { class: 'hv-off hidden' });
     this.canvasWrap.append(this.lab.hmiCanvas, this.designCanvas, this.overlay, this.offMsg);
     this.frameEl.append(this.canvasWrap, h('div', { class: 'hv-brand', html: '<b>▲ DELTA</b><span>DOP-107BV · 7" TFT</span><em>PWR</em><i class="hv-led"></i><em>COM</em><i class="hv-led com"></i>' }));
-    this.stage = h('div', { class: 'hv-stage' }, this.frameEl);
+    this.zoomBar = h('div', { class: 'hv-zoom' },
+      h('button', { title: 'Zoom in', 'aria-label': 'Zoom in', html: icon('zoomIn', 20), onclick: () => this.zoomBy(1.4) }),
+      h('button', { title: 'Zoom out', 'aria-label': 'Zoom out', html: icon('zoomOut', 20), onclick: () => this.zoomBy(1 / 1.4) }),
+      this.zoomFit = h('button', { class: 'hidden', title: 'Fit to screen', 'aria-label': 'Fit to screen', html: icon('fit', 20), onclick: () => this.resetZoom() }));
+    this.stage = h('div', { class: 'hv-stage' }, this.frameEl, this.zoomBar);
+    this.bindZoom();
     this.info = h('div', { class: 'hv-info' });
     this.el.append(this.bar, this.stage, this.info);
     this.ro = new ResizeObserver(() => this.layout());
@@ -89,7 +97,11 @@ export class HmiView {
     this.setDesign(false);
   }
 
-  destroy() { this.ro.disconnect(); window.removeEventListener('pointermove', this.onPM); window.removeEventListener('pointerup', this.onPU); }
+  destroy() {
+    this.ro.disconnect();
+    this.settlePending(false);
+    for (const [t, f] of [['pointermove', this.onPM], ['pointerup', this.onPU], ['pointermove', this.onZM], ['pointerup', this.onZU], ['pointercancel', this.onZU]]) window.removeEventListener(t, f);
+  }
 
   onShow() { this.layout(); this.refresh(); }
   onBack() { if (this.sel) { this.select(null); return true; } if (this.designing) { this.setDesign(false); return true; } return false; }
@@ -176,19 +188,123 @@ export class HmiView {
     return [((e.clientX - r.left) / r.width) * HMI_W, ((e.clientY - r.top) / r.height) * HMI_H];
   }
   runDown(e) {
-    if (this.designing) return;
+    if (this.designing || this.pointers.size > 1) return;
     const rt = this.rt();
     if (!rt) return;
     e.preventDefault();
     const [x, y] = this.runPos(e);
-    rt.pointerDown(x, y, e.pointerId);
-    Native.vibrate(6);
+    const press = () => { this.pending = null; const r = this.rt(); if (r) { r.pointerDown(x, y, e.pointerId); Native.vibrate(6); } };
+    if (e.pointerType === 'mouse') { press(); return; }
+    // a touch waits a moment: a second finger landing means a pinch, not a button press
+    this.pending = { id: e.pointerId, press, timer: setTimeout(press, 70) };
+  }
+  /** Deliver (flush) a touch that is still waiting, or forget it when a pinch begins. */
+  settlePending(deliver) {
+    const p = this.pending;
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.pending = null;
+    if (deliver) p.press();
   }
   runUp(e) {
+    if (this.pending && this.pending.id === e.pointerId) this.settlePending(this.pointers.size <= 1);
     const rt = this.rt();
     if (!rt) return;
     const [x, y] = this.runPos(e);
     rt.pointerUp(x, y, e.pointerId);
+  }
+
+  // ------------------------------------------------------------------ pinch zoom
+  /** Two fingers pinch (zoom) and drag (move) the HMI; one finger on the frame or the empty stage
+   *  moves it while zoomed; the buttons, the mouse wheel and a double tap work too. */
+  bindZoom() {
+    const st = this.stage;
+    st.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.hv-zoom')) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.pointers.size === 2) {
+        this.settlePending(false);
+        this.cancelTouches();
+        const [a, b] = [...this.pointers.values()];
+        this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+        this.pan1 = null;
+      } else if (this.pointers.size === 1) {
+        const onScreen = e.target === this.lab.hmiCanvas || e.target === this.designCanvas || this.overlay.contains(e.target);
+        if (!onScreen) {
+          const now = performance.now();
+          if (this.lastBezelTap && now - this.lastBezelTap < 320 && (this.zoom !== 1 || this.panX || this.panY)) { this.resetZoom(); this.lastBezelTap = 0; } else this.lastBezelTap = now;
+          if (this.stage.classList.contains('zoomed')) this.pan1 = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        }
+      }
+    }, true);
+    window.addEventListener('pointermove', (this.onZM = (e) => {
+      const p = this.pointers.get(e.pointerId);
+      if (!p) return;
+      p.x = e.clientX; p.y = e.clientY;
+      if (this.pinch && this.pointers.size >= 2) {
+        const [a, b] = [...this.pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        this.applyZoom(this.zoom * d / this.pinch.d, mx, my, mx - this.pinch.mx, my - this.pinch.my);
+        this.pinch = { d, mx, my };
+        e.preventDefault();
+      } else if (this.pan1 && this.pan1.id === e.pointerId) {
+        this.panX += e.clientX - this.pan1.x; this.panY += e.clientY - this.pan1.y;
+        this.pan1.x = e.clientX; this.pan1.y = e.clientY;
+        this.applyZoom(this.zoom, e.clientX, e.clientY, 0, 0);
+      }
+    }));
+    window.addEventListener('pointerup', (this.onZU = (e) => this.zoomPointerEnd(e)));
+    window.addEventListener('pointercancel', this.onZU);
+    st.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.applyZoom(this.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY, 0, 0);
+    }, { passive: false });
+  }
+
+  zoomPointerEnd(e) {
+    if (!this.pointers.delete(e.pointerId)) return;
+    if (this.pointers.size < 2) this.pinch = null;
+    if (this.pan1 && this.pan1.id === e.pointerId) this.pan1 = null;
+    // one finger of a pinch stays down: carry on moving with it instead of pressing something
+    if (this.pointers.size === 1 && !this.pan1) { const [id, p] = [...this.pointers][0]; this.pan1 = { id, x: p.x, y: p.y, fromPinch: true }; }
+    if (this.pointers.size === 0) this.pan1 = null;
+  }
+
+  /** A second finger came down: drop a touch that started a press or an object drag. */
+  cancelTouches() {
+    const rt = this.rt();
+    if (rt) rt.pointerUp(0, 0, '*');
+    if (this.drag) { const moved = this.drag.moved || this.drag.mode === 'resize'; this.drag = null; if (moved) this.changed(); }
+  }
+
+  zoomBy(f) {
+    const r = this.stage.getBoundingClientRect();
+    this.applyZoom(this.zoom * f, r.left + r.width / 2, r.top + r.height / 2, 0, 0);
+  }
+
+  resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.applyZoom(1, 0, 0, 0, 0, true); }
+
+  /** New zoom keeping the point (mx, my) of the picture under the fingers; (dx, dy) = finger movement. */
+  applyZoom(z, mx, my, dx, dy, reset = false) {
+    z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    const r = this.stage.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (!reset) {
+      const f = z / this.zoom;
+      this.panX = mx - cx - f * (mx - cx - this.panX) + dx;
+      this.panY = my - cy - f * (my - cy - this.panY) + dy;
+      this.zoom = z;
+      // keep part of the picture on the stage
+      const fw = this.frameEl.offsetWidth * z, fh = this.frameEl.offsetHeight * z;
+      const lx = r.width / 2 + fw / 2 - 70, ly = r.height / 2 + fh / 2 - 70;
+      this.panX = Math.max(-lx, Math.min(lx, this.panX));
+      this.panY = Math.max(-ly, Math.min(ly, this.panY));
+    }
+    const moved = Math.abs(this.zoom - 1) > 0.001 || Math.abs(this.panX) > 0.5 || Math.abs(this.panY) > 0.5;
+    this.frameEl.style.transform = moved ? `translate(${this.panX.toFixed(1)}px, ${this.panY.toFixed(1)}px) scale(${this.zoom.toFixed(4)})` : '';
+    this.zoomFit.classList.toggle('hidden', !moved);
+    this.stage.classList.toggle('zoomed', moved);
   }
 
   // ------------------------------------------------------------------ design
@@ -214,7 +330,7 @@ export class HmiView {
   }
 
   dDown(e) {
-    if (!this.designing) return;
+    if (!this.designing || this.pointers.size > 1) return;
     e.preventDefault();
     const [x, y] = this.dPos(e);
     const handle = e.target.dataset && e.target.dataset.h;

@@ -381,7 +381,21 @@ export class LabScene {
   }
 
   setSystem(sys) { this.system = sys; this.dirty = true; }
-  setRunning(on) { this.running = on; this.dirty = true; }
+  setRunning(on) {
+    this.running = on;
+    // stopped: no current may be seen in the wires (updateFlows only runs while simulating)
+    if (!on) this.clearFlows();
+    this.dirty = true;
+  }
+
+  clearFlows() {
+    for (const [id, cab] of this.cables) {
+      if (cab.userData.hl) continue;
+      const conn = this.project && this.project.conns.find((c) => c.id === id);
+      if (conn && conn.comm && this.net.on) continue; // the Network view's bus glow stays
+      setCableFlow(cab, null);
+    }
+  }
 
   /** Network view on / off (x-ray, tags, terminators); the camera frames the communicating devices. */
   setNetView(on, fly = true) {
