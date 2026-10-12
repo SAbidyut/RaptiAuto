@@ -98,10 +98,12 @@ export const GUIDE = [
       'Open <b>Examples → IoT & Wi-Fi</b> (or add an <b>ESP32 / NodeMCU / Uno R4 WiFi</b> board) and press <b>Run</b>. The board joins the simulated router <code>RaptiNet</code> (password <code>rapti1234</code>) and gets an IP address like <code>192.168.1.50</code>.',
       'Open the <b>IoT</b> tab: it is the phone on the same Wi-Fi. Tap the board\'s address to see its web page, open the <b>Dashboard</b> for the devices, the MQTT topics (with a publish box), ThingSpeak charts, Blynk pins, Telegram chat and a Bluetooth terminal.',
       'The dashboard has switches for the <b>Router</b> and the <b>Internet</b> — turn them off to see how your sketch copes. <b>Strict Wi-Fi</b> makes a wrong network name fail like a real router.',
+      '<b>Real internet:</b> with the phone online and <b>Settings → Real internet</b> on (also a switch in the dashboard), weather, time, air quality, prayer times, exchange rates, the ISS, quotes and any web page come from the real internet — the Pi\'s Chromium opens real websites. Services that need your own account (ThingSpeak, Blynk, Telegram, IFTTT, webhooks) stay simulated so their data shows in the dashboard. Offline, or when a real service fails, the simulator answers in the same format.',
+      'Find a project fast: <b>Examples</b> has one search box for Arduino, Raspberry Pi and PLC examples (try <i>weather</i>, <i>MQTT</i>, <i>prayer</i>, <i>air quality</i>).',
     ) + ul(
-      'Libraries: <code>WiFi</code>, <code>WiFiClient</code> / <code>WiFiClientSecure</code>, <code>WiFiServer</code>, <code>WebServer</code> / <code>ESP8266WebServer</code>, <code>HTTPClient</code>, <code>PubSubClient</code> (MQTT), <code>ArduinoJson</code>, <code>ThingSpeak</code>, <code>Blynk</code>, <code>UniversalTelegramBot</code>, <code>NTPClient</code>, <code>ESPmDNS</code>, <code>Preferences</code>, <code>BluetoothSerial</code>, <code>WiFiMulti</code>, <code>time.h</code>.',
+      'Libraries: <code>WiFi</code>, <code>WiFiClient</code> / <code>WiFiClientSecure</code> (with <code>setInsecure()</code>), <code>WiFiServer</code>, <code>WebServer</code> / <code>ESP8266WebServer</code>, <code>HTTPClient</code>, <code>PubSubClient</code> (MQTT), <code>ArduinoJson</code> (with <code>DeserializationOption::Filter</code>), <code>ThingSpeak</code>, <code>Blynk</code>, <code>UniversalTelegramBot</code>, <code>NTPClient</code>, <code>ESPmDNS</code>, <code>Preferences</code>, <code>BluetoothSerial</code>, <code>WiFiMulti</code>, <code>time.h</code>.',
       'Mistakes fail like on real hardware: <code>#include &lt;WiFi.h&gt;</code> on an Uno, HTTPS without <code>setInsecure()</code>, a forgotten <code>server.handleClient()</code>, MQTT messages bigger than the 256-byte buffer, 5 V on a 3.3 V pin.',
-    ) + tip('The Raspberry Pi Lab uses the same simulated internet and IoT dashboard (Chromium, <code>requests</code>, MQTT, Flask), so Python programs can call the same weather, ThingSpeak and Telegram services.'),
+    ) + tip('The Raspberry Pi Lab uses the same (simulated or real) internet and IoT dashboard (Chromium, <code>requests</code>, MQTT, Flask), so Python programs can call the same weather, ThingSpeak and Telegram services.'),
   },
   {
     icon: 'cpu', title: 'Delta PLC Lab (3D)',
@@ -120,7 +122,7 @@ export const GUIDE = [
     html: ol(
       'Open the lab exercise <b>Modbus RTU network</b>: the PLC COM2 is the master of one RS-485 line with four slaves — the MS300 drive (ID 1), a <b>DTB4848</b> temperature controller with an oven (ID 2), an RS-485 <b>temperature / humidity sensor</b> (ID 3) and an <b>energy meter</b> (ID 4). The HMI talks to the PLC on COM1.',
       'Press <b>Simulate</b>, then the <b>Network</b> chip in the Lab tab: the 3D panel turns into an x-ray of the communication. The RS-485 cable glows violet, RS-232 amber, USB blue; every device shows its role and station address; the two ends of the line get their 120 Ω resistors.',
-      'Watch the frames: an <b>amber</b> packet is the master\'s request travelling to the addressed station, <b>green</b> is the reply coming back, <b>red</b> an exception or no reply. Zoom in to read what each frame says and the name of every port.',
+      'While the lab runs, the ring of a port pulses <b>green</b> when its station answers the master and <b>red</b> when it does not. Zoom in to read the name of every port; the TX / RX LEDs of each device blink with its frames.',
       'Tap a communication cable → <b>Pin-out</b>: both connectors, which pin goes where (RS-232 crosses TX and RX), and the settings both ends must share.',
       '<b>Monitor → Network</b> lists the line as it is cabled with the live state of every station; tap a station for its register map with live values.',
     ) + ul(

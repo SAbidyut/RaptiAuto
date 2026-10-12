@@ -1,9 +1,11 @@
-// The simulated internet: web services a sketch or a Python program can call. The data is made up
-// (but changes with time and stays consistent), the URLs and JSON shapes follow the real services,
-// so the same code works on real hardware later. Nothing leaves the phone.
+// The simulated internet: web services a sketch or a Python program can call. Offline the data is
+// made up (but changes with time and stays consistent); the URLs and JSON shapes follow the real
+// services, so the same code works on real hardware later. With the real internet on (live.js) these
+// handlers only answer when the real service cannot — then the weather ones use the real weather.
 import { http } from './network.js';
 import { PAGES } from './pages.js';
 import { dashboardPage, dashboardApi } from './dashboard.js';
+import { installMoreServices } from './cloud-more.js';
 
 const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const rnd = (seed) => { let x = seed >>> 0 || 1; return () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; };
@@ -21,7 +23,11 @@ const CITIES = {
   dhaka: ['Dhaka', 23.81, 90.41, 29, 5, 'BD', 'Asia/Dhaka', 21600], chittagong: ['Chittagong', 22.36, 91.78, 28, 4, 'BD', 'Asia/Dhaka', 21600], sylhet: ['Sylhet', 24.9, 91.87, 27, 5, 'BD', 'Asia/Dhaka', 21600],
   london: ['London', 51.5, -0.12, 12, 5, 'GB', 'Europe/London', 0], 'new york': ['New York', 40.71, -74, 14, 8, 'US', 'America/New_York', -18000], tokyo: ['Tokyo', 35.68, 139.69, 17, 7, 'JP', 'Asia/Tokyo', 32400],
   delhi: ['Delhi', 28.61, 77.2, 31, 7, 'IN', 'Asia/Kolkata', 19800], dubai: ['Dubai', 25.2, 55.27, 36, 6, 'AE', 'Asia/Dubai', 14400], paris: ['Paris', 48.85, 2.35, 13, 6, 'FR', 'Europe/Paris', 3600],
+  rajshahi: ['Rajshahi', 24.37, 88.6, 28, 6, 'BD', 'Asia/Dhaka', 21600], khulna: ['Khulna', 22.85, 89.54, 29, 5, 'BD', 'Asia/Dhaka', 21600], barisal: ['Barisal', 22.7, 90.37, 29, 5, 'BD', 'Asia/Dhaka', 21600],
+  mymensingh: ['Mymensingh', 24.75, 90.4, 28, 5, 'BD', 'Asia/Dhaka', 21600], comilla: ['Comilla', 23.46, 91.18, 28, 5, 'BD', 'Asia/Dhaka', 21600], kolkata: ['Kolkata', 22.57, 88.36, 30, 5, 'IN', 'Asia/Kolkata', 19800],
+  makkah: ['Makkah', 21.42, 39.83, 35, 6, 'SA', 'Asia/Riyadh', 10800], 'kuala lumpur': ['Kuala Lumpur', 3.14, 101.69, 28, 4, 'MY', 'Asia/Kuala_Lumpur', 28800], singapore: ['Singapore', 1.35, 103.82, 28, 3, 'SG', 'Asia/Singapore', 28800],
 };
+CITIES.chattogram = CITIES.chittagong; CITIES.barishal = CITIES.barisal; CITIES.cumilla = CITIES.comilla; CITIES.mecca = CITIES.makkah;
 const cityByCoords = (lat, lon) => { let best = CITIES.dhaka, bd = 1e9; for (const c of Object.values(CITIES)) { const d = (c[1] - lat) ** 2 + (c[2] - lon) ** 2; if (d < bd) { bd = d; best = c; } } return best; };
 
 /** Weather now at a city: smooth daily + slow random variation, same for everybody. */
@@ -50,6 +56,38 @@ function tzInfo(nowMs, offSec) {
 export function installServices(net) {
   const add = (names, h) => { for (const n of [].concat(names)) net.addHost(n, h); };
   const now = () => net.clock();
+  // cities found with the real geocoder (live): name → city tuple like CITIES
+  const liveCities = new Map();
+  const cityNamed = (name) => { const k = String(name || '').trim().toLowerCase(); return CITIES[k] || liveCities.get(k) || null; };
+  /** The weather now at a city: the real one when the live web knows it, else the simulated one. */
+  const wx = (city, t = now()) => {
+    const real = Math.abs(t - Date.now()) < 1800000 && net.live && net.live.peekWeather(city[1], city[2]);
+    if (!real) return weatherNow(city, t);
+    const local = new Date(t + city[7] * 1000);
+    return { temp: real.temp, hum: real.hum, cloud: real.cloud, code: real.code, wind: real.wind, pressure: real.pressure, hr: local.getUTCHours() + local.getUTCMinutes() / 60, local, isDay: real.isDay, windDir: real.windDir, real: true };
+  };
+  /** Before a simulated weather service answers for a live request: fetch the real weather it needs. */
+  net.livePrepare = async (u) => {
+    const live = net.live;
+    if (!live) return;
+    const host = u.hostname.replace(/^www\./, '');
+    let lat = parseFloat(u.searchParams.get('latitude') ?? u.searchParams.get('lat'));
+    let lon = parseFloat(u.searchParams.get('longitude') ?? u.searchParams.get('lon'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      const name = host === 'wttr.in' ? decodeURIComponent(u.pathname.slice(1)) || 'Dhaka' : (u.searchParams.get('q') || '').split(',')[0];
+      if (!name) return;
+      let c = cityNamed(name);
+      if (!c) {
+        const g = await live.geocode(name);
+        if (!g) return;
+        const same = Object.values(CITIES).find((x) => x[6] === g[4]);
+        c = [g[0], g[1], g[2], 25, 5, g[3], g[4], same ? same[7] : Math.round(g[2] / 15) * 3600];
+        liveCities.set(name.trim().toLowerCase(), c);
+      }
+      lat = c[1]; lon = c[2];
+    }
+    if (/open-meteo|openweathermap|wttr/.test(host)) await live.weather(lat, lon);
+  };
 
   // ---------------------------------------------------------------- static web pages
   for (const [host, pages] of Object.entries(PAGES)) {
@@ -127,42 +165,55 @@ export function installServices(net) {
     return http.json({ year: t.d.getUTCFullYear(), month: t.d.getUTCMonth() + 1, day: t.d.getUTCDate(), hour: t.d.getUTCHours(), minute: t.d.getUTCMinutes(), seconds: t.d.getUTCSeconds(), dateTime: t.iso.slice(0, 19), date: t.iso.slice(0, 10).split('-').reverse().join('/'), time: t.iso.slice(11, 16), timeZone: city[6], dayOfWeek: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][t.d.getUTCDay()] });
   });
 
+  // ---------------------------------------------------------------- more services (air quality, prayer times, sun, rates, ISS, quotes, quakes)
+  const more = installMoreServices(net, { add, now, cityNamed, cityByCoords, CITIES, wx, weatherNow });
+
   // ---------------------------------------------------------------- weather
   add('api.open-meteo.com', (req, u) => {
     const lat = parseFloat(u.searchParams.get('latitude') ?? '23.81'), lon = parseFloat(u.searchParams.get('longitude') ?? '90.41');
     const city = cityByCoords(lat, lon);
-    const w = weatherNow(city, now());
-    const t = tzInfo(now(), 0);
-    const out = { latitude: lat, longitude: lon, generationtime_ms: 0.05, utc_offset_seconds: 0, timezone: 'GMT', elevation: 8 };
+    const real = net.live && net.live.peekWeather(lat, lon);
+    const w = real ? wx([city[0], lat, lon, city[3], city[4], city[5], city[6], city[7]]) : wx(city);
+    const [tzName, off] = more.tzOf(u, city);
+    const t = tzInfo(now(), off);
+    const out = { latitude: lat, longitude: lon, generationtime_ms: 0.05, utc_offset_seconds: off, timezone: tzName, timezone_abbreviation: off ? `GMT+${off / 3600}` : 'GMT', elevation: 8 };
     if (u.searchParams.get('current_weather') === 'true' || u.searchParams.has('current')) {
-      out.current_weather = { temperature: +w.temp.toFixed(1), windspeed: +(w.wind * 3.6).toFixed(1), winddirection: 190, weathercode: w.code, is_day: w.hr > 6 && w.hr < 18 ? 1 : 0, time: t.iso.slice(0, 16) };
+      out.current_weather = { temperature: +w.temp.toFixed(1), windspeed: +(w.wind * 3.6).toFixed(1), winddirection: w.windDir ?? 190, weathercode: w.code, is_day: w.isDay ?? (w.hr > 6 && w.hr < 18 ? 1 : 0), time: t.iso.slice(0, 16) };
       out.current = { time: t.iso.slice(0, 16), temperature_2m: +w.temp.toFixed(1), relative_humidity_2m: Math.round(w.hum), wind_speed_10m: +(w.wind * 3.6).toFixed(1), weather_code: w.code, surface_pressure: +w.pressure.toFixed(1), cloud_cover: w.cloud };
     }
     if (u.searchParams.has('hourly')) {
       const hrs = Array.from({ length: 24 }, (_, i) => { const x = weatherNow(city, now() + i * 3600e3); return x; });
       out.hourly = { time: hrs.map((_, i) => new Date(now() + i * 3600e3).toISOString().slice(0, 13) + ':00'), temperature_2m: hrs.map((x) => +x.temp.toFixed(1)), relative_humidity_2m: hrs.map((x) => Math.round(x.hum)) };
     }
+    if (u.searchParams.has('daily')) Object.assign(out, more.daily(u, [city[0], lat, lon, city[3], city[4], city[5], city[6], city[7]], off));
     return http.json(out);
   });
   add('api.openweathermap.org', (req, u) => {
     const key = u.searchParams.get('appid');
     if (!key) return http.json({ cod: 401, message: 'Invalid API key. Please see https://openweathermap.org/faq#error401 for more info.' }, 401);
     let city = null;
-    if (u.searchParams.has('q')) city = CITIES[u.searchParams.get('q').split(',')[0].trim().toLowerCase()];
-    else if (u.searchParams.has('lat')) city = cityByCoords(+u.searchParams.get('lat'), +u.searchParams.get('lon'));
+    if (u.searchParams.has('q')) city = cityNamed(u.searchParams.get('q').split(',')[0]);
+    else if (u.searchParams.has('lat')) { const la = +u.searchParams.get('lat'), lo = +u.searchParams.get('lon'), c = cityByCoords(la, lo); city = net.live && net.live.peekWeather(la, lo) ? [c[0], la, lo, c[3], c[4], c[5], c[6], c[7]] : c; }
     if (!city) return http.json({ cod: '404', message: 'city not found' }, 404);
-    const w = weatherNow(city, now());
+    const w = wx(city);
     const metric = u.searchParams.get('units') === 'metric', imperial = u.searchParams.get('units') === 'imperial';
     const T = (c) => (metric ? c : imperial ? c * 1.8 + 32 : c + 273.15);
     const d = OWM_DESC[w.code] || OWM_DESC[0];
-    return http.json({ coord: { lon: city[2], lat: city[1] }, weather: [{ id: 800 + (w.code ? 1 : 0), main: d[0], description: d[1], icon: d[2] }], base: 'stations', main: { temp: +T(w.temp).toFixed(2), feels_like: +T(w.temp + 2).toFixed(2), temp_min: +T(w.temp - 1).toFixed(2), temp_max: +T(w.temp + 1).toFixed(2), pressure: Math.round(w.pressure), humidity: Math.round(w.hum) }, visibility: 10000, wind: { speed: +w.wind.toFixed(2), deg: 190 }, clouds: { all: w.cloud }, dt: Math.floor(now() / 1000), sys: { country: city[5], sunrise: 1760000000, sunset: 1760043000 }, timezone: city[7], id: hash(city[0]) % 1e7, name: city[0], cod: 200 });
+    return http.json({ coord: { lon: city[2], lat: city[1] }, weather: [{ id: 800 + (w.code ? 1 : 0), main: d[0], description: d[1], icon: d[2] }], base: 'stations', main: { temp: +T(w.temp).toFixed(2), feels_like: +T(w.temp + 2).toFixed(2), temp_min: +T(w.temp - 1).toFixed(2), temp_max: +T(w.temp + 1).toFixed(2), pressure: Math.round(w.pressure), humidity: Math.round(w.hum) }, visibility: 10000, wind: { speed: +w.wind.toFixed(2), deg: Math.round(w.windDir ?? 190) }, clouds: { all: w.cloud }, dt: Math.floor(now() / 1000), sys: { country: city[5], sunrise: 1760000000, sunset: 1760043000 }, timezone: city[7], id: hash(city[0]) % 1e7, name: city[0], cod: 200 });
   });
   add('wttr.in', (req, u) => {
-    const city = CITIES[decodeURIComponent(u.pathname.slice(1)).toLowerCase()] || CITIES.dhaka;
-    const w = weatherNow(city, now());
+    const city = cityNamed(decodeURIComponent(u.pathname.slice(1))) || CITIES.dhaka;
+    const w = wx(city);
     const f = u.searchParams.get('format');
     if (f === '3') return http.text(`${city[0]}: ${w.code === 0 ? '☀️' : w.code === 61 ? '🌧' : '⛅'}  ${w.temp >= 0 ? '+' : ''}${Math.round(w.temp)}°C`);
     if (f === '1') return http.text(`${w.code === 0 ? '☀️' : '⛅'}  ${w.temp >= 0 ? '+' : ''}${Math.round(w.temp)}°C`);
+    if (f && f.includes('%')) {
+      // custom format: %t temperature, %f feels like, %h humidity, %w wind, %C condition, %c icon, %l location, %p rain, %P pressure
+      const deg = (v) => `${v >= 0 ? '+' : ''}${Math.round(v)}°C`;
+      const icon = w.code === 0 ? '☀️' : w.code === 61 ? '🌧' : '⛅';
+      const map = { t: deg(w.temp), f: deg(w.temp + 2), h: `${Math.round(w.hum)}%`, w: `↙${Math.round(w.wind * 3.6)}km/h`, C: (OWM_DESC[w.code] || OWM_DESC[0])[1].replace(/^./, (c) => c.toUpperCase()), c: icon, x: w.code === 0 ? 'o' : w.code === 61 ? '/' : 'mm', l: city[0], p: w.code === 61 ? '1.2mm' : '0.0mm', P: `${Math.round(w.pressure)}hPa`, u: '5', '%': '%' };
+      return http.text(f.replace(/%([a-zA-Z%])/g, (m, k) => (k in map ? map[k] : m)));
+    }
     if (f === 'j1') return http.json({ current_condition: [{ temp_C: String(Math.round(w.temp)), humidity: String(Math.round(w.hum)), windspeedKmph: String(Math.round(w.wind * 3.6)), weatherDesc: [{ value: (OWM_DESC[w.code] || OWM_DESC[0])[1] }] }] });
     return http.text(`Weather report: ${city[0]}\n\n  ${w.code === 0 ? 'Sunny' : 'Partly cloudy'}  ${Math.round(w.temp)} °C\n  Wind ${Math.round(w.wind * 3.6)} km/h   Humidity ${Math.round(w.hum)} %\n`);
   });

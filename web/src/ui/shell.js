@@ -18,6 +18,8 @@ import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from '../pi/examples.js';
 import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } from '../pi/boards.js';
 import { autowire } from '../pi/autowire.js';
+import { searchExamples, SEARCH_HINTS } from './example-search.js';
+import { piHeroArt } from './pi-hero.js';
 
 export const PAGES = {
   home: { title: 'Home', icon: 'home' },
@@ -122,7 +124,7 @@ export class Shell {
         group('Workspace'),
         item('home', 'Home', 'home'),
         item('projects', 'My Projects', 'folder', h('span', { class: 'dr-count' })),
-        item('examples', 'Examples', 'book', h('span', { class: 'dr-count' }, String(EXAMPLES.length))),
+        item('examples', 'Examples', 'book', h('span', { class: 'dr-count' }, String(EXAMPLES.length + PI_EXAMPLES.length + PICO_EXAMPLES.length + LAB_EXAMPLES.length))),
         act('Open / import file', 'upload', () => this.importProject()),
         group('Industrial automation'),
         item('plclab', 'Delta PLC Lab', 'cpu', h('span', { class: 'dr-new-badge' }, '3D')),
@@ -205,7 +207,7 @@ export class Shell {
     el.appendChild(h('section', { class: 'home-sec' }, secHead('Menu', 'Everything in RaptiAuto', 'grid'),
       h('div', { class: 'qa-grid' },
         tile('projects', 'My Projects', `${listProjects().length} saved`, 'folder', 'cyan'),
-        tile('examples', 'Examples', `${EXAMPLES.length} projects`, 'book', 'violet'),
+        tile('examples', 'Examples', `${EXAMPLES.length + PI_EXAMPLES.length + PICO_EXAMPLES.length + LAB_EXAMPLES.length} projects`, 'book', 'violet'),
         tile('plclab', 'PLC Lab', 'Delta · 3D', 'cpu', 'blue'),
         tile('pilab', 'Raspberry Pi', 'Pi 5 · Pi 4 · Pico', 'terminal', 'pink'),
         tile('components', 'Components', `${partCount()}+ parts`, 'layers', 'green'),
@@ -264,21 +266,59 @@ export class Shell {
   pageExamples(el) {
     const grid = h('div', { class: 'ex-grid' });
     const chips = h('div', { class: 'chips-row' });
-    let q = '';
+    const info = h('div', { class: 'ex-info' });
+    const last = this.piLast();
+    const piAll = this.piAll();
+    if (!this.exCat) this.exCat = 'all';
+    let q = this.exQuery || '';
+    // Arduino categories, then the two labs
+    const cats = [
+      { id: 'all', name: 'All', n: EXAMPLES.length + piAll.length + LAB_EXAMPLES.length },
+      ...EXAMPLE_CATEGORIES.map((c) => ({ ...c, n: EXAMPLES.filter((e) => e.category === c.id).length })),
+      { id: 'pi', name: 'Raspberry Pi', n: piAll.length }, { id: 'plc', name: 'PLC Lab', n: LAB_EXAMPLES.length },
+    ].filter((c) => c.n);
+    const kindsFor = (c) => (c === 'pi' ? ['pi', 'pico'] : c === 'plc' ? ['plc'] : c === 'all' ? null : ['arduino']);
+    const group = (ic, title, n) => h('div', { class: 'ex-group span-all', html: `${icon(ic, 17)}<b>${title}</b><span>${n}</span>` });
     const draw = () => {
       grid.innerHTML = '';
-      const ql = q.trim().toLowerCase();
-      const list = EXAMPLES.filter((e) => (ql ? (e.name + ' ' + e.description).toLowerCase().includes(ql) : this.exCat === 'all' || e.category === this.exCat));
-      for (const ex of list) grid.appendChild(this.exampleCard(ex));
-      if (!list.length) grid.appendChild(h('p', { class: 'muted center span-all' }, 'No examples found'));
+      info.innerHTML = '';
+      info.classList.remove('hints');
+      const thumbs = [];
+      const ql = q.trim();
+      if (ql) {
+        let res = searchExamples(ql, kindsFor(this.exCat));
+        if (!['all', 'pi', 'plc'].includes(this.exCat)) res = res.filter((r) => r.item.category === this.exCat);
+        const ard = res.filter((r) => r.kind === 'arduino'), pi = res.filter((r) => r.kind === 'pi' || r.kind === 'pico'), plc = res.filter((r) => r.kind === 'plc');
+        info.append(h('span', {}, res.length ? `${res.length} example${res.length === 1 ? '' : 's'} for “${ql}”` : `Nothing found for “${ql}”`),
+          ...(res.length ? [] : [h('span', { class: 'muted' }, ' · try another word, or All')]));
+        if (ard.length) { grid.appendChild(group('cpu', 'Arduino · ESP32', ard.length)); for (const r of ard) grid.appendChild(this.exampleCard(r.item)); }
+        if (pi.length) { grid.appendChild(group('terminal', 'Raspberry Pi · Pico', pi.length)); for (const r of pi) grid.appendChild(this.piExampleCard({ ...r.item, kind: r.kind }, last, thumbs)); }
+        if (plc.length) { grid.appendChild(group('cube', 'Delta PLC Lab', plc.length)); for (const r of plc) grid.appendChild(this.labExampleCard(r.item)); }
+      } else {
+        if (this.exCat === 'all') {
+          info.classList.add('hints');
+          info.append(h('span', { class: 'muted' }, 'Try:'), ...SEARCH_HINTS.map((t) => h('button', { class: 'ex-hint', onclick: () => { inp.value = t; q = t; this.exQuery = t; draw(); } }, t)));
+        }
+        if (this.exCat === 'pi') for (const e of piAll) grid.appendChild(this.piExampleCard(e, last, thumbs));
+        else if (this.exCat === 'plc') for (const ex of LAB_EXAMPLES) grid.appendChild(this.labExampleCard(ex));
+        else for (const ex of EXAMPLES.filter((e) => this.exCat === 'all' || e.category === this.exCat)) grid.appendChild(this.exampleCard(ex));
+        if (this.exCat === 'all') {
+          grid.appendChild(h('button', { class: 'ex-more span-all', onclick: () => { this.exCat = 'pi'; markChip(); draw(); } }, h('span', { html: icon('terminal', 18) }), h('b', {}, `${piAll.length} Raspberry Pi and Pico examples`), h('span', { html: icon('forward', 18) })));
+          grid.appendChild(h('button', { class: 'ex-more span-all', onclick: () => { this.exCat = 'plc'; markChip(); draw(); } }, h('span', { html: icon('cube', 18) }), h('b', {}, `${LAB_EXAMPLES.length} PLC Lab projects`), h('span', { html: icon('forward', 18) })));
+        }
+      }
+      if (!grid.children.length && !ql) grid.appendChild(h('p', { class: 'muted center span-all' }, 'No examples found'));
+      this.fillPiThumbs(thumbs, last);
     };
-    for (const c of [{ id: 'all', name: 'All' }, ...EXAMPLE_CATEGORIES]) {
-      const n = c.id === 'all' ? EXAMPLES.length : EXAMPLES.filter((e) => e.category === c.id).length;
-      if (!n) continue;
-      chips.appendChild(h('button', { class: 'chip' + (c.id === this.exCat ? ' active' : ''), onclick: (e) => { this.exCat = c.id; for (const x of chips.children) x.classList.remove('active'); e.currentTarget.classList.add('active'); draw(); } },
-        c.name, h('span', { class: 'chip-n' }, String(n))));
+    const markChip = () => { for (const x of chips.children) x.classList.toggle('active', x.dataset.id === this.exCat); };
+    for (const c of cats) {
+      chips.appendChild(h('button', { class: 'chip' + (c.id === this.exCat ? ' active' : ''), 'data-id': c.id, onclick: () => { this.exCat = c.id; markChip(); draw(); } },
+        c.name, h('span', { class: 'chip-n' }, String(c.n))));
     }
-    el.append(h('div', { class: 'page-tools sticky' }, searchBox('Search examples', (v) => { q = v; draw(); }), chips), grid);
+    const box = searchBox('Search all examples: weather, MQTT, LCD …', (v) => { q = v; this.exQuery = v; draw(); });
+    const inp = box.querySelector('input');
+    inp.value = q;
+    el.append(h('div', { class: 'page-tools sticky' }, box, chips), info, grid);
     draw();
   }
 
@@ -386,6 +426,8 @@ export class Shell {
       group('Landscape & full screen',
         toggle('Side by side in landscape', 'Show circuit and code together when the phone is sideways', () => s.split !== false, (v) => { s.split = v; }, 'columns'),
         toggle('Side by side in full screen', 'Off: one panel at a time. While running, sketches that use Serial show circuit + Serial Monitor together', () => s.splitFs === true, (v) => { s.splitFs = v; }, 'fullscreen')),
+      group('Internet (IoT)',
+        toggle('Real internet', 'Weather, time, IP, prices and web pages in IoT sketches, Python and the Pi\'s Chromium come from the phone\'s internet when it is online. ThingSpeak, Blynk, Telegram and webhooks stay simulated (see the IoT dashboard)', () => s.realInternet !== false, (v) => { s.realInternet = v; }, 'globe')),
       group('Feedback',
         toggle('Sound', 'Play buzzers and speakers during simulation', () => s.sound !== false, (v) => { s.sound = v; }, 'bell'),
         toggle('Vibration', 'Short haptic feedback when wiring and pressing buttons', () => s.haptics !== false, (v) => { s.haptics = v; Native.haptics = v; }, 'hand')),
@@ -416,11 +458,11 @@ export class Shell {
   // ---------------------------------------------------------------- Raspberry Pi lab
   piBanner() {
     return h('section', { class: 'lab-banner pi-banner', onclick: () => this.go('pilab') },
-      h('div', { class: 'lb-art', html: piArt() }),
+      h('div', { class: 'lb-art', html: piHeroArt() }),
       h('div', { class: 'lb-content' },
-        h('div', { class: 'hero-kicker', html: `${icon('sparkles', 15)}<span>NEW · Raspberry Pi</span>` }),
+        h('div', { class: 'hero-kicker', html: `${icon('terminal', 15)}<span>Raspberry Pi · Pico · Python</span>` }),
         h('h2', {}, 'Virtual ', h('span', { class: 'grad' }, 'Raspberry Pi')),
-        h('p', {}, 'Pi 5, Pi 4 and Pico boards: wire LEDs, buttons, sensors and an Arduino on a breadboard, then run Python from Thonny — with a Pi OS desktop and terminal.'),
+        h('p', {}, 'Pi 5, Pi 4 and Pico: wire a breadboard, run Python in Thonny, browse the web in Chromium and build IoT projects with live data.'),
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: (e) => { e.stopPropagation(); this.newPiProject(); } }),
           h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: (e) => { e.stopPropagation(); this.go('pilab', { anchor: 'pi-examples' }); } }))));
@@ -462,15 +504,16 @@ export class Shell {
         }
       } else {
         const grid = h('div', { class: 'ex-grid lab-ex-grid' });
-        for (const ex of LAB_EXAMPLES) {
-          grid.appendChild(h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
-            h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
-            h('div', { class: 'ex-body' },
-              h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
-              h('div', { class: 'ex-name' }, ex.name),
-              h('div', { class: 'ex-desc' }, ex.description))));
-        }
-        body.appendChild(grid);
+        const fill = (q) => {
+          grid.innerHTML = '';
+          const list = q.trim() ? searchExamples(q, ['plc']).map((r) => r.item) : LAB_EXAMPLES;
+          for (const ex of list) grid.appendChild(this.labExampleCard(ex));
+          if (!list.length) grid.appendChild(h('p', { class: 'muted center span-all' }, `Nothing found for “${q.trim()}”`));
+        };
+        const box = searchBox('Search PLC examples: VFD, Modbus, timer …', fill);
+        box.classList.add('sec-search');
+        body.append(box, grid);
+        fill('');
       }
       if (scroll) requestAnimationFrame(() => seg.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     };
@@ -480,15 +523,14 @@ export class Shell {
 
   // ---------------------------------------------------------------- Raspberry Pi lab page
   pagePi(el) {
-    let last = 'pi5';
-    try { last = localStorage.getItem('rapti.pi.board') || 'pi5'; } catch (e) { /* ignore */ }
-    if (!PI_BOARDS[last]) last = 'pi5';
+    const last = this.piLast();
     el.appendChild(h('section', { class: 'lab-intro pi-intro' },
-      h('div', { class: 'lb-art', html: piArt() }),
+      h('div', { class: 'lb-art', html: piHeroArt() }),
       h('div', { class: 'li-text' },
-        h('h2', {}, 'Virtual Raspberry Pi'),
-        h('p', {}, 'Raspberry Pi 5 / 4 and Pico: build circuits on a breadboard, run real Python and MicroPython, use the Pi OS desktop and terminal.'),
-        h('div', { class: 'li-feats' }, ...['Breadboard', 'GPIO', 'Thonny', 'Terminal', 'Displays', 'IoT · Wi-Fi', 'I²C · UART', 'Arduino slave'].map((t) => h('span', { class: 'pill' }, t))),
+        h('div', { class: 'hero-kicker', html: `${icon('terminal', 15)}<span>Pi 5 · Pi 4 · Pico · Pico W</span>` }),
+        h('h2', {}, 'Virtual ', h('span', { class: 'grad' }, 'Raspberry Pi')),
+        h('p', {}, 'Build the circuit on a breadboard, run real Python and MicroPython, and use the Pi OS desktop: Thonny, terminal and a Chromium that opens real websites.'),
+        h('div', { class: 'li-feats' }, ...[['cpu', 'GPIO · breadboard'], ['code', 'Thonny'], ['terminal', 'Terminal'], ['display', 'LCD · OLED'], ['wifi', 'IoT · live data'], ['globe', 'Real web'], ['network', 'I²C · SPI · UART'], ['chip', 'Arduino slave']].map(([ic, t]) => h('span', { class: 'pill', html: `${icon(ic, 13)}<span>${t}</span>` }))),
         h('div', { class: 'hero-actions' },
           h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>New project</span>`, onclick: () => this.newPiProject() }),
           h('button', { class: 'btn btn-glass', html: `${icon('book', 18)}<span>Examples</span>`, onclick: () => { const t = el.querySelector('#pi-examples'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); } })))));
@@ -500,45 +542,74 @@ export class Shell {
             h('div', { class: 'proj-name' }, 'Open my Pi workspace'),
             h('div', { class: 'proj-meta' }, `${PI_BOARDS[last].name} · where you left off`)),
           h('span', { class: 'icon-btn sm', html: icon('forward', 20) })))));
-    // examples: Raspberry Pi 4 / 5 and Pico, by topic
-    const all = [...PI_EXAMPLES.map((e) => ({ ...e, kind: 'pi' })), ...PICO_EXAMPLES.map((e) => ({ ...e, kind: 'pico' }))];
-    const cats = [['all', 'All'], ['pi', 'Pi 4 / 5'], ['pico', 'Pico'], ['breadboard', 'Breadboard'], ['master-slave', 'Master–Slave']];
+    // examples: Raspberry Pi 4 / 5 and Pico, by topic, with a search box
+    const all = this.piAll();
+    const cats = [['all', 'All'], ['pi', 'Pi 4 / 5'], ['pico', 'Pico'], ['IoT', 'IoT'], ['display', 'Displays'], ['breadboard', 'Breadboard'], ['master-slave', 'Master–Slave']];
     const match = (e, c) => c === 'all' || e.kind === c || e.tags.includes(c);
     if (!this.piCat) this.piCat = 'all';
+    let q = '';
     const chips = h('div', { class: 'chips-row' });
     const grid = h('div', { class: 'ex-grid pi-ex-grid' });
-    const thumbs = [];
     const draw = () => {
       grid.innerHTML = '';
-      thumbs.length = 0;
-      for (const e of all.filter((x) => match(x, this.piCat))) {
-        const th = h('div', { class: 'ex-thumb pi-ex-thumb' });
-        thumbs.push([th, e]);
-        const desc = (e.code.split('\n')[0] || '').replace(/^#\s*/, '');
-        grid.appendChild(h('button', { class: 'ex-card pi-ex', onclick: () => this.openPiExample(e, last) },
-          th,
-          h('div', { class: 'ex-body' },
-            h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + (e.kind === 'pi' ? 'intermediate' : 'beginner') }, e.kind === 'pi' ? 'Pi 4 / 5' : 'Pico'), ...e.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
-            h('div', { class: 'ex-name' }, e.title),
-            h('div', { class: 'ex-desc' }, desc))));
-      }
-      // circuit thumbnails are drawn a few at a time so the page opens at once
-      const job = ++this.piThumbJob;
-      const next = () => {
-        if (job !== this.piThumbJob || !thumbs.length) return;
-        const [th, e] = thumbs.shift();
-        try { th.innerHTML = piExampleThumb(e, last); } catch (err) { th.innerHTML = piArt(); }
-        setTimeout(next, 0);
-      };
-      setTimeout(next, 60);
+      const thumbs = [];
+      const list = q.trim() ? searchExamples(q, ['pi', 'pico']).map((r) => ({ ...r.item, kind: r.kind })).filter((x) => match(x, this.piCat)) : all.filter((x) => match(x, this.piCat));
+      for (const e of list) grid.appendChild(this.piExampleCard(e, last, thumbs));
+      if (!list.length) grid.appendChild(h('p', { class: 'muted center span-all' }, `Nothing found for “${q.trim()}”`));
+      this.fillPiThumbs(thumbs, last);
     };
-    this.piThumbJob = (this.piThumbJob || 0) + 1;
     for (const [id, label] of cats) {
       const n = all.filter((e) => match(e, id)).length;
+      if (!n) continue;
       chips.appendChild(h('button', { class: 'chip' + (id === this.piCat ? ' active' : ''), onclick: (ev) => { this.piCat = id; for (const x of chips.children) x.classList.remove('active'); ev.currentTarget.classList.add('active'); draw(); } }, label, h('span', { class: 'chip-n' }, String(n))));
     }
-    el.appendChild(h('section', { class: 'home-sec', id: 'pi-examples' }, secHead('Examples', 'Opens the circuit and the program — press Run', 'book'), chips, grid));
+    const box = searchBox('Search Pi examples: weather, LCD, MQTT …', (v) => { q = v; draw(); });
+    box.classList.add('sec-search');
+    el.appendChild(h('section', { class: 'home-sec', id: 'pi-examples' }, secHead('Examples', 'Opens the circuit and the program — press Run', 'book'), box, chips, grid));
     draw();
+  }
+
+  /** The board the Pi Lab was last used with. */
+  piLast() {
+    let last = 'pi5';
+    try { last = localStorage.getItem('rapti.pi.board') || 'pi5'; } catch (e) { /* ignore */ }
+    return PI_BOARDS[last] ? last : 'pi5';
+  }
+
+  piAll() { return [...PI_EXAMPLES.map((e) => ({ ...e, kind: 'pi' })), ...PICO_EXAMPLES.map((e) => ({ ...e, kind: 'pico' }))]; }
+
+  /** Card of a Pi / Pico example; its circuit thumbnail is drawn later (fillPiThumbs). */
+  piExampleCard(e, last, thumbs) {
+    const th = h('div', { class: 'ex-thumb pi-ex-thumb' });
+    thumbs.push([th, e]);
+    const desc = (e.code.split('\n')[0] || '').replace(/^#\s*/, '');
+    return h('button', { class: 'ex-card pi-ex', onclick: () => this.openPiExample(e, last) },
+      th,
+      h('div', { class: 'ex-body' },
+        h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + (e.kind === 'pi' ? 'intermediate' : 'beginner') }, e.kind === 'pi' ? 'Pi 4 / 5' : 'Pico'), ...e.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
+        h('div', { class: 'ex-name' }, e.title),
+        h('div', { class: 'ex-desc' }, desc)));
+  }
+
+  /** Circuit thumbnails are drawn a few at a time so the page opens at once. */
+  fillPiThumbs(thumbs, last) {
+    const job = this.piThumbJob = (this.piThumbJob || 0) + 1;
+    const next = () => {
+      if (job !== this.piThumbJob || !thumbs.length) return;
+      const [th, e] = thumbs.shift();
+      try { th.innerHTML = piExampleThumb(e, last); } catch (err) { th.innerHTML = piArt(); }
+      setTimeout(next, 0);
+    };
+    setTimeout(next, 60);
+  }
+
+  labExampleCard(ex) {
+    return h('button', { class: 'ex-card lab-ex', onclick: () => this.openLabExample(ex.id) },
+      h('div', { class: 'ex-thumb lab-ex-thumb', html: labExampleArt(ex) }),
+      h('div', { class: 'ex-body' },
+        h('div', { class: 'ex-tags' }, h('span', { class: 'tag tag-' + ex.level }, ex.level), ...ex.tags.slice(0, 2).map((t) => h('span', { class: 'tag' }, t))),
+        h('div', { class: 'ex-name' }, ex.name),
+        h('div', { class: 'ex-desc' }, ex.description)));
   }
 
   /** New Pi project: choose the board; the lab opens with an empty circuit and a new .py file. */

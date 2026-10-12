@@ -371,7 +371,7 @@ export class WiFiClientLib extends NetStream {
     };
     const r = net.route(new URL(url), dev);
     if (r.error) { this.closeT = this.rt.t; return; }
-    if (!r.server) {
+    if (!r.server && !r.live) {
       const res = net.requestSync(req, dev);
       deliver(res, this.rt.t + (res.ms || 60) * 1000);
     } else {

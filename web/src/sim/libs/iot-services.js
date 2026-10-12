@@ -7,16 +7,19 @@ import { addLibrary, defineClass } from './registry.js';
 import { cstr, Ptr, Ref, AStr } from '../lang/values.js';
 import { netOf, devOf, WiFiClientLib, NetStream, IPAddress, HTTP, wait, text, bytes, hostOf, hash } from './iot.js';
 
-/** Calls the network from a sketch: internet services answer at once, other devices' web servers need time. */
+/** Calls the network from a sketch: simulated services answer at once, other devices' web servers and the real internet need time. */
 export function* callNet(rt, net, dev, req, timeoutMs = 5000) {
   const u = net.parseUrl(req.url);
   if (!u) return net.fail('ERR_INVALID_URL', 'Invalid URL');
   const r = net.route(u, dev);
   if (r.error) return r.error;
-  if (!r.server) return net.requestSync(req, dev);
+  // the simulated internet answers at once; another device's server or the real internet takes time
+  if (!r.server && !r.live) return net.requestSync(req, dev);
+  // a real request may take longer than the sketch's time-out; then the simulated service answers
+  const lim = r.live ? Math.max(timeoutMs, 10000) : timeoutMs;
   let res = null;
-  net.request(req, dev, timeoutMs).then((x) => { res = x; });
-  yield* rt.waitFor(() => !!res, rt.t + (timeoutMs + 200) * 1000);
+  net.request(req, dev, lim).then((x) => { res = x; });
+  yield* rt.waitFor(() => !!res, rt.t + (lim + 200) * 1000);
   return res || net.fail('ERR_TIMED_OUT', 'timed out');
 }
 

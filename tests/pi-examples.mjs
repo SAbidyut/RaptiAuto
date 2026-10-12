@@ -11,6 +11,7 @@ import { SimEngine } from '../web/src/sim/engine.js';
 import { CircuitHw } from '../web/src/pi/circuit-hw.js';
 import { autowire } from '../web/src/pi/autowire.js';
 import { PI_MORE, PICO_MORE } from '../web/src/pi/examples-more.js';
+import { PI_IOT, PICO_IOT } from '../web/src/pi/examples-iot.js';
 import { VirtualNet } from '../web/src/net/network.js';
 
 const filter = process.argv[2];
@@ -88,6 +89,19 @@ const CH = {
   'iot_uptime_monitor.py': { ms: 6000, check: (r) => /UP\s+http:\/\/httpbin\.org/.test(r.out) && /DOWN http:\/\/no-such-site\.example/.test(r.out) && r.ctx.engine.pins.get(27).out === 1 && lcdRows(r.ctx.part('lcd-i2c'))[0].startsWith('Up: 2 / 3') },
   'iot_door_ifttt.py': { ms: 5000, plan: [[800, (c) => c.input('pushbutton', 'press', true)], [2500, (c) => c.input('pushbutton', 'press', false)]], check: (r) => r.out.includes('DOOR OPENED') && r.ctx.net.notes.some((n) => /door_open/.test(n.title)) && /IFTTT -> 200/.test(r.out) },
   'iot_system_dashboard.py': { ms: 4500, plan: [[2500, (c) => c.req('api', 'GET', ':5000/api/system')], [2800, (c) => c.req('home', 'GET', ':5000/')]], check: (r) => { const j = JSON.parse(r.ctx.got.api.body); return j.temp > 30 && j.mem > 0 && r.ctx.got.home.body.includes('fetch(\'/api/system\')'); } },
+  // live-data IoT projects (simulated offline)
+  'iot_air_quality.py': { ms: 4500, check: (r) => { const m = /AQI (\d+) \w+/.exec(r.out); if (!m) return false; const aqi = +m[1], p = r.ctx.engine.pins; return /^AQI \d+ \w/.test(lcdRows(r.ctx.part('lcd-i2c'))[0]) && p.get(17).out === +(aqi <= 50) && p.get(27).out === +(aqi > 50 && aqi <= 150) && p.get(22).out === +(aqi > 150); } },
+  'iot_prayer_times.py': { ms: 5000, check: (r) => { const [a, b] = lcdRows(r.ctx.part('lcd-i2c')); return /Fajr +0\d:\d\d/.test(r.out) && /Hijri date: \d\d-\d\d-14\d\d/.test(r.out) && /^(Fajr|Dhuhr|Asr|Maghrib|Isha) +\d\d:\d\d$/.test(a) && /^in \d+h\d\dm  \d\d:\d\d$/.test(b); } },
+  'iot_currency_oled.py': { ms: 4500, check: (r) => /1 USD = 1\d\d\.\d\d BDT/.test(r.out) && /1 SAR = \d\d\.\d\d BDT/.test(r.out) && lit(r.ctx.part('oled-ssd1306').ssd1306.fb) > 300 },
+  'iot_iss_tracker.py': { ms: 4500, check: (r) => { const m = /ISS at -?\d+\.\d\d, -?\d+\.\d\d - (\d+) km from home/.exec(r.out); return m && r.ctx.engine.pins.get(17).out === +(+m[1] < 2000) && lit(r.ctx.part('oled-ssd1306').ssd1306.fb) > 200; } },
+  'iot_sunset_light.py': { ms: 4500, check: (r) => { const on = / lamp ON/.test(r.out); return /Sunrise 0\d:\d\d  Sunset 1\d:\d\d  \(day length \d+ min\)/.test(r.out) && (on || / lamp OFF/.test(r.out)) && (r.ctx.part('lamp').visual.b > 0.5) === on; } },
+  'iot_weather_dashboard.py': { ms: 6000, plan: [[3500, (c) => c.req('api', 'GET', ':5000/api/weather')], [3900, (c) => c.req('home', 'GET', ':5000/')]], check: (r) => { const g = r.ctx.got; const j = g.api && JSON.parse(g.api.body); return j && j.days.length === 3 && j.aqi > 0 && /^\d\d:\d\d$/.test(j.sunrise) && g.home.body.includes('Dhaka weather') && r.ctx.engine.pins.get(17).out === +(j.days[1].rain > 50); } },
+  'iot_earthquake_alert.py': { ms: 5000, check: (r) => /USGS M4\.5\+ Earthquakes, Past Day - \d+ quakes/.test(r.out) && /^M\d\.\d +\d+km$/.test(lcdRows(r.ctx.part('lcd-i2c'))[0]) },
+  'iot_quote_matrix.py': { ms: 4000, check: (r) => /^".+" - .+$/m.test(r.out) && r.ctx.part('max7219').max7219.some((m) => Array.from(m.rows).some((v) => v)) },
+  'iot_weather_neopixel.py': { ms: 4000, check: (r) => { const m = /Outside \d+\.\d C -> (\d) LEDs/.exec(r.out); const px = r.ctx.g.neo.get(18) || []; return m && px.filter((c) => c[0] || c[1] || c[2]).length === +m[1] && px.length === 8; } },
+  'iot_temp_tm1637.py': { ms: 4000, check: (r) => { const s = r.ctx.part('tm1637').tm1637.segs; return /Dhaka \+?-?\d+°C -> -?\d+/.test(r.out) && s[2] === 0x63 && s[3] === 0x39; } },
+  'w_air_quality.py': { ms: 6000, check: (r) => { const m = /AQI (\d+) PM2\.5/.exec(r.out); if (!m) return false; const aqi = +m[1], p = r.ctx.engine.pins; return p.get(13).out === +(aqi <= 50) && p.get(14).out === +(aqi > 50 && aqi <= 150) && p.get(15).out === +(aqi > 150); } },
+  'w_iss_oled.py': { ms: 6000, check: (r) => /People in space: \d+/.test(r.out) && /ISS -?\d+\.\d+ -?\d+\.\d+/.test(r.out) && lit(r.ctx.part('oled-ssd1306').ssd1306.fb) > 200 },
   // Pico
   'oled_text.py': { ms: 2500, check: (r) => r.out.includes("I2C devices: ['0x3c']") && lit(r.ctx.part('oled-ssd1306').ssd1306.fb) > 100 },
   'lcd_counter.py': { ms: 3500, plan: [[1200, (c) => c.input('pushbutton', 'press', true)], [1400, (c) => c.input('pushbutton', 'press', false)]], check: (r) => lcdRows(r.ctx.part('lcd-i2c'))[1].startsWith('Presses: 1') },
@@ -104,7 +118,7 @@ const CH = {
 };
 
 let failures = 0;
-const all = [...PI_MORE.map((e) => ({ e, board: 'pi5' })), ...PICO_MORE.map((e) => ({ e, board: (e.boards || ['pico'])[0] === 'picow' ? 'picow' : 'pico' }))];
+const all = [...PI_MORE.map((e) => ({ e, board: 'pi5' })), ...PI_IOT.map((e) => ({ e, board: 'pi5' })), ...[...PICO_MORE, ...PICO_IOT].map((e) => ({ e, board: (e.boards || ['pico'])[0] === 'picow' ? 'picow' : 'pico' }))];
 for (const { e, board } of all) {
   if (filter && !e.file.includes(filter)) continue;
   const chk = CH[e.file];

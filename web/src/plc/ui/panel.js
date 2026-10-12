@@ -239,8 +239,7 @@ export class PanelView {
     this.netSig = null;
     if (on) {
       this.updateNetCard();
-      if (!this.lab.settings.netHinted) { this.lab.settings.netHinted = true; this.lab.app.saveSettings(); this.hint('Network view: only the communication. Amber = request from the master, green = reply, red = error / no reply. Zoom in for the port names; tap a cable for its pin-out.', 7500); }
-      if (!this.lab.sys) toast('Press Simulate to see the frames travel', 'info', 3000);
+      if (!this.lab.settings.netHinted) { this.lab.settings.netHinted = true; this.lab.app.saveSettings(); this.hint('Network view: only the communication. The ring of a port pulses green when its device answers, red when it does not. Zoom in for the port names; tap a cable for its pin-out.', 7500); }
     }
     Native.vibrate(8);
   }
@@ -251,7 +250,7 @@ export class PanelView {
     const sys = this.lab.sys;
     const P = this.lab.project;
     const plc = P.devices.find((d) => d.id === this.lab.activeId) || P.devices.find((d) => DEVICE_DEFS[d.type].category === 'plc');
-    let line = 'Press Simulate to see the frames';
+    let line = 'Press Simulate to see the stations answer';
     let stats = '';
     if (sys) {
       const masters = sys.byKind('plc').filter((p) => p.cpu.powered && p.cpu.mbReq.size);
@@ -266,7 +265,7 @@ export class PanelView {
     const buses = new Set();
     for (const c of P.conns) if (c.comm) { const d = P.devices.find((x) => x.id === c.a.dev); const pt = d && findPort(d, c.a.port); if (pt) buses.add(pt.bus); }
     const keys = ['rs485', 'rs232', 'usb'].filter((b) => buses.has(b)).map((b) => `<span class="nl-b ${b}">${busName(b)}</span>`).join('');
-    const html = `<div class="nl-keys"><span class="nl-k req">request</span><span class="nl-k res">reply</span><span class="nl-k err">error</span>${keys ? '<span class="nl-sep"></span>' + keys : ''}</div><div class="nl-line">${esc(line)}</div>${stats ? `<div class="nl-stats">${stats}</div>` : ''}`;
+    const html = `<div class="nl-keys">${keys}<span class="nl-sep"></span><span class="nl-k res">answered</span><span class="nl-k err">no answer</span></div><div class="nl-line">${esc(line)}</div>${stats ? `<div class="nl-stats">${stats}</div>` : ''}`;
     if (html === this.netSig) return;
     this.netSig = html;
     this.netCard.innerHTML = html;

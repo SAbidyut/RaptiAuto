@@ -377,3 +377,25 @@
 .pi-sketch-sheet .sheet-body { display: flex; flex-direction: column; padding: 0 0 6px; overflow: hidden; }
 .pi-sketch-sheet .sheet-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pi-sketch { position: relative; flex: 1; min-height: 0; border-top: 1px solid var(--line2); }
+
+/* ---- the Raspberry Pi Lab picture (home banner + top of the Pi page) */
+.pi-banner { border-color: rgba(225, 29, 72, .35); background: radial-gradient(110% 120% at 100% 0%, rgba(225, 29, 72, .28), transparent 60%), radial-gradient(90% 90% at 0% 100%, rgba(34, 197, 94, .2), transparent 60%), linear-gradient(160deg, #1a1530, #0b1224); }
+.pi-banner h2 .grad, .pi-intro h2 .grad { background: linear-gradient(135deg, #fb7185, #4ade80); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.pi-banner .hero-kicker { border-color: rgba(251, 113, 133, .45); color: #fda4af; }
+@media (min-width: 641px) { .pi-banner .lb-art { width: 46%; max-width: 420px; top: 8px; bottom: 8px; transform: none; } }
+@media (max-width: 640px) { .pi-banner .lb-art { height: 176px; margin: 6px 0 4px; } }
+.pi-intro { background: radial-gradient(110% 80% at 100% 0%, rgba(225, 29, 72, .22), transparent 60%), radial-gradient(90% 80% at 0% 100%, rgba(34, 197, 94, .16), transparent 60%), linear-gradient(160deg, #18142c, #0b1226); border-color: rgba(225, 29, 72, .3); }
+.pi-intro .lb-art { height: 190px; }
+.pi-intro .hero-kicker { align-self: flex-start; margin-bottom: 4px; border-color: rgba(251, 113, 133, .45); color: #fda4af; }
+.pi-intro .li-feats .pill { display: inline-flex; align-items: center; gap: 5px; }
+.pi-intro .li-feats .pill svg { color: #4ade80; }
+.pi-hero { display: block; overflow: visible; }
+.pi-hero .pih-code { font: 600 8px var(--mono, monospace); }
+.pi-hero .pih-ln { font: 500 7px var(--mono, monospace); }
+.pi-hero .pih-title { font: 600 6.5px Inter, sans-serif; fill: #94a3b8; }
+.pi-hero .pih-run { font: 700 6px Inter, sans-serif; fill: #fff; }
+.pi-hero .pih-pin { font: 700 6.4px var(--mono, monospace); fill: #fdba74; }
+.pi-hero .pih-glow, .pi-hero .pih-hot { animation: pihBlink 1.2s steps(1, end) infinite; }
+.pi-hero .pih-caret { animation: pihBlink 1s steps(1, end) infinite; }
+@keyframes pihBlink { 0% { opacity: 1; } 50% { opacity: .12; } }
+@media (prefers-reduced-motion: reduce) { .pi-hero .pih-glow, .pi-hero .pih-hot, .pi-hero .pih-caret { animation: none; } }

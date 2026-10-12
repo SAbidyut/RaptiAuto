@@ -144,7 +144,7 @@ export class Desktop {
     const setTitle = (t) => { win.titleEl.textContent = t; win.task.lastChild.textContent = t; };
     switch (id) {
       case 'terminal': {
-        const t = new Terminal({ sys: this.sys, onExit: () => this.close(win), openThonny: (p) => this.openThonny(p), openFile: (p) => this.openPath(p), openUrl: (u) => this.open('chromium', u || 'http://rapti.net/') });
+        const t = new Terminal({ sys: this.sys, onExit: () => this.close(win), openThonny: (p) => this.openThonny(p), openFile: (p) => this.openPath(p), openUrl: (u) => this.open('chromium', u || 'http://start.rapti.net/') });
         win.body.appendChild(t.el);
         setTitle('pi@raspberrypi: ~');
         setTimeout(() => t.con.focus(), 60);
@@ -291,12 +291,12 @@ export class Desktop {
   chromium(win, arg, setTitle) {
     const net = this.sys.net;
     const vb = new VirtualBrowser({
-      net, origin: this.sys.netDev, home: 'http://rapti.net/', start: false,
-      bookmarks: [['Rapti Home', 'http://rapti.net/'], ['Dashboard', 'http://dashboard.rapti.net/'], ['localhost:5000', 'http://localhost:5000/'], ['localhost:8000', 'http://localhost:8000/'], ['Weather', 'http://wttr.in/Dhaka'], ['HiveMQ', 'http://www.hivemq.com/demos/websocket-client/'], ['Docs', 'http://docs.rapti.net/']],
+      net, origin: this.sys.netDev, home: 'http://start.rapti.net/', start: false,
+      bookmarks: [['Start', 'http://start.rapti.net/'], ['RAPTI', 'http://rapti.net/'], ['Google', 'https://www.google.com/'], ['Wikipedia', 'https://en.wikipedia.org/'], ['Dashboard', 'http://dashboard.rapti.net/'], ['localhost:5000', 'http://localhost:5000/'], ['localhost:8000', 'http://localhost:8000/'], ['Weather', 'http://wttr.in/Dhaka'], ['HiveMQ', 'http://www.hivemq.com/demos/websocket-client/'], ['Docs', 'http://docs.rapti.net/']],
       onTitle: (t) => setTitle('Chromium — ' + (t || 'New Tab')),
     });
     win.body.appendChild(vb.el);
-    vb.go(arg || 'http://rapti.net/');
+    vb.go(arg || 'http://start.rapti.net/');
     return { openArg: (u) => { if (u) vb.go(/^[a-z]+:\/\//i.test(u) ? u : vb.fixUrl(u)); }, destroy: () => vb.destroy() };
   }
 

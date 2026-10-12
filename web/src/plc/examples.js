@@ -343,7 +343,7 @@ export const LAB_EXAMPLES = [
   },
   {
     id: 'modbus-network', name: 'Modbus RTU network: PLC · VFD · DTB · sensor · meter · HMI', level: 'advanced', tags: ['Modbus', 'RS-485', 'MODRW', 'DTB', 'HMI'], featured: true,
-    description: 'One RS-485 bus, one master and four slaves: the PLC (COM2) runs the MS300 conveyor drive (station 1), sets and reads the DTB4848 oven controller (station 2), reads the cabinet temperature / humidity sensor (station 3) and the energy meter (station 4). The HMI talks to the PLC on COM1. Open the Network view to watch every frame travel along the cables.',
+    description: 'One RS-485 bus, one master and four slaves: the PLC (COM2) runs the MS300 conveyor drive (station 1), sets and reads the DTB4848 oven controller (station 2), reads the cabinet temperature / humidity sensor (station 3) and the energy meter (station 4). The HMI talks to the PLC on COM1. Open the Network view to see the whole RS-485 line, its station addresses and which device answers.',
     build() {
       const b = builder();
       base(b);

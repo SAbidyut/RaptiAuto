@@ -3,6 +3,7 @@
 
 import { bbTrafficLights, bbDoorbell, piI2cMaster, piUartMaster } from './bb-examples.js';
 import { PI_MORE, PICO_MORE } from './examples-more.js';
+import { PI_IOT, PICO_IOT } from './examples-iot.js';
 
 const L = (pin, color = 'red') => ({ type: 'led', pins: { a: pin }, props: { color } });
 const B = (pin) => ({ type: 'button', pins: { a: pin } });
@@ -549,5 +550,5 @@ while True:
 ];
 
 // displays and IoT (examples-more.js)
-PI_EXAMPLES.push(...PI_MORE);
-PICO_EXAMPLES.push(...PICO_MORE);
+PI_EXAMPLES.push(...PI_MORE, ...PI_IOT);
+PICO_EXAMPLES.push(...PICO_MORE, ...PICO_IOT);

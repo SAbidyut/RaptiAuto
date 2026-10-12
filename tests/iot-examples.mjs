@@ -125,6 +125,17 @@ const CHECKS = {
   'iot-two-boards-mqtt': { ms: 13000, deviceId: 'node', check: (r) => /^Temp: 24\.0 C$/.test(lcdRow(r.ctx.eng, 'lcd', 0)) && /^Hum : 55\.0 %$/.test(lcdRow(r.ctx.eng, 'lcd', 1)) },
   'iot-wifi-multi': { ms: 9000, check: (r) => /Connected to RAPTI-Lab\s+IP 192\.168\.1\.\d+/.test(r.serial) && lit(r.ctx.eng, 'led') },
   'iot-ip-location': { ms: 7000, check: (r) => r.serial.includes('Dhaka, Bangladesh  (Asia/Dhaka)') && /\d{4}-\d\d-\d\d \d\d:\d\d:\d\d/.test(r.serial) && r.ctx.eng.parts.get('oled').visual.dev.fb.reduce((a, b) => a + b, 0) > 200 },
+  // live data (simulated offline): air quality, prayer times, rates, ISS, sun, forecast, temperature, quotes, quakes
+  'iot-air-quality': { ms: 7000, check: (r) => { const m = /AQI (\d+) \(/.exec(r.serial); const aqi = m && +m[1]; const e = r.ctx.eng; return aqi > 0 && /^AQI \d+ \w/.test(lcdRow(e, 'lcd', 0)) && /^PM2\.5 \d+\.\d ug$/.test(lcdRow(e, 'lcd', 1)) && lit(e, 'ledG') === aqi <= 50 && lit(e, 'ledY') === (aqi > 50 && aqi <= 150) && lit(e, 'ledR') === aqi > 150; } },
+  'iot-prayer-times': { ms: 8000, check: (r) => /Fajr +0\d:\d\d/.test(r.serial) && /Isha +\d\d:\d\d/.test(r.serial) && /Hijri: \d\d-\d\d-14\d\d/.test(r.serial) && /^(Fajr|Dhuhr|Asr|Maghrib|Isha) +\d\d:\d\d$/.test(lcdRow(r.ctx.eng, 'lcd', 0)) && /^in \d+h\d\dm  \d\d:\d\d$/.test(lcdRow(r.ctx.eng, 'lcd', 1)) },
+  'iot-currency-oled': { ms: 7000, check: (r) => /1 USD = 1\d\d\.\d\d BDT/.test(r.serial) && /1 EUR = 1\d\d\.\d\d BDT/.test(r.serial) && /1 SAR = \d\d\.\d\d BDT/.test(r.serial) && r.ctx.eng.parts.get('oled').visual.dev.fb.reduce((a, b) => a + b, 0) > 300 },
+  'iot-iss-tracker': { ms: 9000, check: (r) => { const m = /ISS at -?\d+\.\d\d, -?\d+\.\d\d  -  (\d+) km from home/.exec(r.serial); return m && lit(r.ctx.eng, 'led') === +m[1] < 2000 && r.ctx.eng.parts.get('oled').visual.dev.fb.reduce((a, b) => a + b, 0) > 300; } },
+  'iot-sunset-light': { ms: 9000, check: (r) => { const m = /Sunrise (0\d:\d\d)  Sunset (1\d:\d\d)/.exec(r.serial); const on = /lamp ON/.test(r.serial); return m && (on || /lamp OFF/.test(r.serial)) && (r.ctx.eng.parts.get('lamp').visual.b > 0.5) === on; } },
+  'iot-forecast-dial': { ms: 7000, check: (r) => { const m = /Tomorrow \d{4}-\d\d-\d\d: code (\d+), \d+-\d+ C, rain (\d+) %/.exec(r.serial); if (!m) return false; const code = +m[1], want = code <= 1 ? 0 : code <= 48 ? 90 : 180; return Math.abs(r.ctx.eng.parts.get('servo').visual.angle - want) < 4 && lit(r.ctx.eng, 'led') === +m[2] > 50; } },
+  'iot-weather-neopixel': { ms: 7000, check: (r) => { const m = /Outside: (\d+\.\d) C/.exec(r.serial); if (!m) return false; const n = Math.max(1, Math.min(16, Math.floor(1 + (Math.floor(+m[1]) * 15) / 40))); return r.ctx.eng.parts.get('ring').visual.px.filter((v) => v).length === n; } },
+  'iot-quote-lcd': { ms: 7000, check: (r) => /^".+"  - .+$/m.test(r.serial) && lcdRow(r.ctx.eng, 'lcd', 1).startsWith('- ') && lcdRow(r.ctx.eng, 'lcd', 0).trim().length > 0 },
+  'iot-tm1637-temp': { ms: 7000, check: (r) => { const v = r.ctx.eng.parts.get('tm').visual; const s = v.segs || (v.dev && v.dev.segs) || []; return /Dhaka \+?-?\d+°C -> -?\d+/.test(r.serial) && s[2] === 0x63 && s[3] === 0x39; } },
+  'iot-earthquake-alert': { ms: 8000, check: (r) => /M\d\.\d  .+  \(\d+ km\)/.test(r.serial) && r.ctx.eng.parts.get('oled').visual.dev.fb.reduce((a, b) => a + b, 0) > 300 },
 };
 
 /** Boot counter: the flash survives a restart, so the second run says "Boot #2". */

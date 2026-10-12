@@ -6,7 +6,7 @@ import { h } from './widgets.js';
 import { icon } from './icons.js';
 import { VirtualBrowser } from './browser.js';
 
-const MARKS = [['Dashboard', 'http://dashboard.rapti.net/'], ['Weather', 'http://wttr.in/Dhaka'], ['ThingSpeak', 'http://thingspeak.com/'], ['Docs', 'http://docs.rapti.net/'], ['Start', 'http://rapti.net/']];
+const MARKS = [['Dashboard', 'http://dashboard.rapti.net/'], ['Weather', 'http://wttr.in/Dhaka'], ['ThingSpeak', 'http://thingspeak.com/'], ['Docs', 'http://docs.rapti.net/'], ['Start', 'http://start.rapti.net/'], ['RAPTI', 'http://rapti.net/']];
 
 export class IotPane {
   constructor(net, host, opts = {}) {

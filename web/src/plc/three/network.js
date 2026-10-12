@@ -1,12 +1,10 @@
-// Communication in the 3D lab, made visible:
-//  • data packets: every Modbus / DVP frame of the simulator travels along the real cable route —
-//    the request (amber) from the master to the station it is addressed to, the reply (green) back,
-//    an exception or a time-out in red — through the ducts and the daisy-chained terminals;
-//  • the Network view (x-ray): power wiring, ducts and the devices that do not communicate fade
-//    out, the RS-485 / RS-232 / USB cables glow in their bus colour, every device gets a tag with its
-//    role and station address (MASTER, ID 1 …, the serial format), every comm port a label, each
-//    cable its bus name, and the two ends of an RS-485 line their 120 Ω terminating resistors.
-// Labels keep the same size on screen at any zoom and switch to a compact form when small.
+// The Network view of the 3D lab (x-ray of the communication): power wiring, ducts and the devices
+// that do not communicate fade out, the RS-485 / RS-232 / USB cables glow in their bus colour, every
+// device gets a tag with its role and station address (MASTER, ID 1 …, the serial format), every comm
+// port a label, each cable its bus name, and the two ends of an RS-485 line their 120 Ω terminating
+// resistors. While the lab runs, the ring of a port pulses when its device is addressed (green =
+// answered, red = no answer / exception). Labels keep the same size on screen at any zoom and switch
+// to a compact form when small.
 import { THREE, canvasTexture, rrect, txt, mat, cyl, FONT } from './kit.js';
 import { DEVICE_DEFS, devicePorts, deviceProps, busName } from '../devices/defs.js';
 import { mbStation, mbFormat } from '../sim/mbdevices.js';
@@ -14,7 +12,7 @@ import { vfdFormat, defaultParams } from '../sim/vfd.js';
 import { fmtName } from '../sim/modbus.js';
 
 export const BUS_HEX = { rs485: '#a78bfa', rs232: '#fbbf24', usb: '#38bdf8' };
-const PKT = { req: '#fbbf24', res: '#34d399', err: '#f87171' };
+const PKT = { res: '#34d399', err: '#f87171' };
 const V = (a) => new THREE.Vector3(...a);
 const keyOf = (dev, port) => dev + '|' + port;
 
@@ -54,17 +52,6 @@ function makeTag(lines, { accent = null, bg = 'rgba(9,14,28,.9)', border = 'rgba
 }
 function disposeSprite(sp) { if (!sp) return; sp.material.map.dispose(); sp.material.dispose(); }
 
-let glowTex = null;
-function glowTexture() {
-  if (!glowTex) {
-    glowTex = canvasTexture(64, 64, (g) => {
-      const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-    });
-  }
-  return glowTex;
-}
 let ringTex = null;
 function ringTexture() {
   if (!ringTex) {
@@ -75,7 +62,6 @@ function ringTexture() {
   }
   return ringTex;
 }
-const additive = (color, opacity = 1, att = true) => new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, opacity, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: att });
 
 // ------------------------------------------------------------------ the overlay
 export class NetOverlay {
@@ -83,13 +69,9 @@ export class NetOverlay {
     this.s = scene;
     this.group = new THREE.Group();
     this.group.renderOrder = 20;
-    this.pktGroup = new THREE.Group();
     this.viewGroup = new THREE.Group();
-    this.group.add(this.pktGroup, this.viewGroup);
+    this.group.add(this.viewGroup);
     this.on = false;
-    this.packets = [];
-    this.pending = new Map(); // txn → {bus, res, arrived}
-    this.busy = new Map();    // bus key → txn in flight
     this.lastN = 0;
     this.links = [];
     this.adj = new Map();
@@ -100,7 +82,7 @@ export class NetOverlay {
     this.textT = 0;
   }
 
-  dispose() { this.clearPackets(); this.clearView(); for (const m of this.fadeCache.values()) m.dispose(); }
+  dispose() { this.clearView(); for (const m of this.fadeCache.values()) m.dispose(); }
 
   // ---------------------------------------------------------------- topology
   /** Comm cables as a graph of ports (dev|port), after the cables were (re)built. */
@@ -121,168 +103,23 @@ export class NetOverlay {
       for (const [k, o] of [[link.a, link.b], [link.b, link.a]]) { if (!this.adj.has(k)) this.adj.set(k, []); this.adj.get(k).push({ link, other: o }); }
     }
     this.netDevs = new Set(this.links.flatMap((l) => [l.conn.a.dev, l.conn.b.dev]));
-    this.pathCache = new Map();
-    this.clearPackets();
     if (this.on) { this.clearView(); this.buildView(); }
   }
 
-  /** World position of a port (the screw / socket the cable plugs into). */
-  portPos(key) {
-    const [dev, port] = key.split('|');
-    const pw = this.s.portWorld(dev, port);
-    return pw ? V(pw.pos) : null;
-  }
-
-  /** Points along the cables from port key a to port key b (or to the far end of the bus when b is null). */
-  path(a, b) {
-    const ck = a + '>' + b;
-    if (this.pathCache.has(ck)) return this.pathCache.get(ck);
-    if (!this.adj.has(a)) return null;
-    const prev = new Map([[a, null]]);
-    const order = [a];
-    for (let i = 0; i < order.length; i++) {
-      const k = order[i];
-      if (k === b) break;
-      for (const e of this.adj.get(k) || []) if (!prev.has(e.other)) { prev.set(e.other, { k, link: e.link }); order.push(e.other); }
-    }
-    let end = b && prev.has(b) ? b : null;
-    if (!end) end = order[order.length - 1]; // nobody with that address: the frame runs to the end of the line
-    if (end === a) { this.pathCache.set(ck, null); return null; }
-    const steps = [];
-    for (let k = end; prev.get(k); k = prev.get(k).k) steps.unshift({ from: prev.get(k).k, link: prev.get(k).link });
-    const pts = [];
-    const p0 = this.portPos(a);
-    if (p0) pts.push(p0);
-    for (const st of steps) {
-      const fwd = st.link.a === st.from;
-      const line = fwd ? st.link.line : st.link.line.slice().reverse();
-      for (const p of line) pts.push(p);
-      const pe = this.portPos(fwd ? st.link.b : st.link.a);
-      if (pe) pts.push(pe);
-    }
-    const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
-    const res = { pts, cum, total: cum[cum.length - 1], end, reached: end === b };
-    this.pathCache.set(ck, res);
-    return res;
-  }
-
-  // ---------------------------------------------------------------- packets
-  clearPackets() {
-    for (const p of this.packets) this.dropPacket(p);
-    this.packets = [];
-    this.pending.clear();
-    this.busy.clear();
-  }
-
-  dropPacket(p) {
-    for (const t of p.trail) { this.pktGroup.remove(t); t.material.dispose(); }
-    this.pktGroup.remove(p.obj);
-    p.obj.traverse((o) => { if (o.material) o.material.dispose(); if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose(); });
-    if (p.label) { this.pktGroup.remove(p.label); disposeSprite(p.label); }
-  }
-
-  /** A glowing packet along a path; then() runs when it arrives. */
-  spawn(path, color, label, then) {
-    const obj = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.SphereGeometry(2.6, 14, 10), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
-    core.material.toneMapped = false;
-    core.renderOrder = 16;
-    // the glow keeps its size on screen, so a frame is easy to follow from far away too
-    const glow = new THREE.Sprite(additive(color, 0.95, false));
-    glow.userData.px = [30, 30]; glow.renderOrder = 15;
-    obj.add(core, glow);
-    const trail = [];
-    for (let i = 1; i <= 5; i++) { const t = new THREE.Sprite(additive(color, 0.55 - i * 0.08, false)); t.userData.px = [17 - i * 2, 17 - i * 2]; t.renderOrder = 15; trail.push(t); this.pktGroup.add(t); }
-    this.pktGroup.add(obj);
-    const p = { path, obj, trail, d: 0, speed: Math.max(450, path.total / 0.95), then, label: null };
-    if (label && this.on) { p.label = makeTag([{ text: label, size: 10.5, bold: true, color: '#0b1220' }], { bg: color, border: 'rgba(255,255,255,.7)', anchor: [0.5, -0.55], pad: 4, radius: 7 }); p.label.visible = false; this.pktGroup.add(p.label); }
-    p.obj.userData.trail = trail;
-    this.place(p);
-    this.packets.push(p);
-    return p;
-  }
-
-  pointAt(path, d) {
-    const { pts, cum } = path;
-    d = Math.max(0, Math.min(path.total, d));
-    let lo = 0, hi = cum.length - 1;
-    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
-    const seg = cum[hi] - cum[lo] || 1;
-    return pts[lo].clone().lerp(pts[hi], (d - cum[lo]) / seg);
-  }
-
-  place(p) {
-    const pos = this.pointAt(p.path, p.d);
-    p.obj.position.copy(pos);
-    p.trail.forEach((t, i) => t.position.copy(this.pointAt(p.path, p.d - (i + 1) * 7)));
-    if (p.label) {
-      p.label.position.copy(pos);
-      // the text of a frame only when zoomed in (at a distance it would hide the panel)
-      p.label.visible = this.s.camera.position.distanceTo(pos) < 820;
-    }
-  }
-
-  /** A red flash where a frame got no answer. */
-  burst(pos, text) {
-    const obj = new THREE.Group();
-    const g = new THREE.Sprite(additive(PKT.err, 1, false));
-    g.userData.px = [40, 40]; g.renderOrder = 15;
-    obj.add(g);
-    obj.position.copy(pos);
-    this.pktGroup.add(obj);
-    const p = { obj, trail: [], burst: 0.9, label: null, path: null };
-    if (this.on && text) { p.label = makeTag([{ text, size: 11, bold: true, color: '#fff' }], { bg: '#dc2626', border: 'rgba(255,255,255,.7)', anchor: [0.5, -0.6], pad: 4, radius: 7 }); p.label.position.copy(pos); this.pktGroup.add(p.label); }
-    this.packets.push(p);
-  }
-
-  /** New frames in the simulator's comm log → packets. */
+  // ---------------------------------------------------------------- activity
+  /** New frames in the simulator's comm log make the rings of the ports involved pulse. */
   poll(sys) {
     const log = sys.log;
     if (!log.length) return;
     if (this.lastN > log[log.length - 1].n) this.lastN = 0; // a new simulation
-    const from = log.findIndex((l) => l.n > this.lastN);
-    if (from < 0) return;
-    for (let i = from; i < log.length; i++) this.feed(log[i]);
+    for (let i = log.length - 1; i >= 0 && log[i].n > this.lastN; i--) {
+      const l = log[i], ids = l.ids;
+      if (!ids) continue;
+      if (l.dir === 'TX' && ids.to) this.flash(keyOf(ids.to, ids.toPort), '#f8fafc');
+      else if (l.dir === 'RX' && ids.from) this.flash(keyOf(ids.from, ids.fromPort), PKT.res);
+      else if (l.dir === 'ERR') this.flash(ids.from ? keyOf(ids.from, ids.fromPort) : keyOf(ids.to, ids.toPort), PKT.err);
+    }
     this.lastN = log[log.length - 1].n;
-  }
-
-  feed(l) {
-    const ids = l.ids;
-    if (!ids || !ids.txn) return;
-    if (l.dir === 'TX') {
-      const bus = keyOf(ids.from, ids.fromPort);
-      if (this.busy.has(bus) || this.packets.length > 24) return; // one frame at a time per line: the others are skipped
-      const path = this.path(bus, ids.to ? keyOf(ids.to, ids.toPort) : null);
-      if (!path) return;
-      const pend = { bus, res: null, arrived: false, path, master: bus, t: 0, broadcast: !!ids.broadcast };
-      this.pending.set(ids.txn, pend);
-      this.busy.set(bus, ids.txn);
-      const station = /^Station (\d+)/.exec(l.to);
-      const label = `${station ? 'ID ' + station[1] : l.to === 'PLC' ? 'PLC' : l.to} ◂ ${short(l.info)}`;
-      this.spawn(path, PKT.req, label, () => { pend.arrived = true; this.flash(path.end, path.reached ? PKT.req : PKT.err); });
-      return;
-    }
-    const pend = this.pending.get(ids.txn);
-    if (pend) pend.res = l;
-  }
-
-  /** Requests that arrived: send their reply back (or show the time-out). */
-  settle(dt) {
-    for (const [txn, p] of this.pending) {
-      if (!p.arrived) continue;
-      p.t += dt;
-      const done = () => { this.pending.delete(txn); if (this.busy.get(p.bus) === txn) this.busy.delete(p.bus); };
-      if (p.broadcast || (!p.res && p.t > 1.2)) { if (!p.broadcast) this.burst(p.path.pts[p.path.pts.length - 1], 'no reply'); done(); continue; }
-      if (!p.res) continue;
-      const r = p.res;
-      if (r.ids.timeout || !r.ids.from) { this.burst(p.path.pts[p.path.pts.length - 1], '✕ no reply'); done(); continue; }
-      const back = this.path(keyOf(r.ids.from, r.ids.fromPort), p.master);
-      if (!back) { done(); continue; }
-      this.pending.delete(txn);
-      const err = r.dir === 'ERR';
-      this.spawn(back, err ? PKT.err : PKT.res, `${err ? '✕ ' : '▸ '}${short(r.info)}`, () => { this.flash(p.master, err ? PKT.err : PKT.res); if (this.busy.get(p.bus) === txn) this.busy.delete(p.bus); });
-    }
   }
 
   flash(key, color) {
@@ -290,39 +127,11 @@ export class NetOverlay {
     if (r) { r.userData.flash = 1; r.material.color.set(color); }
   }
 
-  /** Per frame: move packets, follow the simulator. Returns true when something moved. */
-  /** Scale that turns pixels into the size of a screen-sized sprite. */
-  pxScale() { return (2 * Math.tan((this.s.camera.fov * Math.PI) / 360)) / (this.s.renderer.domElement.clientHeight || 600); }
-
+  /** Per frame (only the Network view draws anything). Returns true when something changed. */
   tick(dt, sys, running) {
-    let moved = false;
-    if (sys && running) { this.poll(sys); this.settle(dt); }
-    const k = this.packets.length ? this.pxScale() : 0;
-    const size = (sp, f = 1) => sp.scale.set(sp.userData.px[0] * k * f, sp.userData.px[1] * k * f, 1);
-    for (let i = this.packets.length - 1; i >= 0; i--) {
-      const p = this.packets[i];
-      if (p.burst !== undefined) {
-        p.burst -= dt;
-        const a = Math.max(0, p.burst / 0.9);
-        p.obj.children[0].material.opacity = a;
-        size(p.obj.children[0], 1 + (1 - a) * 0.9);
-        if (p.burst <= 0) { this.dropPacket(p); this.packets.splice(i, 1); }
-        moved = true;
-        continue;
-      }
-      size(p.obj.children[1]);
-      for (const t of p.trail) size(t);
-      p.d += p.speed * dt;
-      if (p.d >= p.path.total) {
-        this.dropPacket(p);
-        this.packets.splice(i, 1);
-        if (p.then) p.then();
-      } else this.place(p);
-      moved = true;
-    }
-    if (this.on) moved = this.updateView(dt) || moved;
-    else if (this.packets.length) this.scaleSprites(this.packets.map((p) => p.label).filter(Boolean));
-    return moved;
+    if (!this.on) return false;
+    if (sys && running) this.poll(sys);
+    return this.updateView(dt);
   }
 
   // ---------------------------------------------------------------- Network view
@@ -330,8 +139,6 @@ export class NetOverlay {
     if (on === this.on) return;
     this.on = on;
     if (on) { this.buildView(); this.applyFade(true); } else { this.applyFade(false); this.clearView(); }
-    // packet labels only exist in the Network view
-    for (const p of this.packets) if (p.label && !on) { this.pktGroup.remove(p.label); disposeSprite(p.label); p.label = null; }
   }
 
   clearView() {
@@ -534,19 +341,12 @@ export class NetOverlay {
       const near = cam.position.distanceTo(sp.position) < 1100;
       if (sp.visible !== near) { sp.visible = near; moved = true; }
     }
-    this.scaleSprites(this.packets.map((p) => p.label).filter(Boolean), k);
     for (const r of this.rings.values()) {
       const f = r.userData.flash || 0;
       if (f > 0) { r.userData.flash = Math.max(0, f - dt * 2.2); moved = true; if (!r.userData.flash) r.material.color.set(r.userData.color); }
       r.scale.setScalar(r.userData.base * (1 + f * 0.9));
     }
     return moved || force;
-  }
-
-  scaleSprites(list, k = null) {
-    if (!list.length) return;
-    if (k === null) { const vh = this.s.renderer.domElement.clientHeight || 600; k = (2 * Math.tan((this.s.camera.fov * Math.PI) / 360)) / vh; }
-    for (const sp of list) sp.scale.set(sp.userData.px[0] * k, sp.userData.px[1] * k, 1);
   }
 
   /** Comm cables glow in their bus colour while the Network view is on. */
@@ -606,10 +406,4 @@ function portText(dev, p) {
   const conn = { term3: 'D+ D− SG', term2: (p.pins || ['D+', 'D−']).join(' '), rj45: 'RJ45', db9: 'DB9', minidin: 'mini-DIN 8', usbmini: 'mini-USB', usba: 'USB-A' }[p.conn] || '';
   const name = def.sim === 'plc' || def.sim === 'hmi' ? p.id : '';
   return [...new Set([name, busName(p.bus), conn].filter(Boolean))].join(' · ');
-}
-
-/** Short text for a packet label. */
-function short(s) {
-  s = String(s || '').replace(/\s*\(([0-9A-F]{4}H)( ×\d+)?\)/, ' $1').replace(/^Data: /, '');
-  return s.length > 34 ? s.slice(0, 33) + '…' : s;
 }

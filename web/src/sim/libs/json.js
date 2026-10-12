@@ -199,6 +199,20 @@ function* readAll(rt, stream) {
 
 export function jsonOf(v) { return v instanceof JsonRef ? v.val : v; }
 
+class DeserOption { constructor(filter) { this.filter = filter; } }
+/** ArduinoJson's input filter: true keeps a value, an object keeps the keys it has ("*" = any key), an array filters every element with its first one. */
+function applyFilter(v, f) {
+  if (f === true) return v;
+  if (Array.isArray(f)) { if (!Array.isArray(v)) return undefined; return v.map((x) => applyFilter(x, f[0])).filter((x) => x !== undefined); }
+  if (isObj(f)) {
+    if (!isObj(v)) return undefined;
+    const out = {};
+    for (const [k, x] of Object.entries(v)) { const sub = k in f ? f[k] : f['*']; const r = sub === undefined ? undefined : applyFilter(x, sub); if (r !== undefined) out[k] = r; }
+    return out;
+  }
+  return undefined;
+}
+
 /** Writes text to a Print object (Serial, a client), a String or a char buffer. */
 function emit(out, size, s) {
   if (out instanceof AStr) { out.s += s; return s.length; }
@@ -239,12 +253,20 @@ addLibrary((natives, rt, hw) => {
     methods: { c_str: { ret: 'cstr' }, f_str: { ret: 'cstr' }, code: { ret: 'int' } },
     constants: { Ok: 0, EmptyInput: 1, IncompleteInput: 2, InvalidInput: 3, NoMemory: 4, NotSupported: 5, TooDeep: 6 },
   });
+  // DeserializationOption::Filter(filter) keeps only what the filter document marks true
+  defineClass(natives, 'DeserializationOption', {
+    create: () => new DeserOption(), methods: {},
+    statics: { Filter: { ret: 'any', args: ['raw'], fn: (f) => new DeserOption(jsonOf(f)) }, NestingLimit: { ret: 'any', fn: () => new DeserOption() } },
+  });
   const done = (code) => new DeserializationError(code);
   natives.functions.deserializeJson = {
-    ret: 'DeserializationError', gen: true, args: ['raw', 'raw', 'raw'],
-    fn: function* (doc, input) {
-      const text = input instanceof NetStream ? yield* readAll(rt, input) : cstr(input);
-      const [code, val] = parse(text);
+    ret: 'DeserializationError', gen: true, args: ['raw', 'raw', 'raw', 'raw'],
+    fn: function* (doc, input, a, b) {
+      let text = input instanceof NetStream ? yield* readAll(rt, input) : cstr(input);
+      if (typeof a === 'number') text = text.slice(0, a);           // (doc, char* input, size_t length)
+      const opt = a instanceof DeserOption ? a : b instanceof DeserOption ? b : null;
+      let [code, val] = parse(text);
+      if (code === 0 && opt && opt.filter !== undefined) val = applyFilter(val, opt.filter);
       if (code === 0 && doc instanceof JsonRef) doc.put(val);
       else if (doc instanceof JsonRef && code !== 0) doc.put(undefined);
       return done(code);
