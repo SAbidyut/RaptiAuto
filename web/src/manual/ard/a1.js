@@ -63,10 +63,10 @@ ${A.fourTabs()}
 ${table(['Tab', 'What it is for', 'Details'], [
   ['<b>Circuit</b>', 'Put parts on the canvas, wire them, and play with them while the sketch runs.', 'chapter A2'],
   ['<b>Code</b>', 'The sketch. A symbol bar sits above the keyboard (<code>{ } ( ) ; = &lt; &gt;</code> …); <b>A−</b> / <b>A+</b> change the text size, the magnifier searches, and the code view has its own full-screen button. Typing shows suggestions for Arduino functions and libraries.', 'chapter A3'],
-  ['<b>Serial</b>', 'Everything your sketch prints with <code>Serial.print()</code>, a box to send text to it, and a <b>Plotter</b> that draws graphs.', 'chapter A7'],
-  ['<b>IoT</b>', 'The phone browser on the simulated Wi-Fi: it opens the web pages of your ESP32 and the IoT dashboard.', 'chapter A8'],
+  ['<b>Serial</b>', 'Everything your sketch prints with <code>Serial.print()</code>, a box to send text to it, and a <b>Plotter</b> that draws graphs.', 'chapter A6'],
+  ['<b>IoT</b>', 'The phone browser on the simulated Wi-Fi: it opens the web pages of your ESP32 and the IoT dashboard.', 'chapter A7'],
 ])}
-${note('A project with <b>several boards</b> (for example a master and a slave) shows one tab per board at the top of the Code screen, each with its own sketch (chapter A8).')}`,
+${note('A project with <b>several boards</b> (for example a master and a slave) shows one tab per board at the top of the Code screen, each with its own sketch (chapter A7).')}`,
     },
     {
       id: 'run', title: 'Run, Stop and the status bar',

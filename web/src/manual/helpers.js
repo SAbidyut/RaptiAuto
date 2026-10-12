@@ -35,7 +35,8 @@ export const code = (src, lang = 'c', { mark = [], numbers = false } = {}) => {
     return parts.join('');
   };
   const rows = text.split('\n').map((l, i) => `<span class="ln${mark.includes(i + 1) ? ' hot' : ''}">${numbers ? `<i>${i + 1}</i>` : ''}${line(l) || ' '}</span>`);
-  return `<pre class="mx-code${numbers ? ' num' : ''}" data-lang="${lang}">${rows.join('\n')}</pre>`;
+  // the lines are blocks already: a newline between them would show as an empty line
+  return `<pre class="mx-code${numbers ? ' num' : ''}" data-lang="${lang}">${rows.join('')}</pre>`;
 };
 /** The "at a glance" strip at the top of a project: level, time, parts, what you learn. */
 export const project = ({ level = 'Beginner', time = '10 min', parts = [], learn = '' }) =>

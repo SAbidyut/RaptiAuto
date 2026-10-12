@@ -32,7 +32,7 @@ ${steps(
   'Tap a part. It lands in the <b>middle of the canvas</b> and is already selected, with its bar at the bottom.')}
 ${A.addSteps()}
 ${table(['Group', 'Parts', 'Examples'], CATEGORIES.map((c) => [`<b>${c.name}</b>`, String(inCat(c.id)), catRows[c.id] || '']))}
-${note('A project can have <b>more than one board</b> (up to four). When you add a second board the app asks first: every board gets its own sketch, chosen by the tabs on top of the Code screen (chapter A8).')}`,
+${note('A project can have <b>more than one board</b> (up to four). When you add a second board the app asks first: every board gets its own sketch, chosen by the tabs on top of the Code screen (chapter A7).')}`,
     },
     {
       id: 'move', title: 'Moving, rotating, mirroring, editing',
@@ -136,7 +136,7 @@ ${table(['Message (shortened)', 'What it means', 'What to do'], [
   ['<code>Pin D2 is floating … reads random values</code>', 'An input is connected to nothing.', 'Use <code>INPUT_PULLUP</code>, or a pull-down resistor.'],
   ['<code>Pin D4 has no PWM — analogWrite() works like digitalWrite()</code>', '<code>analogWrite()</code> on a pin without the ~ mark.', 'Use a PWM pin (Uno: 3, 5, 6, 9, 10, 11).'],
   ['<code>analogRead(5): pin D5 is not an analog input</code>', 'A digital pin was used for analogRead.', 'Use A0 … A5 on the Uno.'],
-  ['<code>Pin 25 does not exist on Arduino Uno R3</code>', 'The pin number is not on this board.', 'Check the pin names (chapter A9).'],
+  ['<code>Pin 25 does not exist on Arduino Uno R3</code>', 'The pin number is not on this board.', 'Check the pin names (chapter A8).'],
   ['<code>GPIO34 is input-only on ESP32 …</code>', 'Some ESP32 pins can only read.', 'Pick another pin for outputs.'],
   ['<code>5V supply overloaded: … mA</code>', 'More current than the 5V pin can give.', 'Power big loads from a separate supply.'],
 ])}

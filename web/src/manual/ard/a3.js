@@ -191,7 +191,7 @@ ${table(['Function', 'What it does'], [
   ['<code>Serial.available()</code>', 'How many characters you sent from the Monitor and the sketch has not read yet.'],
   ['<code>Serial.read()</code>, <code>readStringUntil(\'\\n\')</code>, <code>parseInt()</code>', 'Read what you typed in the Monitor.'],
 ])}
-<p>More about the Monitor, the Plotter and sensors in chapter <b>A7</b>.</p>`,
+<p>More about the Monitor, the Plotter and sensors in chapter <b>A6</b>.</p>`,
     },
     {
       id: 'libs', title: 'Libraries',
