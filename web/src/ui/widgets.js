@@ -34,6 +34,21 @@ export const backDepth = () => backStack.length;
 
 // ------------------------------------------------------------------ toasts
 let toastHost;
+/**
+ * Change the layout with a soft cross-fade (View Transitions where the WebView has them, else a short CSS fade) —
+ * entering and leaving full screen no longer snaps.
+ */
+export function smoothSwap(fn) {
+  const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce && typeof document.startViewTransition === 'function') {
+    try { document.startViewTransition(() => { fn(); }); return; } catch (e) { /* fall back below */ }
+  }
+  const root = document.documentElement;
+  root.classList.add('fs-morph');
+  fn();
+  setTimeout(() => root.classList.remove('fs-morph'), 380);
+}
+
 export function toast(msg, type = 'info', ms = 2600) {
   if (!toastHost) { toastHost = h('div', { class: 'toast-host' }); document.body.appendChild(toastHost); }
   const ic = { info: 'info', ok: 'check', warn: 'warning', error: 'warning' }[type] || 'info';

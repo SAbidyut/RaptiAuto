@@ -4,6 +4,11 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.23 — smooth full screen, no screws on the breaker
+
+- Entering and leaving full screen (Arduino editor, Pi lab, PLC lab) is a soft cross-fade instead of a snap.
+- The MCB's load wires go straight into terminal openings — no screw heads show (the PE terminal keeps its screw).
+
 ## New in 2.22 — 3D fixes: motor nameplate, MCB top
 
 - The motor nameplate sits on a flat pad in front of the cooling fins, so a fin no longer cuts through the text.

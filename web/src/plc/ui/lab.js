@@ -1,5 +1,5 @@
 // Delta PLC Lab screen: 3D panel + ladder editor + HMI + VFD + monitor, with the simulation loop.
-import { h, toast, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from '../../ui/widgets.js';
+import { h, toast, smoothSwap, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
 import { AudioEngine } from '../../ui/audio.js';
@@ -209,10 +209,12 @@ export class LabScreen {
 
   setFullscreen(on) {
     this.fullscreen = on;
-    this.panes = null; // full screen starts automatic again: one screen, two while running
-    this.root.classList.toggle('fs', on);
-    this.setChrome(!on, false);
-    this.updateLayout();
+    smoothSwap(() => {
+      this.panes = null; // full screen starts automatic again: one screen, two while running
+      this.root.classList.toggle('fs', on);
+      this.setChrome(!on, false);
+      this.updateLayout();
+    });
     if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
     Native.setImmersive(on);
     Native.vibrate(8);

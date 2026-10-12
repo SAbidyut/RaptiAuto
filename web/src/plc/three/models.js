@@ -472,7 +472,11 @@ function breakerModel(dev, o) {
     B.add(rbox(10, 42, 50, 1.5), mat('peBlock', { color: 0x2f9e44, roughness: 0.5 }), M4(17, 45, 25));
     B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(17, 38, 25));
   }
-  for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.2);
+  // the wires go straight into the terminal openings of the breaker — no screw heads show
+  for (const p of devicePorts(dev)) {
+    if (p.pos[2] < 60) addScrew(B, p.pos, p.dir, 2.2); // the PE terminal on the green block keeps its screw
+    else B.add(cyl(2, 2, 2, 16), MAT.blackPlastic, M4(p.pos[0], p.pos[1], 64.9, Math.PI / 2));
+  }
   B.build(group);
   const fw = W - 4;
   const front = decal(W, 86, (g, w) => {
