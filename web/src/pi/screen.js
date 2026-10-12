@@ -10,7 +10,6 @@ import { PiSystem } from './system.js';
 import { LIBS } from './pylib.js';
 import { BOARDS, BOARD_ORDER, boardSVG, headerOf, pinLabel } from './boards.js';
 import { PICO_W_LED } from './gpio.js';
-import { Console } from './console.js';
 import { Thonny } from './thonny.js';
 import { Desktop } from './desktop.js';
 import { normPath, basename } from './vfs.js';
@@ -42,7 +41,6 @@ export class PiScreen {
     this.build();
     this.offSys = this.sys.on((what) => this.onSys(what));
     this.offGpio = this.sys.gpio.on(() => this.refresh());
-    this.offOut = this.sys.onOut((t, s) => this.programOutput(t, s));
   }
 
   get isPico() { return this.sys.isPico; }
@@ -71,14 +69,12 @@ export class PiScreen {
     // full screen: a small dock of buttons and the ☰ handle that brings the menus back
     const fb = (ic, title, fn, extra = {}) => h('button', { class: 'fs-btn', title, 'aria-label': title, html: icon(ic, 20), onclick: fn, ...extra });
     this.fsRun = fb('play', 'Run', () => this.toggleRun(), { class: 'fs-btn fs-run' });
-    this.fsOut = fb('terminal', 'Output over the circuit', () => this.toggleOutput());
     this.fsBar = h('div', { class: 'fs-bar pi-fsbar' },
       fb('fullscreenExit', 'Exit full screen', () => this.setFullscreen(false)), this.fsRun,
       fb('circuit', 'Circuit', () => this.toggleTab('circuit'), { 'data-tab': 'circuit' }),
       fb('code', 'Thonny', () => this.toggleTab('thonny'), { 'data-tab': 'thonny' }),
       fb('list', 'Output', () => this.toggleTab('output'), { 'data-tab': 'output' }),
-      fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }),
-      this.fsOut);
+      fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }));
     this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
     this.root.append(this.top, this.main, this.nav, this.fsBar);
     this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'pi', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
@@ -138,11 +134,16 @@ export class PiScreen {
     if (this.wide && this.vis.length < 2 && this.vis.includes('thonny')) this.toggleTab('output'); else this.setTab('output');
   }
 
-  /** Run pressed in Thonny: the program's output has its own screen — open it beside the code (landscape). */
+  /** Run pressed: the program's output has its own screen — open it beside the code or the circuit (landscape). */
   revealOutput() {
-    if (!this.vis.includes('thonny') || this.vis.includes('output')) return;
+    if (this.vis.includes('output') || this.vis.includes('desktop')) return;
     if (!this.wide) { toast('Running — the output is on the Output tab'); return; }
-    if (this.vis.length < 2) this.toggleTab('output');
+    if (this.vis.length < 2) { this.toggleTab('output'); return; }
+    // two screens already: the Run button gives the Output the place of the one that is not the circuit
+    if (this.fromRunBtn && this.vis.includes('circuit')) {
+      this.panes = this.vis.map((x) => (x === 'circuit' ? x : 'output'));
+      this.setTab('output');
+    }
   }
 
   updateLayout() {
@@ -204,15 +205,7 @@ export class PiScreen {
     this.circuit.mount(this.panes_.circuit);
     // the file Run starts, and the program's output
     this.fileChip = h('button', { class: 'pi-filechip', onclick: () => this.fileSheet() });
-    this.mini = new Console({ cls: 'pb-mini' });
-    this.outTitle = h('b', {}, 'Output');
-    this.outBox = h('div', { class: 'pi-out' },
-      h('div', { class: 'pi-outhead', onclick: (e) => { if (!e.target.closest('button')) this.toggleOutput(); } },
-        h('span', { class: 'pi-outgrip' }), this.outTitle,
-        h('button', { class: 'th-clear', onclick: () => this.mini.clear() }, 'Clear'),
-        h('button', { class: 'icon-btn sm', 'aria-label': 'Hide output', html: icon('close', 16), onclick: () => this.toggleOutput(false) })),
-      this.mini.el);
-    this.circuit.root.append(this.fileChip, this.outBox);
+    this.circuit.root.append(this.fileChip);
     this.drawFileChip();
   }
 
@@ -283,10 +276,10 @@ export class PiScreen {
     if (!f) { toast('No Python file yet: write one in Thonny', 'warn'); return; }
     this.audio.resume();
     if (!this.powerOn()) return;
-    this.mini.clear();
-    this.outTitle.textContent = `Output · ${this.isPico ? f.replace(/^\//, '') : basename(f)}`;
     this.thonny.open(f);
+    this.fromRunBtn = true; // the Run button: the Output screen takes the place of the code screen if need be
     this.thonny.run();
+    this.fromRunBtn = false;
     this.updateRun();
   }
 
@@ -338,19 +331,6 @@ export class PiScreen {
     }
     box.appendChild(h('button', { class: 'btn btn-ghost', html: `${icon('code', 16)}<span>Open in Thonny</span>`, onclick: () => { sheet.close(); const f = this.runFile(); this.setTab('thonny'); if (f) this.thonny.open(f); } }));
     const sheet = new Sheet({ title: 'Program to run', icon: 'code', content: box, height: '70vh' }).open();
-  }
-
-  programOutput(t, s) {
-    this.mini.write(t, s === 'err' ? 'err' : '');
-    if (!this.outShown && this.outAuto !== false) this.toggleOutput(true, true);
-  }
-
-  toggleOutput(on = !this.outShown, auto = false) {
-    this.outShown = on;
-    if (!auto) this.outAuto = on;
-    this.circuit.root.classList.toggle('out-open', on);
-    this.fsOut.classList.toggle('active', on);
-    if (on && this.tab !== 'circuit' && !auto) this.setTab('circuit');
   }
 
   // ---------------------------------------------------------------- full screen (like the Arduino editor)
@@ -559,7 +539,6 @@ export class PiScreen {
     popupMenu(anchor, [
       { icon: 'chip', label: 'Change board', action: () => this.boardSheet() },
       { icon: 'fullscreen', label: this.fullscreen ? 'Exit full screen' : 'Full screen', action: () => this.setFullscreen(!this.fullscreen) },
-      { icon: 'terminal', label: this.outShown ? 'Hide program output' : 'Show program output', action: () => this.toggleOutput() },
       { icon: this.audio.enabled ? 'bell' : 'close', label: this.audio.enabled ? 'Mute buzzer sound' : 'Turn buzzer sound on', action: () => { this.audio.enabled = !this.audio.enabled; if (!this.audio.enabled) this.audio.stopAll(); try { localStorage.setItem('rapti.pi.mute', this.audio.enabled ? '0' : '1'); } catch (e) { /* ignore */ } } },
       '-',
       { icon: 'restart', label: 'Default circuit', action: async () => { if (await confirmDialog('Default circuit', 'Replace the circuit with the default parts? (Undo brings it back.)', 'Replace')) { this.stopCircuit(); this.circuit.load(defaultCircuit(this.sys.board)); this.saveCircuit(); this.setTab('circuit'); } } },
@@ -593,7 +572,6 @@ export class PiScreen {
       this.drawNav();
       this.drawBoard();
       this.circuit.load(this.loadCircuit(this.sys.board), { undoable: false });
-      this.mini.clear();
       this.chosenFile = null;
       this.drawFileChip();
       this.panes_.board.scrollTop = 0;
@@ -641,7 +619,7 @@ export class PiScreen {
     this.sys.killProcess();
     this.audio.stopAll();
     this.audio.close && this.audio.close();
-    this.offSys(); this.offGpio(); this.offOut();
+    this.offSys(); this.offGpio();
     if (this.fullscreen) Native.setImmersive(false);
     this.root.remove();
   }

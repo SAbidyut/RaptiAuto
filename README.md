@@ -4,6 +4,11 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.19 — program output on its own screen, versioned releases
+
+- The output panel that slid over the bottom of the Pi circuit (and its button in the menus) is gone. A program's output lives on the **Output** screen; pressing Run opens it beside the circuit or the code (landscape), or tells you where it is (portrait).
+- **GitHub Releases:** every version tag (`v2.19.0`, …) builds the signed APK in GitHub Actions and publishes it as a release asset named `RaptiAuto-v<version>.apk` (`.github/workflows/release.yml`; it can also be started by hand from the Actions tab).
+
 ## New in 2.18 — Terminal lives in the Pi Desktop
 
 - The separate **Terminal** tab of the Raspberry Pi lab is gone; the Terminal is on the **Desktop** (panel icon, raspberry menu → Accessories). The Pi tabs are now Circuit · Pinout · Desktop · Thonny · Output.
