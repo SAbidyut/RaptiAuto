@@ -408,8 +408,8 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .board-info td:first-child { color: var(--muted); width: 42%; }
 .warn-list { margin: 0; padding-left: 18px; color: #fde68a; }
 .warn-list li { margin: 6px 0; line-height: 1.45; font-size: 13.5px; }
-.menu-overlay { background: rgba(2, 5, 14, .25); }
-.popup-menu { position: absolute; min-width: 230px; padding: 6px; border-radius: 18px; background: rgba(18, 27, 52, .97); border: 1px solid var(--line2); box-shadow: 0 24px 50px -16px rgba(0, 0, 0, .85); backdrop-filter: blur(16px); transform-origin: top right; transform: scale(.94); transition: transform .18s cubic-bezier(.2, .9, .3, 1.3); }
+.menu-overlay { background: rgba(2, 5, 14, .38); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.popup-menu { position: absolute; min-width: 230px; max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 6px; border-radius: 18px; background: rgba(18, 27, 52, .97); border: 1px solid var(--line2); box-shadow: 0 24px 50px -16px rgba(0, 0, 0, .85); backdrop-filter: blur(16px); transform-origin: top right; transform: scale(.94); transition: transform .18s cubic-bezier(.2, .9, .3, 1.3); }
 .overlay.show .popup-menu { transform: none; }
 .menu-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; font-size: 14.5px; font-weight: 500; text-align: left; }
 .menu-item span { flex: 1; }

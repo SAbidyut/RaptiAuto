@@ -182,9 +182,13 @@ export function popupMenu(anchor, items) {
   const mw = menu.offsetWidth || 230;
   const left = Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw));
   menu.style.left = left + 'px';
-  const top = r.bottom + 6;
-  if (top + menu.offsetHeight > window.innerHeight - 8) menu.style.bottom = (window.innerHeight - r.top + 6) + 'px';
-  else menu.style.top = top + 'px';
+  // below the button if it fits, else above it; a menu taller than both (a phone held sideways)
+  // fills the screen height and scrolls — it must never run off the top or bottom edge
+  const vh = window.innerHeight, pad = 8, need = menu.offsetHeight;
+  const spaceBelow = vh - r.bottom - 6 - pad, spaceAbove = r.top - 6 - pad;
+  if (need <= spaceBelow) menu.style.top = r.bottom + 6 + 'px';
+  else if (need <= spaceAbove) menu.style.bottom = vh - r.top + 6 + 'px';
+  else { menu.style.top = pad + 'px'; menu.style.maxHeight = vh - pad * 2 + 'px'; }
   unback = pushBack(() => { unback = null; close(); });
   requestAnimationFrame(() => overlay.classList.add('show'));
   Native.vibrate(6);

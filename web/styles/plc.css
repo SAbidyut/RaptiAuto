@@ -80,10 +80,13 @@
 .mode-operate .lab-mode .seg.active { color: #86efac; }
 .mode-wire .lab-mode .seg.active { color: #fcd34d; }
 .lab-tools { top: 10px; }
+.lab-tools.multi { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--tool-rows, 6), auto); }
+.lab-tools.multi .tool-sep { display: none; }
 .lab-chips { position: absolute; left: 0; right: var(--safe-r); bottom: 10px; z-index: 3; display: flex; gap: 6px; overflow-x: auto; padding: 0 10px; scrollbar-width: none; }
 /* the tool rail on the right ends well above the chips on a phone held upright, so the chips use the full
    width; on short screens (landscape) the rail reaches down and the chips stop before it */
-@media (max-height: 680px) { .lab-chips { right: 62px; } }
+/* (the panel measures the rail itself and sets --chips-extra) */
+.panel-view .lab-chips { margin-right: var(--chips-extra, 0px); }
 /* more chips to scroll to: fade the cut edge so it reads as a scrolling row, not a clipped one */
 .lab-chips.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
 .lab-chips.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px); mask-image: linear-gradient(90deg, transparent, #000 28px); }

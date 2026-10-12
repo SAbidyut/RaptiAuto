@@ -32,6 +32,7 @@ export class LabScreen {
     this.settings = app.settings;
     this.sys = null;
     this.tab = 'panel';
+    this.panes = null; // landscape: the screens the user chose with the dock (null = automatic)
     this.history = [];
     this.future = [];
     this.audio = new AudioEngine();
@@ -70,12 +71,12 @@ export class LabScreen {
     for (const [id, v] of Object.entries(this.views)) { v.el.classList.add('pane', 'lab-pane', 'pane-' + id); this.main.appendChild(v.el); }
     this.nav = h('nav', { class: 'ed-nav lab-nav' });
     for (const [id, ic, label] of TABS) {
-      this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span><i class="badge hidden"></i>` }));
+      this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.toggleTab(id), html: `${icon(ic, 22)}<span>${label}</span><i class="badge hidden"></i>` }));
     }
     this.fsBar = h('div', { class: 'fs-bar lab-fs-bar' },
       h('button', { class: 'fs-btn', title: 'Exit full screen', html: icon('fullscreenExit', 20), onclick: () => this.setFullscreen(false) }),
       this.fsRun = h('button', { class: 'fs-btn fs-run', html: icon('play', 20), onclick: () => this.toggleSim() }),
-      ...TABS.map(([id, ic]) => h('button', { class: 'fs-btn', 'data-tab': id, html: icon(ic, 20), onclick: () => this.setTab(id) })),
+      ...TABS.map(([id, ic, label]) => h('button', { class: 'fs-btn', 'data-tab': id, title: label, 'aria-label': label, html: icon(ic, 20), onclick: () => this.toggleTab(id) })),
       h('button', { class: 'fs-btn fs-hide', title: 'Hide menus', 'aria-label': 'Hide menus', html: icon('close', 20), onclick: () => this.setChrome(false) }));
     // full screen hides every menu; this small handle (bottom right, clear of every tool bar at the
     // top) brings them back, and the ✕ at the end of the dock hides them again
@@ -122,34 +123,75 @@ export class LabScreen {
     const r = this.root.getBoundingClientRect();
     const wide = r.width >= 760 && r.width > r.height * 1.05;
     if (wide !== this.wide) { this.wide = wide; this.root.classList.toggle('wide', wide); }
-    // Full screen in landscape: the Lab view (2D / 3D) and another tab are shown together only while
-    // the simulation runs; stopped, full screen shows one screen at a time (like the Arduino editor).
-    const split = wide && this.settings.labSplit !== false && !(this.fullscreen && !this.sys);
-    if (split !== this.split) { this.split = split; this.root.classList.toggle('split', split); }
     this.applyTabClasses();
+  }
+
+  /**
+   * The screens shown. Upright phone: one. Landscape: the ones the user picked with the dock (up to
+   * two), else automatic — Lab + a second tab (normal landscape), but in full screen only while the
+   * simulation runs.
+   */
+  visibleTabs() {
+    const t = this.tab;
+    if (!this.wide) return [t];
+    if (this.panes && this.panes.includes(t)) return this.panes;
+    const auto = this.settings.labSplit !== false && !(this.fullscreen && !this.sys);
+    if (!auto) return [t];
+    return t === 'panel' ? ['panel', this.lastSecond || 'ladder'] : ['panel', t];
   }
 
   applyTabClasses() {
     const t = this.tab;
-    const second = this.split ? (t === 'panel' ? this.lastSecond || 'ladder' : t) : null;
+    const vis = this.visibleTabs();
+    const split = vis.length > 1;
+    if (split !== this.split) { this.split = split; this.root.classList.toggle('split', split); }
     for (const [id, v] of Object.entries(this.views)) {
-      const vis = id === t || (this.split && (id === 'panel' || id === second));
-      if (vis !== v.visible) { v.visible = vis; v.el.classList.toggle('show', vis); if (vis && v.onShow) v.onShow(); if (!vis && v.onHide) v.onHide(); }
-      v.el.classList.toggle('second', this.split && id === second && id !== 'panel');
+      const on = vis.includes(id);
+      if (on !== v.visible) { v.visible = on; v.el.classList.toggle('show', on); if (on && v.onShow) v.onShow(); if (!on && v.onHide) v.onHide(); }
+      v.el.classList.toggle('second', split && on && id !== 'panel');
     }
     if (this.scene) this.scene.visible = this.views.panel.visible;
-    for (const b of this.nav.children) b.classList.toggle('active', b.dataset.tab === t || (this.split && b.dataset.tab === second));
-    for (const b of this.fsBar.querySelectorAll('[data-tab]')) b.classList.toggle('active', b.dataset.tab === t);
+    for (const b of this.nav.children) b.classList.toggle('active', vis.includes(b.dataset.tab));
+    for (const b of this.fsBar.querySelectorAll('[data-tab]')) b.classList.toggle('active', vis.includes(b.dataset.tab));
+    void t;
   }
 
+  /** Show one screen (phone upright); in landscape a screen that is not open takes the place of the focused one. */
   setTab(t) {
     if (!this.views[t]) t = 'panel';
+    if (this.panes) {
+      if (!this.wide) this.panes = null;
+      else if (!this.panes.includes(t)) {
+        const i = this.panes.indexOf(this.tab);
+        this.panes = i >= 0 && this.panes.length > 1 ? this.panes.map((x, k) => (k === i ? t : x)) : [t];
+      }
+    }
     this.tab = t;
     if (t !== 'panel') this.lastSecond = t;
     this.root.className = this.root.className.replace(/\btab-\w+/g, '').trim() + ' tab-' + t;
     this.applyTabClasses();
     this.setBadge(t, false);
     if (document.activeElement && document.activeElement.blur && t !== 'ladder') document.activeElement.blur();
+  }
+
+  /**
+   * Dock / tab-bar tap. Upright phone: show that screen. Landscape (also in full screen): a tap
+   * opens the screen beside the one on show, a second tap closes it again — two screens at most, and
+   * the last one always stays. A third screen swaps the second one; the main (first) screen stays.
+   */
+  toggleTab(t) {
+    if (!this.wide || !this.views[t]) { this.setTab(t); return; }
+    let cur = [...this.visibleTabs()];
+    if (cur.includes(t)) {
+      if (cur.length < 2) { Native.vibrate(5); return; }
+      cur = cur.filter((x) => x !== t);
+    } else {
+      if (cur.length < 2) cur.push(t);
+      else cur[1] = t; // the main screen stays, the second one is swapped
+    }
+    this.panes = cur;
+    this.setTab(cur[cur.length - 1]);
+    Native.vibrate(8);
   }
 
   setBadge(tab, on) {
@@ -159,6 +201,7 @@ export class LabScreen {
 
   setFullscreen(on) {
     this.fullscreen = on;
+    this.panes = null; // full screen starts automatic again: one screen, two while running
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
     this.updateLayout();
@@ -333,7 +376,7 @@ export class LabScreen {
       '-',
       { icon: 'undo', label: 'Undo wiring / devices', action: () => this.undo() },
       { icon: 'redo', label: 'Redo', action: () => this.redo() },
-      { icon: 'columns', label: this.settings.labSplit === false ? 'Side by side in landscape' : 'One panel at a time', action: () => { this.settings.labSplit = this.settings.labSplit === false; this.app.saveSettings(); this.split = null; this.updateLayout(); } },
+      { icon: 'columns', label: this.settings.labSplit === false ? 'Side by side in landscape' : 'One panel at a time', action: () => { this.settings.labSplit = this.settings.labSplit === false; this.app.saveSettings(); this.panes = null; this.split = null; this.updateLayout(); } },
       { icon: 'fullscreen', label: 'Full screen', action: () => this.setFullscreen(true) },
       { icon: 'clock', label: `Simulation speed: ${fmtSpeed(this.speed || 1)}`, action: () => this.chooseSpeed() },
       { icon: 'sliders', label: `3D quality: ${this.settings.labQuality === 'low' ? 'Fast' : 'High'}`, action: () => { this.settings.labQuality = this.settings.labQuality === 'low' ? 'high' : 'low'; this.app.saveSettings(); toast('Re-open the lab to apply the 3D quality'); } },

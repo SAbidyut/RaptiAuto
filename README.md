@@ -8,6 +8,8 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 - **Full screen in landscape:** the Lab view (2D / oblique 3D) and a second tab (Ladder, HMI, VFD, Monitor) are shown side by side only **while the simulation runs**. With the simulation stopped, full screen shows one screen at a time. The layout follows Simulate / Stop at once.
 - **HMI pinch zoom:** on the HMI tab, two fingers zoom the DOP-107 picture in and out (50 % – 500 %) and move it; the ＋ / − / fit buttons at the left, the mouse wheel, one finger on the frame while zoomed and a double tap on the frame (back to fit) work too. Works when operating and when designing screens; a touch only presses an HMI button when it is a single finger, so a pinch never presses anything.
+- **Tap a tab to open / close a screen (landscape, also in full screen):** the bottom tabs (Lab, Ladder, HMI, VFD, Monitor) work as switches. Tap a tab and it opens beside the screen on show (two screens, side by side); tap it again and it closes; the last screen always stays; a third tab swaps the second screen. Open screens are highlighted in the tab bar. Upright phones still show one screen.
+- **Menu (⋮) on a short landscape screen** opens fully on screen (it scrolls when it is taller than the screen) over a blurred background; the 3D tool rail wraps into columns in a short pane and the focus chips stop before it, so every tool can be tapped.
 - **No current in the wires when stopped:** the moving current lights on the 3D cables kept running after Stop; they are cleared now.
 
 ## New in 2.13 — real internet, live-data IoT projects, example search
