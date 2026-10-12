@@ -124,7 +124,7 @@ export class LabSystem {
         if (rt.kind !== 'tc') break;
         if (value === 'UP' || value === 'DOWN') s.sv = Math.max(s.lo ?? 0, Math.min(s.hi ?? 400, Math.round((s.sv ?? 120) + (value === 'UP' ? 1 : -1))));
         break;
-      case 'tcSet': if (rt.kind === 'tc') Object.assign(s, value); break;
+      case 'tcSet': if (rt.kind === 'tc') { const { at, ...rest } = value; Object.assign(s, rest); if (at && rt.mb) rt.mb.startAT(); } break;
       case 'thSet': if (rt.kind === 'mbth') Object.assign(s, value); break;
       case 'vfdKey': if (rt.vfd) { const hint = rt.vfd.key(value); this.persistVfd(rt); return hint; } break;
       case 'vfdKnob': s.knob = Math.max(0, Math.min(1, value)); if (rt.vfd) return rt.vfd.setKnob(s.knob); break;

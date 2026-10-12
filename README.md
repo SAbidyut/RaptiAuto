@@ -4,10 +4,44 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
-## Unreleased — PLC Lab full screen, HMI pinch zoom, no current when stopped
+## New in 2.19 — program output on its own screen, versioned releases
+
+- The output panel that slid over the bottom of the Pi circuit (and its button in the menus) is gone. A program's output lives on the **Output** screen; pressing Run opens it beside the circuit or the code (landscape), or tells you where it is (portrait).
+- **GitHub Releases:** every version tag (`v2.19.0`, …) builds the signed APK in GitHub Actions and publishes it as a release asset named `RaptiAuto-v<version>.apk` (`.github/workflows/release.yml`; it can also be started by hand from the Actions tab).
+
+## New in 2.18 — Terminal lives in the Pi Desktop
+
+- The separate **Terminal** tab of the Raspberry Pi lab is gone; the Terminal is on the **Desktop** (panel icon, raspberry menu → Accessories). The Pi tabs are now Circuit · Pinout · Desktop · Thonny · Output.
+
+## New in 2.17 — Thonny: Code and Output on separate screens, dark theme
+
+- The Raspberry Pi lab's Thonny is split like the Arduino editor: **Thonny** (toolbar, file tabs, editor) and **Output** (the Shell, program output and `input()`) are two screens in the tab bar. In landscape open both side by side; pressing Run opens Output next to the code.
+- Thonny, its editor and its shell now use the app's dark theme (same colours as the Arduino code editor).
+
+## New in 2.16 — one draggable full-screen menu
+
+- In full screen the Arduino editor, the Raspberry Pi lab and the PLC lab share the same frosted-glass menu: tap the round ☰ button to open the options, tap ✕ to close them, and **drag it anywhere** — the spot is remembered per screen.
+- The Pi lab's menu now floats over the panes like the Arduino one (no more shifted panes or black strips); the bars under it step aside for whichever side it is on.
+- HMI top bar: on a narrow screen the screen chips drop to their own row, so the zoom buttons never cover them.
+
+## New in 2.15 — PLC manual, PID controller, Modbus examples
+
+- **Manual** (bottom bar: Home · Examples · Manual · About): nine English chapters for the PLC side — PLC programming, wiring, VFD (MS300) operation and control, HMI design step by step, Modbus (frames, registers, MODRW), PID control and tuning, guided projects and a reference. Over 40 small diagrams, live-coloured ladder figures, search, and "Open example" buttons that load the matching lab example.
+- **Delta DTB4848 PID temperature controller** now has tunable PB / Ti / Td registers and **auto-tune** (register 0813H / the AT chip in the device panel).
+- **Five new PLC examples:** `modbus-th-fan`, `modbus-energy-vfd`, `modbus-function-codes` (Modbus), `pid-oven-recipes`, `pid-tuning-lab` (PID), each with guided tasks.
+- Tapping the **RaptiAuto** name in the top bar opens About.
+- HMI zoom bar is smaller so it no longer overlaps the toolbar.
+
+## New in 2.14 — tap-to-split screens everywhere, HMI pinch zoom, Pi full screen
 
 - **Full screen in landscape:** the Lab view (2D / oblique 3D) and a second tab (Ladder, HMI, VFD, Monitor) are shown side by side only **while the simulation runs**. With the simulation stopped, full screen shows one screen at a time. The layout follows Simulate / Stop at once.
 - **HMI pinch zoom:** on the HMI tab, two fingers zoom the DOP-107 picture in and out (50 % – 500 %) and move it; the ＋ / − / fit buttons at the left, the mouse wheel, one finger on the frame while zoomed and a double tap on the frame (back to fit) work too. Works when operating and when designing screens; a touch only presses an HMI button when it is a single finger, so a pinch never presses anything.
+- **Tap a tab to open / close a screen (landscape, also in full screen):** the bottom tabs (Lab, Ladder, HMI, VFD, Monitor) work as switches. Tap a tab and it opens beside the screen on show (two screens, side by side); tap it again and it closes; the last screen always stays; a third tab swaps the second screen. Open screens are highlighted in the tab bar. Upright phones still show one screen.
+- **Same tab system in the Arduino editor and the Raspberry Pi lab** (landscape, also in full screen): tap Circuit / Code / Serial / IoT (Arduino) or Circuit / Pinout / Desktop / Terminal / Thonny (Pi) to open a second screen beside the first, tap again to close it. The old Split button is gone; the Settings switches *Side by side in landscape / full screen* only set the automatic layout.
+- **Raspberry Pi lab, true full screen:** with the menus hidden, Thonny, Desktop, Terminal and Pinout use the whole display — the black strips at the sides are gone (only a camera cut-out is kept clear).
+- **Cleaner sections:** the *Raspberry Pi Pico* board and its example are removed from the Arduino section (Pico lives in the Raspberry Pi lab); the Raspberry Pi lab no longer offers Arduino boards, and the two *Pi master → Arduino slave* examples (I²C / Serial) are removed.
+- **HMI:** the zoom ＋ / − / fit buttons moved into the HMI top bar.
+- **Menu (⋮) on a short landscape screen** opens fully on screen (it scrolls when it is taller than the screen) over a blurred background; the 3D tool rail wraps into columns in a short pane and the focus chips stop before it, so every tool can be tapped.
 - **No current in the wires when stopped:** the moving current lights on the 3D cables kept running after Stop; they are cleared now.
 
 ## New in 2.13 — real internet, live-data IoT projects, example search

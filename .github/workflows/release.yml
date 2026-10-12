@@ -1,0 +1,59 @@
+# Builds the signed APK and publishes it as a GitHub Release named after the version, e.g. RaptiAuto-v2.19.0.apk.
+#   - push to main / master (or a ccr-* working branch): the release v<versionName of the manifest> is created
+#     or refreshed with the new APK
+#   - push a tag:   git tag v2.19.0 && git push origin v2.19.0
+#   - or run it by hand from the Actions tab ("Release APK" → Run workflow); the tag is taken from
+#     android/AndroidManifest.xml (versionName) and created on the selected branch.
+name: Release APK
+
+on:
+  push:
+    branches: [main, master, 'ccr-**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Android build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aapt zipalign apksigner android-sdk-platform-23 dalvik-exchange default-jdk-headless
+
+      - name: Web dependencies
+        run: cd web && npm install --no-audit --no-fund
+
+      - name: Version
+        id: v
+        run: |
+          VER=$(grep -o 'versionName="[^"]*"' android/AndroidManifest.xml | cut -d'"' -f2)
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then TAG="${GITHUB_REF_NAME}"; else TAG="v${VER}"; fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          # release notes: the README section "## New in X.Y …" of this version
+          awk -v h="## New in ${VER%.*}" 'index($0,h)==1{f=1;next} /^## /{f=0} f' README.md > notes.md
+
+      - name: Build the APK
+        run: bash tools/build-apk.sh
+
+      - name: Name the APK after the version
+        run: cp release/RaptiAuto.apk "RaptiAuto-${{ steps.v.outputs.tag }}.apk"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: RaptiAuto ${{ steps.v.outputs.version }}
+          body_path: notes.md
+          generate_release_notes: true
+          files: RaptiAuto-${{ steps.v.outputs.tag }}.apk

@@ -152,7 +152,7 @@ export class Desktop {
       }
       case 'thonny': {
         const th = this.ctx.thonny;
-        win.body.appendChild(th.el);
+        win.body.appendChild(th.joined());
         th.shown();
         if (arg) th.open(arg);
         setTitle('Thonny  -  ' + (th.cur && th.cur.path ? th.cur.path : '<untitled>'));
@@ -209,7 +209,7 @@ export class Desktop {
 
   /** Thonny lives in one place at a time: the Thonny tab or a desktop window. */
   thonnyWin() { return this.wins.find((w) => w.id === 'thonny'); }
-  reclaimThonny() { const w = this.thonnyWin(); if (w && !w.body.contains(this.ctx.thonny.el)) w.body.appendChild(this.ctx.thonny.el); }
+  reclaimThonny() { const w = this.thonnyWin(); if (w && !w.body.contains(this.ctx.thonny.el)) w.body.appendChild(this.ctx.thonny.joined()); }
 
   openThonny(path) { this.open('thonny', path); }
 

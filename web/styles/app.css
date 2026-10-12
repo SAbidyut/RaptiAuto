@@ -1,6 +1,7 @@
 /* RaptiAuto — design system & layout */
 @import "./plc.css";
 @import "./pi.css";
+@import "./manual.css";
 @font-face { font-family: 'Inter'; font-weight: 400; font-display: swap; src: url(fonts/inter-latin-400-normal.woff2) format('woff2'); }
 @font-face { font-family: 'Inter'; font-weight: 500; font-display: swap; src: url(fonts/inter-latin-500-normal.woff2) format('woff2'); }
 @font-face { font-family: 'Inter'; font-weight: 600; font-display: swap; src: url(fonts/inter-latin-600-normal.woff2) format('woff2'); }
@@ -205,26 +206,18 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .nav-tab.active::before { content: ''; position: absolute; top: -4px; width: 28px; height: 3px; border-radius: 3px; background: var(--grad); }
 .badge { position: absolute; top: 5px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 
-/* wide / landscape "split": circuit + code side by side (toggle with .split-toggle) */
+/* wide / landscape "split": two screens side by side (the tab bar opens / closes them) */
 .editor.split .ed-main { display: flex; }
-.editor.split .pane { position: relative; inset: auto; display: flex; }
-.editor.split .pane-circuit { flex: 1.25; border-right: 1px solid var(--line); }
-.editor.split .pane-code, .editor.split .pane-serial, .editor.split .pane-iot { flex: 1; display: none; }
-.editor.split.tab-circuit .pane-code, .editor.split.tab-code .pane-code, .editor.split.tab-serial .pane-serial, .editor.split.tab-iot .pane-iot { display: flex; }
-.editor.split.tab-iot .pane-code { display: none; }
-.split-toggle { display: none !important; }
-.editor.wide .nav-tab.split-toggle { display: flex !important; flex: 0 0 76px; }
-.editor.wide .fs-btn.split-toggle { display: grid !important; }
-.split-toggle.on { color: var(--accent) !important; }
-.fs-btn.split-toggle.on { background: rgba(34, 211, 238, .12); }
-.fs-bar .split-toggle { margin-top: 4px; position: relative; }
-.fs-bar .split-toggle::before { content: ''; position: absolute; top: -6px; left: 8px; right: 8px; height: 1px; background: var(--line2); }
+.editor.split .pane { position: relative; inset: auto; display: none; flex: 1; min-width: 0; min-height: 0; }
+.editor.split .pane.show { display: flex; }
+.editor.split .pane-circuit { flex: 1.25; }
+.editor.split .pane.show ~ .pane.show { border-left: 1px solid var(--line); }
 
 /* fullscreen */
 .fs-bar { display: none; }
 .editor.fs .ed-top, .editor.fs .ed-nav { display: none; }
 .editor.fs .sim-status { position: absolute; top: calc(8px + var(--safe-t)); left: 50%; transform: translateX(-50%); border-radius: 99px; border: 1px solid rgba(34, 197, 94, .3); background: rgba(8, 14, 26, .78); backdrop-filter: blur(10px); z-index: 20; }
-.editor.fs .fs-bar { display: flex; flex-direction: column; gap: 6px; position: absolute; left: calc(8px + var(--safe-l)); top: calc(10px + var(--safe-t)); z-index: 20; padding: 6px; border-radius: 18px; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); }
+.editor.fs .fs-bar { display: flex; flex-direction: column; gap: 6px; position: absolute; left: 0; top: 0; z-index: 21; padding: 6px; border-radius: 18px; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); }
 .fs-btn { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: var(--muted); }
 .fs-btn.active { color: var(--accent); background: rgba(34, 211, 238, .12); }
 .fs-btn.fs-run { color: #4ade80; }
@@ -232,11 +225,15 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 /* full screen: the menus float over the content on frosted glass — showing or hiding them never
    resizes the circuit, the code or the Serial Monitor (the text does not re-wrap) */
 .editor.fs .pane-code, .editor.fs .pane-serial { padding-left: var(--safe-l); }
-.editor.fs .code-bar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(70px + var(--safe-l)); right: calc(54px + var(--safe-r)); height: 46px; border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
+.editor.fs .code-bar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); height: 46px; border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
 .editor.fs.split .code-bar { left: 8px; }
 .editor.fs .code-bar [title="Fullscreen"] { display: none; }
-.editor.fs:not(.runsplit) .serial-toolbar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(70px + var(--safe-l)); right: calc(54px + var(--safe-r)); border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
+.editor.fs:not(.runsplit) .serial-toolbar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
 .editor.fs.split:not(.runsplit) .serial-toolbar { left: 8px; }
+/* the floating menu (ui/fsdock.js) tells the screen which side it sits on, so the bars under it step aside */
+.editor.fs:not(.fs-clean)[data-dock-x="l"] .code-bar, .editor.fs:not(.fs-clean)[data-dock-x="l"]:not(.runsplit) .serial-toolbar { left: calc(66px + var(--safe-l)); }
+.editor.fs:not(.fs-clean)[data-dock-x="r"] .code-bar, .editor.fs:not(.fs-clean)[data-dock-x="r"]:not(.runsplit) .serial-toolbar { right: calc(66px + var(--safe-r)); }
+.editor.fs.split:not(.fs-clean)[data-dock-x="l"] .code-bar, .editor.fs.split:not(.fs-clean)[data-dock-x="l"]:not(.runsplit) .serial-toolbar { left: 8px; }
 .editor.fs .fs-bar, .lab.fs .lab-fs-bar { background: rgba(10, 16, 32, .5) !important; border-color: rgba(148, 163, 184, .22) !important; backdrop-filter: blur(16px) saturate(150%) !important; -webkit-backdrop-filter: blur(16px) saturate(150%) !important; box-shadow: 0 16px 40px -18px rgba(0, 0, 0, .9); }
 .editor.fs:not(.fs-clean) .fs-bar, .editor.fs:not(.fs-clean) .code-bar, .editor.fs:not(.fs-clean):not(.runsplit) .serial-toolbar, .editor.fs:not(.fs-clean) .side-tools,
 .lab.fs:not(.fs-clean) .lab-fs-bar, .lab.fs:not(.fs-clean) .lab-tools, .lab.fs:not(.fs-clean) .lab-chips, .lab.fs:not(.fs-clean) .lab-mode, .lab.fs:not(.fs-clean) .lab-view-seg { animation: fsMenuIn .22s cubic-bezier(.2, .9, .3, 1.1); }
@@ -248,7 +245,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .editor.fs.runsplit .pane-circuit, .editor.fs.runsplit .pane-serial { display: flex; }
 .editor.fs.runsplit .pane-circuit { flex: 1.45; border-right: 1px solid var(--line2); }
 .editor.fs.runsplit .pane-serial { flex: 1; }
-.editor.wide.runsplit .fs-btn.split-toggle { display: none !important; }
 .editor.fs.runsplit .sim-status { left: calc(100% * 1.45 / 2.45 / 2); }
 @media (orientation: portrait) {
   .editor.fs.runsplit .ed-main { flex-direction: column; }
@@ -263,7 +259,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 /* circuit pane */
 .canvas-host { position: absolute; inset: 0; background: radial-gradient(130% 90% at 50% 0%, #0f1a36 0%, var(--canvas-bg) 55%, #070c1a 100%); overflow: hidden; }
 .circuit-svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
-.side-tools { position: absolute; right: calc(10px + var(--safe-r)); top: 10px; display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 16px; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); z-index: 3; }
+.side-tools { max-height: calc(100% - 16px); overflow-y: auto; scrollbar-width: none; position: absolute; right: calc(10px + var(--safe-r)); top: 10px; display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 16px; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); z-index: 3; }
 .editor.fs .side-tools { top: calc(10px + var(--safe-t)); }
 .tool { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; color: #c7d2e8; transition: background .15s, transform .1s; }
 .tool:active { background: rgba(148, 163, 184, .18); transform: scale(.9); }
@@ -408,8 +404,8 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .board-info td:first-child { color: var(--muted); width: 42%; }
 .warn-list { margin: 0; padding-left: 18px; color: #fde68a; }
 .warn-list li { margin: 6px 0; line-height: 1.45; font-size: 13.5px; }
-.menu-overlay { background: rgba(2, 5, 14, .25); }
-.popup-menu { position: absolute; min-width: 230px; padding: 6px; border-radius: 18px; background: rgba(18, 27, 52, .97); border: 1px solid var(--line2); box-shadow: 0 24px 50px -16px rgba(0, 0, 0, .85); backdrop-filter: blur(16px); transform-origin: top right; transform: scale(.94); transition: transform .18s cubic-bezier(.2, .9, .3, 1.3); }
+.menu-overlay { background: rgba(2, 5, 14, .38); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.popup-menu { position: absolute; min-width: 230px; max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 6px; border-radius: 18px; background: rgba(18, 27, 52, .97); border: 1px solid var(--line2); box-shadow: 0 24px 50px -16px rgba(0, 0, 0, .85); backdrop-filter: blur(16px); transform-origin: top right; transform: scale(.94); transition: transform .18s cubic-bezier(.2, .9, .3, 1.3); }
 .overlay.show .popup-menu { transform: none; }
 .menu-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; font-size: 14.5px; font-weight: 500; text-align: left; }
 .menu-item span { flex: 1; }
@@ -678,10 +674,8 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
   .tool-sep { margin: 2px 4px; }
   .fab-main { width: 52px; height: 52px; border-radius: 18px; bottom: 12px; right: calc(60px + var(--safe-r)); }
   .editor.fs .side-tools { top: calc(8px + var(--safe-t)); }
-  .editor.fs .fs-bar { gap: 2px; padding: 4px; top: calc(8px + var(--safe-t)); }
+  .editor.fs .fs-bar { gap: 2px; padding: 4px; }
   .fs-btn { width: 38px; height: 38px; }
-  .editor.fs .code-bar, .editor.fs:not(.runsplit) .serial-toolbar { left: calc(62px + var(--safe-l)); }
-  .editor.fs.split .code-bar, .editor.fs.split:not(.runsplit) .serial-toolbar { left: 8px; }
 }
 
 /* ---------------------------------------------------------------- selection box (AutoCAD: window → right, crossing ← left) */
@@ -697,12 +691,22 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 
 /* ---------------------------------------------------------------- full screen without menus: a small handle shows them again */
 .fs-handle { display: none; }
-.editor.fs .fs-handle, .lab.fs .fs-handle { display: grid; place-items: center; position: absolute; right: calc(8px + var(--safe-r)); top: calc(8px + var(--safe-t)); z-index: 22; width: 36px; height: 36px; border-radius: 12px; color: #dbe5f7; background: rgba(10, 16, 32, .5); border: 1px solid rgba(148, 163, 184, .25); backdrop-filter: blur(10px); opacity: .75; transition: opacity .15s, background .15s; }
+.editor.fs .fs-handle, .lab.fs .fs-handle { display: grid; place-items: center; flex-shrink: 0; position: relative; z-index: 22; width: 36px; height: 36px; border-radius: 12px; color: #dbe5f7; background: rgba(10, 16, 32, .5); border: 1px solid rgba(148, 163, 184, .25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: .8; transition: opacity .15s, background .15s, transform .15s; touch-action: none; cursor: grab; }
 .editor.fs .fs-handle:active, .lab.fs .fs-handle:active { opacity: 1; background: rgba(34, 211, 238, .25); }
-.editor.fs:not(.fs-clean) .fs-handle, .lab.fs:not(.fs-clean) .fs-handle { opacity: 1; color: var(--accent); }
-.editor.fs:not(.fs-clean) .side-tools, .lab.fs:not(.fs-clean) .lab-tools { top: calc(52px + var(--safe-t)) !important; }
-.editor.fs.fs-clean .fs-bar, .editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar, .editor.fs.fs-clean:not(.runsplit) .serial-toolbar { display: none !important; }
-.lab.fs.fs-clean .lab-fs-bar, .lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
+.editor.fs:not(.fs-clean) .fs-handle, .lab.fs:not(.fs-clean) .fs-handle { opacity: 1; color: var(--accent); background: rgba(34, 211, 238, .1); }
+.editor.fs.fs-dragging .fs-handle, .lab.fs.fs-dragging .fs-handle { transform: scale(1.12); cursor: grabbing; }
+.editor.fs.fs-dragging .fs-dock, .lab.fs.fs-dragging .fs-dock { box-shadow: 0 22px 50px -14px rgba(0, 0, 0, .95); }
+.fs-probe { position: absolute; visibility: hidden; pointer-events: none; width: 0; height: 0; padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); }
+/* the menu capsule: the ☰ button leads it (✕ while open); closed, only the round button is left */
+.fs-dock { touch-action: none; width: max-content; }
+.fs-dock.dock-col { align-items: center; }
+.fs-dock.dock-row { align-items: center; }
+.editor.fs.fs-clean .fs-bar.fs-dock, .lab.fs.fs-clean .fs-bar.fs-dock { display: flex !important; padding: 0 !important; gap: 0 !important; background: none !important; border-color: transparent !important; box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; animation: none; }
+.fs-bar.fs-dock .fs-handle { margin: 0; }
+.editor.fs.fs-clean .fs-dock > :not(.fs-handle), .lab.fs.fs-clean .fs-dock > :not(.fs-handle) { display: none !important; }
+.editor.fs.fs-clean .side-tools, .editor.fs.fs-clean .fab-main, .editor.fs.fs-clean .sim-status, .editor.fs.fs-clean .code-bar, .editor.fs.fs-clean:not(.runsplit) .serial-toolbar { display: none !important; }
+.lab.fs.fs-clean .lab-tools, .lab.fs.fs-clean .lab-chips, .lab.fs.fs-clean .lab-mode, .lab.fs.fs-clean .lab-status, .lab.fs.fs-clean .task-pill, .lab.fs.fs-clean .lab-view-seg { display: none !important; }
+.lab.fs:not(.fs-clean) .lab-tools { top: calc(52px + var(--safe-t)) !important; }
 
 /* several boards in one project: one code tab per board */
 .code-tabs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }

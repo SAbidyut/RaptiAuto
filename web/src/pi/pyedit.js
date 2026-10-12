@@ -1,4 +1,4 @@
-// CodeMirror 6 Python editor with Thonny's light look, completions for the Pi / Pico libraries and
+// CodeMirror 6 Python editor in the app's dark theme, completions for the Pi / Pico libraries and
 // a symbol bar for phone keyboards.
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
@@ -12,37 +12,37 @@ import { h } from '../ui/widgets.js';
 import { icon } from '../ui/icons.js';
 
 const theme = EditorView.theme({
-  '&': { color: '#1f2328', backgroundColor: '#ffffff', height: '100%', fontSize: 'var(--code-size, 14px)' },
-  '.cm-scroller': { fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace', lineHeight: '1.5', overflow: 'auto' },
-  '.cm-content': { caretColor: '#000', padding: '6px 0 30vh' },
-  '.cm-cursor': { borderLeftColor: '#000', borderLeftWidth: '2px' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: '#c9dcf5 !important' },
-  '.cm-gutters': { backgroundColor: '#f3f3f3', color: '#999', border: 'none', borderRight: '1px solid #e2e2e2' },
-  '.cm-activeLineGutter': { backgroundColor: '#e8eef8', color: '#333' },
-  '.cm-activeLine': { backgroundColor: '#f6f9ff' },
-  '.cm-matchingBracket': { backgroundColor: '#d7f0d0', outline: '1px solid #9ad18b' },
-  '.cm-tooltip': { backgroundColor: '#fff', color: '#222', border: '1px solid #ccc', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 6px 20px rgba(0,0,0,.18)' },
+  '&': { color: '#e6edf7', backgroundColor: 'transparent', height: '100%', fontSize: 'var(--code-size, 14px)' },
+  '.cm-scroller': { fontFamily: '"JetBrains Mono", "Fira Code", monospace', lineHeight: '1.55', overflow: 'auto' },
+  '.cm-content': { caretColor: '#22d3ee', padding: '10px 0 30vh' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#22d3ee', borderLeftWidth: '2px' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: 'rgba(34,211,238,.25) !important' },
+  '.cm-gutters': { backgroundColor: 'rgba(8,13,28,.85)', color: '#4b5b7a', border: 'none', borderRight: '1px solid rgba(148,163,184,.08)' },
+  '.cm-activeLineGutter': { backgroundColor: 'rgba(34,211,238,.08)', color: '#9fb4d8' },
+  '.cm-activeLine': { backgroundColor: 'rgba(148,163,184,.06)' },
+  '.cm-matchingBracket': { backgroundColor: 'rgba(34,211,238,.22)', outline: '1px solid rgba(34,211,238,.45)' },
+  '.cm-tooltip': { backgroundColor: '#111a30', color: '#e6edf7', border: '1px solid rgba(148,163,184,.18)', borderRadius: '12px', overflow: 'hidden' },
   '.cm-tooltip-autocomplete > ul > li': { padding: '6px 10px !important' },
-  '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: '#3874d8', color: '#fff' },
-  '.cm-completionDetail': { color: '#888', fontStyle: 'normal', marginLeft: '8px' },
-  '.cm-panels': { backgroundColor: '#f0f0f0', color: '#222' },
-  '.cm-searchMatch': { backgroundColor: '#ffe58a' },
-  '.cm-err-line': { backgroundColor: '#ffe3e3' },
-}, { dark: false });
+  '.cm-tooltip-autocomplete > ul > li[aria-selected]': { backgroundColor: 'rgba(34,211,238,.18)', color: '#fff' },
+  '.cm-completionDetail': { color: '#7c8db0', fontStyle: 'normal', marginLeft: '8px' },
+  '.cm-panels': { backgroundColor: '#0d1528', color: '#e6edf7' },
+  '.cm-searchMatch': { backgroundColor: 'rgba(245,158,11,.3)' },
+  '.cm-err-line': { backgroundColor: 'rgba(239,68,68,.16)' },
+}, { dark: true });
 
-// Thonny "Default Light" colours
+// the same colours as the Arduino editor
 const highlight = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword], color: '#7f0055', fontWeight: '600' },
-  { tag: [t.bool, t.null, t.self], color: '#7f0055', fontWeight: '600' },
-  { tag: [t.string, t.special(t.string)], color: '#006400' },
-  { tag: t.comment, color: '#888', fontStyle: 'italic' },
-  { tag: t.number, color: '#0000c0' },
-  { tag: [t.function(t.definition(t.variableName)), t.definition(t.className)], color: '#0047b3', fontWeight: '600' },
-  { tag: t.function(t.variableName), color: '#1a1aa6' },
-  { tag: t.className, color: '#0047b3' },
-  { tag: t.propertyName, color: '#2b2b6f' },
-  { tag: t.meta, color: '#a0522d' },
-  { tag: t.operator, color: '#333' },
+  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword, t.operatorKeyword], color: '#c792ea' },
+  { tag: [t.bool, t.null, t.self], color: '#f78c6c' },
+  { tag: [t.string, t.special(t.string)], color: '#c3e88d' },
+  { tag: t.comment, color: '#5c6f94', fontStyle: 'italic' },
+  { tag: t.number, color: '#f78c6c' },
+  { tag: [t.function(t.definition(t.variableName)), t.definition(t.className)], color: '#ffb86c', fontWeight: '600' },
+  { tag: t.function(t.variableName), color: '#ffb86c' },
+  { tag: t.className, color: '#ffcb6b' },
+  { tag: t.propertyName, color: '#82aaff' },
+  { tag: t.meta, color: '#ff79c6' },
+  { tag: t.operator, color: '#89ddff' },
 ]);
 
 const WORDS = {

@@ -1,7 +1,7 @@
 // Example programs for the virtual Raspberry Pi (Python 3 style, gpiozero / RPi.GPIO) and the Pico
 // (MicroPython). Each lists the parts it expects on the header; opening one wires them up.
 
-import { bbTrafficLights, bbDoorbell, piI2cMaster, piUartMaster } from './bb-examples.js';
+import { bbTrafficLights, bbDoorbell } from './bb-examples.js';
 import { PI_MORE, PICO_MORE } from './examples-more.js';
 import { PI_IOT, PICO_IOT } from './examples-iot.js';
 
@@ -112,40 +112,6 @@ while True:
         buzzer.off(); led.off()
         sleep(0.15)
     button.wait_for_release()
-` },
-  { file: 'i2c_master_arduino.py', title: 'Pi master → Arduino slave (I²C)', tags: ['master-slave', 'I2C', 'Arduino'], circuit: piI2cMaster, code: `# Raspberry Pi = I2C MASTER, Arduino Uno = SLAVE at address 8.
-# Wiring: GPIO2 (SDA) -> Uno SDA, GPIO3 (SCL) -> Uno SCL, GND -> GND.
-# The Pi blinks the Uno's LED and reads the Uno's button. Press it on the canvas!
-# (Tap the Uno, then Sketch, to see the Arduino program.)
-from smbus2 import SMBus
-import time
-
-ADDR = 8
-bus = SMBus(1)
-print("Devices on the I2C bus:", [hex(a) for a in bus.scan()])
-
-led = 0
-while True:
-    led = 1 - led
-    bus.write_byte_data(ADDR, 0, led)                  # register 0 <- LED on / off
-    pressed, presses = bus.read_i2c_block_data(ADDR, 1, 2)   # register 1 -> button, count
-    print("LED", "ON " if led else "OFF", "| button", "DOWN" if pressed else "up", "| presses", presses)
-    time.sleep(0.5)
-` },
-  { file: 'uart_master_arduino.py', title: 'Pi master → Arduino slave (Serial)', tags: ['master-slave', 'UART', 'Arduino'], circuit: piUartMaster, code: `# Raspberry Pi = SERIAL MASTER, Arduino Uno = SLAVE.
-# Wiring (crossed): GPIO14 TXD -> Uno RX (D0), GPIO15 RXD <- Uno TX (D1), GND -> GND.
-# The Pi sends "L1" / "L0" and prints the Uno's answer.
-import serial
-import time
-
-ser = serial.Serial('/dev/serial0', 9600, timeout=1)
-led = 0
-while True:
-    led = 1 - led
-    ser.write(b'L1\\n' if led else b'L0\\n')
-    reply = ser.readline().decode().strip()
-    print("sent L%d -> Uno says: %s" % (led, reply or "(no answer)"))
-    time.sleep(0.5)
 ` },
   { file: 'rpi_gpio_blink.py', title: 'Blink with RPi.GPIO', tags: ['RPi.GPIO', 'LED'], parts: [L(18, 'green')], code: `# The classic RPi.GPIO way (BCM numbering)
 import RPi.GPIO as GPIO

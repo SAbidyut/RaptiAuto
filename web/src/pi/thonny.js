@@ -64,12 +64,38 @@ export class Thonny {
       extraKeys: [['Ctrl+C', () => this.interrupt()], ['Ctrl+D', () => this.softReboot()], ['↑', (c) => c.histMove(-1)], ['↓', (c) => c.histMove(1)], ['Tab', (c) => c.insert('    ')], [':', (c) => c.insert(':')], ['(', (c) => c.insert('(')], [')', (c) => c.insert(')')], ['"', (c) => c.insert('"')]],
     });
     const grip = h('div', { class: 'th-grip' }, h('span'));
-    this.shellHead = h('div', { class: 'th-shell-head' }, h('b', {}, 'Shell'), h('button', { class: 'th-clear', onclick: () => { this.con.clear(); this.showPrompt(); } }, 'Clear'));
+    this.shellHead = h('div', { class: 'th-shell-head' }, h('b', {}, 'Output · Shell'), h('button', { class: 'th-clear', onclick: () => { this.con.clear(); this.showPrompt(); } }, 'Clear'));
     this.shell = h('div', { class: 'th-shell' }, this.shellHead, this.con.el);
     this.status = h('div', { class: 'th-status' });
-    this.el = h('div', { class: 'thonny' }, this.toolbar, this.tabBar, this.edHost, grip, this.shell, this.status);
+    this.grip = grip;
+    // one piece (the Desktop's Thonny window) or two screens: the code, and the Output (Shell)
+    this.el = h('div', { class: 'thonny' });
+    this.codeEl = h('div', { class: 'thonny th-code' });
+    this.outEl = h('div', { class: 'thonny th-out' });
+    this.join();
     this.dragGrip(grip);
     this.updateStatus();
+  }
+
+  /** Everything in one piece — the Thonny window on the Desktop. */
+  joined() { this.join(); return this.el; }
+
+  join() {
+    if (this.mode === 'joined') return;
+    this.mode = 'joined';
+    this.el.replaceChildren(this.toolbar, this.tabBar, this.edHost, this.grip, this.shell, this.status);
+  }
+
+  /** Two screens: the code (toolbar, tabs, editor) goes in codeHost, the Shell / program output in outHost. */
+  splitInto(codeHost, outHost) {
+    if (this.mode !== 'split') {
+      this.mode = 'split';
+      this.shell.style.flex = '';
+      this.codeEl.replaceChildren(this.toolbar, this.tabBar, this.edHost, this.status);
+      this.outEl.replaceChildren(this.shell);
+    }
+    if (this.codeEl.parentNode !== codeHost) codeHost.appendChild(this.codeEl);
+    if (this.outEl.parentNode !== outHost) outHost.appendChild(this.outEl);
   }
 
   dragGrip(grip) {
@@ -364,6 +390,7 @@ export class Thonny {
     if (this.running && this.proc && this.sys.isPico) { await this.stopRun(); }
     const t = this.cur;
     t.text = this.editor.value;
+    if (!fromShell && this.ctx.onRun) this.ctx.onRun();
     const pico = this.sys.isPico;
     if (!pico) {
       if (!t.path || t.dirty) { if (!(await this.save())) return; }

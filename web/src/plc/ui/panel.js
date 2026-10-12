@@ -178,7 +178,7 @@ export class PanelView {
     this.updateViewSeg();
     this.scene.visible = true;
     this.scene.dirty = true;
-    requestAnimationFrame(() => this.scene.resize());
+    requestAnimationFrame(() => { this.scene.resize(); this.layoutTools(); });
   }
 
   onHide() { this.resetGesture(); }
@@ -191,8 +191,8 @@ export class PanelView {
     return false;
   }
 
-  onSimStart(sys) { this.setMode('operate'); this.scene.setSystem(sys); }
-  onSimStop() { this.closePot(); }
+  onSimStart(sys) { this.setMode('operate'); this.scene.setSystem(sys); requestAnimationFrame(() => this.layoutTools()); }
+  onSimStop() { this.closePot(); requestAnimationFrame(() => this.layoutTools()); }
 
   // ------------------------------------------------------------------ overlay
   buildOverlay() {
@@ -217,6 +217,9 @@ export class PanelView {
     this.chips = h('div', { class: 'lab-chips', onscroll: () => this.updateChipFade() });
     this.chipsRo = new ResizeObserver(() => this.updateChipFade());
     this.chipsRo.observe(this.chips);
+    // a short pane (landscape, split screen): the tool rail wraps into columns instead of running off the bottom
+    this.toolsRo = new ResizeObserver(() => this.layoutTools());
+    this.toolsRo.observe(this.el);
     this.selBar = h('div', { class: 'sel-bar hidden' });
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
@@ -311,6 +314,35 @@ export class PanelView {
     this.hintEl.classList.remove('hidden');
     clearTimeout(this.hintT);
     this.hintT = setTimeout(() => this.hintEl.classList.add('hidden'), ms);
+  }
+
+  /**
+   * Fit the tool rail into the pane: when the pane is too short for one column the tools flow into
+   * 2, 3 … columns (grid), and the chip row at the bottom stops before the rail when it reaches down.
+   */
+  layoutTools() {
+    const el = this.el, tools = this.tools;
+    if (!el.clientHeight || !tools) return;
+    tools.classList.remove('multi');
+    tools.style.removeProperty('--tool-rows');
+    const items = [...tools.children].filter((c) => c.offsetParent !== null);
+    const btns = items.filter((c) => !c.classList.contains('tool-sep'));
+    if (!btns.length) return;
+    const cs = getComputedStyle(tools);
+    const top = parseFloat(cs.top) || 8, padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0), gap = parseFloat(cs.rowGap) || 0;
+    const bh = btns[0].offsetHeight || 34;
+    const chipsH = this.chips.offsetHeight || 34;
+    const safeB = 10 + chipsH + 8;
+    const avail = el.clientHeight - top - safeB - padY;
+    const rows = Math.max(3, Math.floor((avail + gap) / (bh + gap)));
+    if (btns.length > rows) {
+      tools.classList.add('multi');
+      tools.style.setProperty('--tool-rows', rows);
+    }
+    // does the rail reach down into the chip row?
+    const tr = tools.getBoundingClientRect(), pr = el.getBoundingClientRect();
+    const reaches = tr.bottom > pr.bottom - safeB + 2;
+    el.style.setProperty('--chips-extra', reaches ? Math.ceil(tr.width + 12) + 'px' : '0px');
   }
 
   /** Fade the edge of the focus-chip row where more chips are scrolled out of view. */
@@ -1063,10 +1095,11 @@ export class PanelView {
     const range = h('input', { class: 'range', type: 'range', min: s.lo ?? 0, max: s.hi ?? 400, step: 1, value: Math.round(s.sv ?? 120) });
     const run = h('button', { class: 'chip', onclick: () => act({ run: !s.run }) });
     const modes = [[0, 'PID'], [1, 'ON/OFF'], [2, 'Manual 30 %']].map(([m, t]) => h('button', { class: 'chip', onclick: () => act({ mode: m }) }, t));
+    const tune = h('button', { class: 'chip', onclick: () => { if ((s.mode ?? 0) !== 0 || !s.run) { toast('Auto-tune needs PID mode and RUN', 'warn'); return; } act({ at: true }); toast('Auto-tuning: the heater is on for 12 s … PB / Ti / Td are then set', 'info', 4000); } }, 'Auto-tune');
     const upd = () => {
       const rt = this.scene.system && this.scene.system.rts.get(devId);
       const pv = rt && rt.mb && rt.mb.powered ? ` · PV ${rt.mb.pv.toFixed(1)}` : '';
-      val.textContent = `SV ${Math.round(s.sv)} °C${pv}`;
+      val.textContent = `SV ${Math.round(s.sv)} °C${pv} · PB ${(s.pb ?? 8).toFixed(1)} Ti ${Math.round(s.ti ?? 30)} Td ${Math.round(s.td ?? 3)}`;
       run.innerHTML = `${icon(s.run ? 'stop' : 'play', 14)}<span>${s.run ? 'RUN → STOP' : 'STOP → RUN'}</span>`;
       run.classList.toggle('active', !!s.run);
       modes.forEach((b, i) => b.classList.toggle('active', (s.mode ?? 0) === i));
@@ -1074,7 +1107,7 @@ export class PanelView {
     range.addEventListener('input', () => { act({ sv: +range.value }); this.masterWrites(devId, /^Write SV/); });
     this.potCard = h('div', { class: 'pot-card mb-card' },
       h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'DTB4848'} · set value`), val), range,
-      h('div', { class: 'chips-row mb-chips' }, run, ...modes),
+      h('div', { class: 'chips-row mb-chips' }, run, ...modes, tune),
       h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
     this.potCard.upd = upd;
     this.el.appendChild(this.potCard);

@@ -1,5 +1,5 @@
 // The Raspberry Pi Lab screen: Circuit (wire parts to the board on the canvas, like the Arduino
-// editor) · Pinout · Desktop · Terminal · Thonny for a Raspberry Pi 5 / 4, or Circuit · Pinout ·
+// editor) · Pinout · Desktop · Thonny · Output for a Raspberry Pi 5 / 4, or Circuit · Pinout ·
 // Thonny for a Pico / Pico W / Pico 2 / Pico 2 W. Run powers the circuit and runs the Python file;
 // full screen works like the Arduino editor's (menus behind the ☰ handle).
 import { h, toast, pushBack, Sheet, popupMenu, confirmDialog } from '../ui/widgets.js';
@@ -10,8 +10,6 @@ import { PiSystem } from './system.js';
 import { LIBS } from './pylib.js';
 import { BOARDS, BOARD_ORDER, boardSVG, headerOf, pinLabel } from './boards.js';
 import { PICO_W_LED } from './gpio.js';
-import { Console } from './console.js';
-import { Terminal } from './terminal.js';
 import { Thonny } from './thonny.js';
 import { Desktop } from './desktop.js';
 import { normPath, basename } from './vfs.js';
@@ -20,9 +18,10 @@ import { PiCircuit } from './circuit.js';
 import { CircuitHw } from './circuit-hw.js';
 import { autowire, defaultCircuit, boardOnly } from './autowire.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from './examples.js';
+import { FsDock } from '../ui/fsdock.js';
 
-const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['terminal', 'terminal', 'Terminal'], ['thonny', 'code', 'Thonny']];
-const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny']];
+const TABS_PI = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['desktop', 'screen', 'Desktop'], ['thonny', 'code', 'Thonny'], ['output', 'list', 'Output']];
+const TABS_PICO = [['circuit', 'circuit', 'Circuit'], ['board', 'chip', 'Pinout'], ['thonny', 'code', 'Thonny'], ['output', 'list', 'Output']];
 const CIRCUIT_KEY = (board) => 'rapti.pi.circuit.v1.' + board;
 
 export class PiScreen {
@@ -36,11 +35,12 @@ export class PiScreen {
     this.audio = new AudioEngine();
     try { this.audio.enabled = localStorage.getItem('rapti.pi.mute') !== '1'; } catch (e) { /* ignore */ }
     this.tab = 'circuit';
+    this.panes = null; // landscape: the screens the user chose with the tab bar (null = one screen)
+    this.vis = ['circuit'];
     this.fullscreen = false;
     this.build();
     this.offSys = this.sys.on((what) => this.onSys(what));
     this.offGpio = this.sys.gpio.on(() => this.refresh());
-    this.offOut = this.sys.onOut((t, s) => this.programOutput(t, s));
   }
 
   get isPico() { return this.sys.isPico; }
@@ -57,89 +57,155 @@ export class PiScreen {
     const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu', html: icon('dots'), onclick: (e) => this.menu(e.currentTarget) });
     this.top = h('header', { class: 'ed-top pi-top' }, back, h('div', { class: 'ed-titles' }, h('div', { class: 'pi-title' }, 'Raspberry Pi Lab', this.runDot), this.boardChip), this.runBtn, menuBtn);
     this.main = h('main', { class: 'pi-main' });
-    this.panes = {
+    this.panes_ = {
       circuit: h('div', { class: 'pi-pane pane-pcircuit' }),
       board: h('div', { class: 'pi-pane pane-board' }),
       desktop: h('div', { class: 'pi-pane pane-desktop' }),
-      terminal: h('div', { class: 'pi-pane pane-terminal' }),
       thonny: h('div', { class: 'pi-pane pane-thonny' }),
+      output: h('div', { class: 'pi-pane pane-output' }),
     };
-    for (const p of Object.values(this.panes)) this.main.appendChild(p);
+    for (const p of Object.values(this.panes_)) this.main.appendChild(p);
     this.nav = h('nav', { class: 'ed-nav pi-nav' });
     // full screen: a small dock of buttons and the ☰ handle that brings the menus back
     const fb = (ic, title, fn, extra = {}) => h('button', { class: 'fs-btn', title, 'aria-label': title, html: icon(ic, 20), onclick: fn, ...extra });
     this.fsRun = fb('play', 'Run', () => this.toggleRun(), { class: 'fs-btn fs-run' });
-    this.fsOut = fb('terminal', 'Output', () => this.toggleOutput());
     this.fsBar = h('div', { class: 'fs-bar pi-fsbar' },
       fb('fullscreenExit', 'Exit full screen', () => this.setFullscreen(false)), this.fsRun,
-      fb('circuit', 'Circuit', () => this.setTab('circuit'), { 'data-tab': 'circuit' }),
-      fb('code', 'Thonny', () => this.setTab('thonny'), { 'data-tab': 'thonny' }),
-      fb('chip', 'Pinout', () => this.setTab('board'), { 'data-tab': 'board' }),
-      this.fsOut);
-    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19), onclick: () => this.setChrome(this.root.classList.contains('fs-clean')) });
-    this.root.append(this.top, this.main, this.nav, this.fsBar, this.fsHandle);
+      fb('circuit', 'Circuit', () => this.toggleTab('circuit'), { 'data-tab': 'circuit' }),
+      fb('code', 'Thonny', () => this.toggleTab('thonny'), { 'data-tab': 'thonny' }),
+      fb('list', 'Output', () => this.toggleTab('output'), { 'data-tab': 'output' }),
+      fb('chip', 'Pinout', () => this.toggleTab('board'), { 'data-tab': 'board' }));
+    this.fsHandle = h('button', { class: 'fs-handle', 'aria-label': 'Show menus', title: 'Show menus', html: icon('menu', 19) });
+    this.root.append(this.top, this.main, this.nav, this.fsBar);
+    this.dock = new FsDock({ root: this.root, bar: this.fsBar, handle: this.fsHandle, key: 'pi', orient: 'col', home: { fx: 0, fy: 0 }, settings: this.settings, save: () => this.app.saveSettings(), toggle: () => this.setChrome(this.root.classList.contains('fs-clean')) });
 
-    // Thonny and the desktop are shared by every tab; the terminal tab has its own shell
-    this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex) });
+    // Thonny and the desktop (with its Terminal) are shared by every tab
+    this.thonny = new Thonny({ sys: this.sys, wire: (ex) => this.wireExample(ex), onRun: () => this.revealOutput() });
     this.desktop = new Desktop({ sys: this.sys, thonny: this.thonny });
-    this.panes.desktop.appendChild(this.desktop.el);
+    this.panes_.desktop.appendChild(this.desktop.el);
     this.buildCircuitPane();
     this.buildBoardPane();
     this.drawNav();
     this.drawBoard();
     this.updateRun();
+    this.ro = new ResizeObserver(() => this.updateLayout());
+    this.ro.observe(this.root);
   }
 
   drawNav() {
     this.nav.innerHTML = '';
     for (const [id, ic, label] of this.isPico ? TABS_PICO : TABS_PI) {
-      this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.setTab(id), html: `${icon(ic, 22)}<span>${label}</span>` }));
+      this.nav.appendChild(h('button', { class: 'nav-tab' + (id === this.tab ? ' active' : ''), 'data-tab': id, onclick: () => this.toggleTab(id), html: `${icon(ic, 22)}<span>${label}</span>` }));
     }
     this.fsBar.querySelector('[data-tab="thonny"]').hidden = false;
   }
 
-  setTab(id) {
-    const prev = this.tab;
-    if (this.isPico && (id === 'desktop' || id === 'terminal')) id = 'circuit';
-    this.tab = id;
-    for (const [k, p] of Object.entries(this.panes)) p.classList.toggle('active', k === id);
-    this.nav.querySelectorAll('.nav-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
-    this.fsBar.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
-    this.root.dataset.tab = id;
-    if (prev === 'desktop' && id !== 'desktop') this.desktop.hidden();
-    if (id === 'thonny') {
-      this.panes.thonny.appendChild(this.thonny.el);
-      this.thonny.shown();
-    } else if (prev === 'thonny' || (prev === 'desktop' && !this.desktop.thonnyWin())) this.thonny.hidden();
-    if (id === 'desktop') this.desktop.shown();
-    if (id === 'terminal') {
-      if (!this.term) {
-        this.term = new Terminal({ sys: this.sys, openThonny: (p) => { this.setTab('thonny'); if (p) this.thonny.open(p); }, openFile: (p) => { this.setTab('desktop'); this.desktop.openPath(p); }, openUrl: (u) => { this.setTab('desktop'); this.desktop.open('chromium', u || 'http://start.rapti.net/'); } });
-        this.panes.terminal.appendChild(this.term.el);
-      }
-      setTimeout(() => this.term.con.focus(), 80);
+  /**
+   * Screens on show: one on an upright phone; in landscape (also in full screen) the ones chosen with
+   * the tab bar — a tap opens a screen beside the one on show, a second tap closes it.
+   */
+  visibleTabs() {
+    if (this.wide && this.panes && this.panes.includes(this.tab)) return this.panes;
+    return [this.tab];
+  }
+
+  toggleTab(id) {
+    if (this.isPico && id === 'desktop') id = 'circuit';
+    if (!this.wide) { this.setTab(id); return; }
+    let cur = [...this.visibleTabs()];
+    if (cur.includes(id)) {
+      if (cur.length < 2) { Native.vibrate(5); return; }
+      cur = cur.filter((x) => x !== id);
+    } else if (cur.length < 2 && !this.clash(cur[0], id)) cur.push(id);
+    else if (cur.length < 2) cur = [id];
+    else cur[1] = id; // the main screen stays, the second one is swapped
+    if (cur.length > 1 && this.clash(cur[0], cur[1])) cur = [id];
+    this.panes = cur;
+    this.setTab(cur[cur.length - 1]);
+    Native.vibrate(8);
+  }
+
+  /** Thonny can only be in one place: the Desktop (which can open it in a window) and the Thonny / Output screens are not shown together. */
+  clash(a, b) { const th = (x) => x === 'thonny' || x === 'output'; return (a === 'desktop' && th(b)) || (b === 'desktop' && th(a)); }
+
+  /** Bring the Output screen up (beside the code when there is room, else instead of the screen on show). */
+  showOutput() {
+    if (this.vis.includes('output')) return;
+    if (this.wide && this.vis.length < 2 && this.vis.includes('thonny')) this.toggleTab('output'); else this.setTab('output');
+  }
+
+  /** Run pressed: the program's output has its own screen — open it beside the code or the circuit (landscape). */
+  revealOutput() {
+    if (this.vis.includes('output') || this.vis.includes('desktop')) return;
+    if (!this.wide) { toast('Running — the output is on the Output tab'); return; }
+    if (this.vis.length < 2) { this.toggleTab('output'); return; }
+    // two screens already: the Run button gives the Output the place of the one that is not the circuit
+    if (this.fromRunBtn && this.vis.includes('circuit')) {
+      this.panes = this.vis.map((x) => (x === 'circuit' ? x : 'output'));
+      this.setTab('output');
     }
-    if (id === 'circuit') this.circuit.shown();
-    if (id === 'board') this.refresh(true);
-    if (id !== 'circuit' && this.circuit) { if (this.circuit.canvas.wiring) this.circuit.canvas.cancelWiring(); }
+  }
+
+  updateLayout() {
+    const r = this.root.getBoundingClientRect();
+    const wide = r.width >= 760 && r.width > r.height * 1.05;
+    if (wide === this.wide) return;
+    this.wide = wide;
+    this.root.classList.toggle('wide', wide);
+    this.setTab(this.tab);
+  }
+
+  setTab(id) {
+    if (this.isPico && id === 'desktop') id = 'circuit';
+    if (this.panes) {
+      if (!this.wide) this.panes = null;
+      else if (!this.panes.includes(id)) {
+        const i = this.panes.indexOf(this.tab);
+        this.panes = i >= 0 && this.panes.length > 1 ? this.panes.map((x, k) => (k === i ? id : x)) : [id];
+      }
+    }
+    const prevVis = this.vis || [this.tab];
+    this.tab = id;
+    const vis = this.visibleTabs();
+    this.vis = vis;
+    const was = (k) => prevVis.includes(k), is = (k) => vis.includes(k);
+    const split = vis.length > 1;
+    this.root.classList.toggle('pi-split', split);
+    const shown = Object.keys(this.panes_).filter((k) => is(k));
+    for (const [k, p] of Object.entries(this.panes_)) {
+      p.classList.toggle('active', is(k));
+      p.classList.toggle('first', k === shown[0]);
+      p.classList.toggle('last', k === shown[shown.length - 1]);
+    }
+    this.nav.querySelectorAll('.nav-tab').forEach((b) => b.classList.toggle('active', is(b.dataset.tab)));
+    this.fsBar.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('active', is(b.dataset.tab)));
+    this.root.dataset.tab = id;
+    if (was('desktop') && !is('desktop')) this.desktop.hidden();
+    const th = is('thonny') || is('output'), wasTh = was('thonny') || was('output');
+    if (th) {
+      this.thonny.splitInto(this.panes_.thonny, this.panes_.output);
+      if (!wasTh || id === 'thonny' || id === 'output') {
+        this.thonny.shown();
+        if (is('output')) this.thonny.con.scrollEnd();
+      }
+    } else if (wasTh || (was('desktop') && !is('desktop') && !this.desktop.thonnyWin())) this.thonny.hidden();
+    if (is('desktop') && (!was('desktop') || id === 'desktop')) this.desktop.shown();
+    if (is('circuit') && (!was('circuit') || id === 'circuit')) this.circuit.shown();
+    if (is('board') && (!was('board') || id === 'board')) this.refresh(true);
+    if (!is('circuit') && this.circuit) { if (this.circuit.canvas.wiring) this.circuit.canvas.cancelWiring(); }
+    if (vis.join() !== prevVis.join() && this.circuit) {
+      setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 60);
+    }
   }
 
   // ---------------------------------------------------------------- circuit pane
   buildCircuitPane() {
     this.circuit = new PiCircuit(this.app, { name: 'Pi circuit', parts: [], wires: [], code: '' }, this);
     this.circuit.load(this.loadCircuit(this.sys.board), { undoable: false });
-    this.circuit.mount(this.panes.circuit);
+    this.circuit.mount(this.panes_.circuit);
     // the file Run starts, and the program's output
     this.fileChip = h('button', { class: 'pi-filechip', onclick: () => this.fileSheet() });
-    this.mini = new Console({ cls: 'pb-mini' });
-    this.outTitle = h('b', {}, 'Output');
-    this.outBox = h('div', { class: 'pi-out' },
-      h('div', { class: 'pi-outhead', onclick: (e) => { if (!e.target.closest('button')) this.toggleOutput(); } },
-        h('span', { class: 'pi-outgrip' }), this.outTitle,
-        h('button', { class: 'th-clear', onclick: () => this.mini.clear() }, 'Clear'),
-        h('button', { class: 'icon-btn sm', 'aria-label': 'Hide output', html: icon('close', 16), onclick: () => this.toggleOutput(false) })),
-      this.mini.el);
-    this.circuit.root.append(this.fileChip, this.outBox);
+    this.circuit.root.append(this.fileChip);
     this.drawFileChip();
   }
 
@@ -210,10 +276,10 @@ export class PiScreen {
     if (!f) { toast('No Python file yet: write one in Thonny', 'warn'); return; }
     this.audio.resume();
     if (!this.powerOn()) return;
-    this.mini.clear();
-    this.outTitle.textContent = `Output · ${this.isPico ? f.replace(/^\//, '') : basename(f)}`;
     this.thonny.open(f);
+    this.fromRunBtn = true; // the Run button: the Output screen takes the place of the code screen if need be
     this.thonny.run();
+    this.fromRunBtn = false;
     this.updateRun();
   }
 
@@ -267,26 +333,13 @@ export class PiScreen {
     const sheet = new Sheet({ title: 'Program to run', icon: 'code', content: box, height: '70vh' }).open();
   }
 
-  programOutput(t, s) {
-    this.mini.write(t, s === 'err' ? 'err' : '');
-    if (!this.outShown && this.outAuto !== false) this.toggleOutput(true, true);
-  }
-
-  toggleOutput(on = !this.outShown, auto = false) {
-    this.outShown = on;
-    if (!auto) this.outAuto = on;
-    this.circuit.root.classList.toggle('out-open', on);
-    this.fsOut.classList.toggle('active', on);
-    if (on && this.tab !== 'circuit' && !auto) this.setTab('circuit');
-  }
-
   // ---------------------------------------------------------------- full screen (like the Arduino editor)
   setFullscreen(on) {
     this.fullscreen = on;
     this.circuit.fullscreen = on;
     this.root.classList.toggle('fs', on);
     this.setChrome(!on, false);
-    if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus'); }
+    if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
     Native.setImmersive(on);
     Native.vibrate(8);
     setTimeout(() => this.circuit.canvas.applyView(), 60);
@@ -297,13 +350,14 @@ export class PiScreen {
     this.root.classList.toggle('fs-clean', !on);
     this.fsHandle.innerHTML = icon(on ? 'close' : 'menu', 19);
     this.fsHandle.setAttribute('aria-label', on ? 'Hide menus' : 'Show menus');
+    if (this.dock) this.dock.place();
     if (buzz) Native.vibrate(6);
     setTimeout(() => this.circuit.canvas.applyView(), 30);
   }
 
   // ---------------------------------------------------------------- pinout pane
   buildBoardPane() {
-    const p = this.panes.board;
+    const p = this.panes_.board;
     this.svgWrap = h('div', { class: 'pb-svg' });
     this.zoom = 1;
     const zbtn = (ic, d) => h('button', { class: 'pb-zoom', html: icon(ic, 18), onclick: () => { this.zoom = Math.max(1, Math.min(2.6, this.zoom + d)); this.svgWrap.style.setProperty('--z', this.zoom); } });
@@ -401,7 +455,7 @@ export class PiScreen {
       const on = busy ? Math.sin(now / 37) + Math.sin(now / 13) > 0.4 : (now % 4000) < 90;
       if (on !== this.actOn) { this.actOn = on; this.actLed.classList.toggle('on', on); }
     }
-    // a program started from Thonny, the Terminal or the desktop powers the circuit too
+    // a program started from Thonny or the desktop (its Terminal too) powers the circuit too
     if (!this.circuit.engine && this.sys.running && !(this.noAutoUntil > now)) this.powerOn();
     const running = this.programRunning();
     if (running !== this.lastRunning) { this.lastRunning = running; this.updateRun(); }
@@ -414,7 +468,7 @@ export class PiScreen {
       const b = BOARDS[id];
       box.appendChild(h('button', { class: 'pi-bopt' + (id === this.sys.board ? ' active' : ''), onclick: () => { sheet.close(); if (id !== this.sys.board) this.switchBoard(id); } },
         h('div', { class: 'pi-bthumb', html: boardSVG(id, `th-${id}-`) }),
-        h('div', {}, h('b', {}, b.name), h('small', {}, `${b.cpu} · ${b.ram}`), h('small', { class: 'muted' }, b.kind === 'pico' ? 'MicroPython · Thonny' : 'Desktop · Terminal · Thonny · Python 3'))));
+        h('div', {}, h('b', {}, b.name), h('small', {}, `${b.cpu} · ${b.ram}`), h('small', { class: 'muted' }, b.kind === 'pico' ? 'MicroPython · Thonny' : 'Desktop (with Terminal) · Thonny · Python 3'))));
     }
     const sheet = new Sheet({ title: 'Choose a board', icon: 'chip', content: box, height: '80vh' }).open();
   }
@@ -485,7 +539,6 @@ export class PiScreen {
     popupMenu(anchor, [
       { icon: 'chip', label: 'Change board', action: () => this.boardSheet() },
       { icon: 'fullscreen', label: this.fullscreen ? 'Exit full screen' : 'Full screen', action: () => this.setFullscreen(!this.fullscreen) },
-      { icon: 'terminal', label: this.outShown ? 'Hide program output' : 'Show program output', action: () => this.toggleOutput() },
       { icon: this.audio.enabled ? 'bell' : 'close', label: this.audio.enabled ? 'Mute buzzer sound' : 'Turn buzzer sound on', action: () => { this.audio.enabled = !this.audio.enabled; if (!this.audio.enabled) this.audio.stopAll(); try { localStorage.setItem('rapti.pi.mute', this.audio.enabled ? '0' : '1'); } catch (e) { /* ignore */ } } },
       '-',
       { icon: 'restart', label: 'Default circuit', action: async () => { if (await confirmDialog('Default circuit', 'Replace the circuit with the default parts? (Undo brings it back.)', 'Replace')) { this.stopCircuit(); this.circuit.load(defaultCircuit(this.sys.board)); this.saveCircuit(); this.setTab('circuit'); } } },
@@ -514,17 +567,16 @@ export class PiScreen {
 
   onSys(what) {
     if (what === 'board') {
-      if (this.isPico && (this.tab === 'desktop' || this.tab === 'terminal')) this.setTab('circuit');
+      if (this.isPico && this.tab === 'desktop') this.setTab('circuit');
       this.sys.gpio.parts = [];
       this.drawNav();
       this.drawBoard();
       this.circuit.load(this.loadCircuit(this.sys.board), { undoable: false });
-      this.mini.clear();
       this.chosenFile = null;
       this.drawFileChip();
-      this.panes.board.scrollTop = 0;
+      this.panes_.board.scrollTop = 0;
     } else if (what === 'files') this.drawFileChip();
-    else if (what === 'input') { if (this.tab === 'circuit' || this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin())) this.setTab('thonny'); }
+    else if (what === 'input') { if (this.tab === 'circuit' || this.tab === 'board' || (this.tab === 'desktop' && !this.desktop.thonnyWin()) || (this.tab === 'thonny' && !this.vis.includes('output'))) this.showOutput(); }
     else if (what === 'run' || what === 'proc') { this.updateRun(); this.drawFileChip(); }
   }
 
@@ -558,6 +610,7 @@ export class PiScreen {
 
   unmount() {
     cancelAnimationFrame(this.raf);
+    if (this.ro) this.ro.disconnect();
     if (this.unback) this.unback();
     this.unback = null;
     this.thonny.hidden();
@@ -566,7 +619,7 @@ export class PiScreen {
     this.sys.killProcess();
     this.audio.stopAll();
     this.audio.close && this.audio.close();
-    this.offSys(); this.offGpio(); this.offOut();
+    this.offSys(); this.offGpio();
     if (this.fullscreen) Native.setImmersive(false);
     this.root.remove();
   }

@@ -71,7 +71,7 @@ export function aboutPage() {
     h('div', { class: 'app-head', html: `${logoMark(48, 'ab')}<div>${wordmark()}<small>Version ${Native.version()}</small></div>` }),
     h('p', {}, 'RaptiAuto is an electronics & microcontroller simulator for learners. Build circuits with real components, write Arduino code, and simulate everything on your phone — no hardware needed.'),
     h('ul', { class: 'app-feats' },
-      li('Arduino Uno R3 / R4, Nano, Mega, Leonardo, ESP32, ESP8266, Raspberry Pi Pico, STM32 Blue Pill, ATtiny85'),
+      li('Arduino Uno R3 / R4, Nano, Mega, Leonardo, ESP32, ESP8266, STM32 Blue Pill, ATtiny85'),
       li('Real circuit physics: LEDs need resistors, shorts and overloads are detected'),
       li('Arduino C++ runs on-device — Serial Monitor & Plotter included'),
       li('Sensors, displays, motors, breadboards and 60+ parts with live animations'),

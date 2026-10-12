@@ -136,6 +136,7 @@ export function buildTempController(dev) {
       for (const me of Object.values(keyMeshes)) if (me.userData.upAt && performance.now() > me.userData.upAt) { me.position.z = 73; me.userData.upAt = 0; ch = true; }
       const s = rt.dev.state, on = tc.powered;
       ch = setLed(L.OUT1, tc.out1, 2) || ch;
+      ch = setLed(L.AT, tc.tuning && Math.floor(ctx.t * 2) % 2, 2) || ch;
       ch = setLed(L.ALM, tc.alarm && Math.floor(ctx.t * 3) % 2, 2) || ch;
       const k = on ? Math.min(1, tc.pv / 220) * 1.6 + tc.out / 100 * 0.6 : Math.max(0, (tc.pv - 40) / 400);
       if (Math.abs(coilMat.emissiveIntensity - k) > 0.01) { coilMat.emissiveIntensity = k; ch = true; }

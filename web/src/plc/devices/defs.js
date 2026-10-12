@@ -337,9 +337,9 @@ export const DEVICE_DEFS = {
 
   // ---------------------------------------------------------------- Modbus RS-485 slaves (DIN rail 2)
   'dtb4848': {
-    type: 'dtb4848', name: 'Delta DTB4848 temperature controller', short: 'DTB4848', part: 'DTB4848VR · PID · RS-485', brand: 'Delta', category: 'modbus', sim: 'tc', zone: 'rail2', max: 3,
+    type: 'dtb4848', name: 'Delta DTB4848 PID temperature controller', short: 'DTB4848 PID', part: 'DTB4848VR · PID · RS-485', brand: 'Delta', category: 'modbus', sim: 'tc', zone: 'rail2', max: 3,
     size: [56, 124, 76],
-    description: '48 × 48 mm PID temperature controller (100–240 V AC on L / N) with a thermocouple in a small oven and the 500 W heater on OUT1. RS-485 on D+ / D−, Modbus ASCII or RTU (factory setting: station 1, 9600 bps 7E1 ASCII). Registers: 1000H PV, 1001H SV, 1002H / 1003H range, 1005H control (0 PID, 1 ON/OFF, 2 manual), 1012H output 1 %, bit 0814H RUN / STOP — all in 0.1 °C. Tap ▲ / ▼ to change SV, tap the display for RUN / STOP.',
+    description: '48 × 48 mm PID temperature controller (100–240 V AC on L / N) with a thermocouple in a small oven and the 500 W heater on OUT1. RS-485 on D+ / D−, Modbus ASCII or RTU (factory setting: station 1, 9600 bps 7E1 ASCII). Registers: 1000H PV, 1001H SV, 1002H / 1003H range, 1005H control (0 PID, 1 ON/OFF, 2 manual), 1009H PB, 100AH Ti, 100BH Td (the PID settings), 1012H output 1 %, bit 0813H auto-tuning, bit 0814H RUN / STOP — temperatures in 0.1 °C. Tap ▲ / ▼ to change SV, tap the display for RUN / STOP.',
     props: [{ id: 'label', label: 'Label', type: 'text' }, ...MB_PROPS],
     defaults: { label: 'OVEN', station: 1, baud: '9600', format: '7E1', protocol: 'ASCII' }, state: { sv: 120, run: true, mode: 0 },
     ports: () => [

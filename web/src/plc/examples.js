@@ -39,6 +39,25 @@ function finish(meta, b, prog, extra = {}) {
   return p;
 }
 
+
+/** Header band of a DOP-107 screen: title, clock and a button to the other screen. */
+const hmiHdr = (title, other, screen) => [
+  E('rect', 12, 10, 776, 58, { fill: '#10224a', stroke: '#2b4470', radius: 14, title: '' }),
+  E('text', 28, 22, 380, 36, { text: title, size: 24, color: '#e2e8f0', align: 'left', bold: true }),
+  E('clock', 410, 22, 220, 36, { fmt: 'datetime', size: 15, color: '#93c5fd', align: 'right' }),
+  other ? E('goto', 640, 18, 136, 42, { text: other, screen }) : null,
+].filter(Boolean);
+
+/** First-scan rung every Modbus master needs: COM2 = 9600 bps 8E1 (H87), Modbus RTU (M1143). */
+const comRung = (extra = []) => rung('First scan: COM2 = 9600 bps 8E1 (H87), Modbus RTU (M1143) — every slave is set the same' + (extra.length ? '; start values' : ''),
+  ['M1002 =>| MOV H87 D1120', '=>| SET M1120', ...extra.map((e) => '=>| ' + e), '=> SET M1143']);
+
+/** The RS-485 settings the slaves of the examples share. */
+const COM = { baud: '9600', format: '8E1', protocol: 'RTU' };
+
+/** A drive set up for Modbus RTU control from the PLC (station 1, 9600 bps 8E1). */
+const VFD_MODBUS = { params: { _v: 2, '00-20': 1, '00-21': 2, '09-00': 1, '09-01': 9.6, '09-04': 14, '01-12': 4, '01-13': 4 } };
+
 export const LAB_EXAMPLES = [
   {
     id: 'start-stop', name: 'Start / Stop latching circuit', level: 'beginner', tags: ['PLC', 'Ladder'],
@@ -453,6 +472,358 @@ export const LAB_EXAMPLES = [
             E('num', 660, 294, 116, 56, { word: 'D64', dec: 3, unit: 'kWh', label: '0005H' }),
             E('num', 416, 354, 116, 52, { word: 'D61', dec: 2, unit: 'A', label: '0001H' }),
             E('alarm', 12, 422, 776, 48, { bit: 'M1129', text: 'COM2 TIME-OUT — a slave does not answer (check Monitor → Network)' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'modbus-th-fan', name: 'Modbus basics: read a temperature / humidity sensor', level: 'intermediate', tags: ['Modbus', 'MODRW', 'RS-485', 'FC03', 'HMI'],
+    description: 'Your first Modbus master: the PLC (COM2) reads temperature and humidity from an RS-485 sensor (station 1, function 03, address 0000H, 2 registers) into D50 / D51. A fan runs above the temperature you set on the HMI, a humidity lamp warns above 70 %RH, and a COMM FAIL lamp flashes when the sensor stops answering. Tap the sensor in 3D to change the room temperature.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('th', 'th-rs485', { label: 'ROOM', station: 1, ...COM }, { temp: 27, rh: 55 });
+      b.dev('lfan', 'lamp', { label: 'FAN', color: 'green' });
+      b.dev('lhum', 'lamp', { label: 'HUMID', color: 'yellow' });
+      b.dev('lfail', 'lamp', { label: 'COMM FAIL', color: 'red' });
+      b.w('psu', '+V1', 'th', 'V+'); b.w('th', 'V-', 'psu', '-V1');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lfan', 'X1'); b.w('plc', 'Y1', 'lhum', 'X1'); b.w('plc', 'Y2', 'lfail', 'X1');
+      b.w('lfan', 'X2', 'psu', '-V2'); b.w('lfan', 'X2', 'lhum', 'X2', '#1e3a8a'); b.w('lhum', 'X2', 'lfail', 'X2', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      b.w('plc', 'COM2', 'th', 'RS485');
+      const prog = program([
+        comRung(['MOV K300 D60']),
+        rung('Station 1 · sensor: function 03 (read registers), address 0000H, 2 registers → D50 = temperature, D51 = humidity (both ×10)', ['M1000 => MODRW K1 K3 H0 D50 K2']),
+        rung('D62 = fan limit − 1.0 °C (the hysteresis)', ['M1000 => SUB D60 K10 D62']),
+        rung('Fan ON when the temperature is above the limit D60 (set on the HMI, 0.1 °C)', ['D50>D60 => SET M0']),
+        rung('Fan OFF again below the limit − 1.0 °C', ['D50<D62 => RST M0']),
+        rung('FAN lamp', ['M0 => OUT Y0']),
+        rung('Humidity warning above 70.0 %RH', ['D51>K700 => OUT Y1']),
+        rung('COMM FAIL: M1129 = the sensor did not answer (time-out) — the lamp flashes at 1 s (M1013)', ['M1129 M1013 => OUT Y2']),
+      ], { Y0: 'FAN lamp', Y1: 'HUMID lamp', Y2: 'COMM FAIL lamp', M0: 'Fan on', D50: 'Temperature (0.1 °C)', D51: 'Humidity (0.1 %RH)', D60: 'Fan limit (0.1 °C)', D62: 'Fan OFF level', M1129: 'COM2 time-out' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Room', bg: '#0b1630', elements: [
+            ...hmiHdr('ROOM CLIMATE · MODBUS', null),
+            E('rect', 12, 80, 384, 250, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'SENSOR · ID 1 · FC03 0000H' }),
+            E('meter', 24, 112, 190, 150, { word: 'D50', dec: 1, unit: '°C', label: 'TEMPERATURE', min: 0, max: 60 }),
+            E('num', 224, 112, 160, 52, { word: 'D51', dec: 1, unit: '%RH', label: 'HUMIDITY' }),
+            E('lamp', 224, 176, 160, 40, { bit: 'M0', text: 'FAN ON', onColor: '#22c55e', offColor: '#334155', shape: 'rect' }),
+            E('lamp', 224, 224, 160, 40, { bit: 'Y1', text: 'HUMID', onColor: '#eab308', offColor: '#334155', shape: 'rect' }),
+            E('rect', 404, 80, 384, 250, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'FAN CONTROL' }),
+            E('input', 418, 112, 356, 64, { word: 'D60', dec: 1, unit: '°C', label: 'FAN ON ABOVE', min: 0, max: 60 }),
+            E('num', 418, 184, 170, 56, { word: 'D62', dec: 1, unit: '°C', label: 'FAN OFF BELOW' }),
+            E('motor', 640, 190, 110, 110, { bit: 'M0', text: 'FAN' }),
+            E('trend', 12, 340, 776, 130, { word: 'D50', word2: 'D60', dec: 1, min: 0, max: 60, span: 120, label: 'TEMPERATURE vs LIMIT (°C)' }),
+            E('alarm', 12, 426, 776, 44, { bit: 'M1129', text: 'COM2 TIME-OUT — the sensor does not answer (check station, baud, format, wiring)' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'modbus-energy-vfd', name: 'Modbus: drive control + energy meter', level: 'advanced', tags: ['Modbus', 'MODRW', 'VFD', 'Energy', 'HMI'],
+    description: 'One RS-485 line, two slaves: the PLC runs the MS300 drive (station 1: command word 2000H, frequency 2001H, status 2103H / 2104H) and reads the 1-phase energy meter (station 2: voltage, current, power, energy). The HMI starts / stops the motor, sets the speed and shows live power, the peak power and the energy used. A HIGH POWER lamp lights above 400 W.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('vfd', 'ms300', {}, VFD_MODBUS);
+      b.dev('em', 'em-rs485', { label: 'MAIN', station: 2, ...COM }, { wh: 0 });
+      b.dev('motor', 'motor', { load: 55 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('lrun', 'lamp', { label: 'MOTOR RUN', color: 'green' });
+      b.dev('lhigh', 'lamp', { label: 'HIGH POWER', color: 'yellow' });
+      b.dev('lfail', 'lamp', { label: 'COMM FAIL', color: 'red' });
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('psu', 'L', 'em', 'L'); b.w('psu', 'N', 'em', 'N');
+      b.w('vfd', 'U/T1', 'motor', 'U'); b.w('vfd', 'V/T2', 'motor', 'V'); b.w('vfd', 'W/T3', 'motor', 'W'); b.w('vfd', 'PE', 'motor', 'PE');
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lhigh', 'X1'); b.w('plc', 'Y2', 'lfail', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lhigh', 'X2', '#1e3a8a'); b.w('lhigh', 'X2', 'lfail', 'X2', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      b.w('plc', 'COM2', 'em', 'RS485'); b.w('em', 'RS485', 'vfd', 'RS485');
+      const prog = program([
+        comRung(['MOV K3000 D10']),
+        rung('Motor latch: START (X0) or HMI START (M10); STOP (X1, NC) or HMI STOP (M11)', ['X0| X1 /M11 => OUT M0', 'M10|', 'M0']),
+        rung('Command word for the drive (2000H): H12 = RUN forward, H1 = STOP', ['M0 => MOV H12 D0']),
+        rung('', ['/M0 => MOV H1 D0']),
+        rung('Station 1 · MS300: write the command word (function 06, 2000H)', ['M1000 => MODRW K1 K6 H2000 D0 K1']),
+        rung('Station 1 · MS300: write the frequency command (2001H, 0.01 Hz) from the HMI value D10', ['M1000 => MODRW K1 K6 H2001 D10 K1']),
+        rung('Station 1 · MS300: read the output frequency and current (2103H, 2104H) → D20, D21', ['M1000 => MODRW K1 K3 H2103 D20 K2']),
+        rung('Station 2 · meter: read voltage, current, power (0000H … 0002H) → D60, D61, D62', ['M1000 => MODRW K2 K3 H0 D60 K3']),
+        rung('Station 2 · meter: read the energy in Wh (0005H low word, 0006H high word) → D64, D65', ['M1000 => MODRW K2 K3 H5 D64 K2']),
+        rung('Peak power: keep the largest value of D62 in D70', ['D62>D70 => MOV D62 D70']),
+        rung('RESET PEAK (HMI button M12) clears it', ['M12 => MOV K0 D70']),
+        rung('MOTOR RUN lamp', ['M0 => OUT Y0']),
+        rung('HIGH POWER lamp above 400 W', ['D62>K400 => OUT Y1']),
+        rung('COMM FAIL lamp flashes on a COM2 time-out', ['M1129 M1013 => OUT Y2']),
+      ], { X0: 'START', X1: 'STOP (NC)', Y0: 'MOTOR RUN lamp', Y1: 'HIGH POWER lamp', Y2: 'COMM FAIL lamp', M0: 'Motor running', M10: 'HMI START', M11: 'HMI STOP', M12: 'HMI RESET PEAK', D0: 'VFD command word', D10: 'Speed command (0.01 Hz)', D20: 'Output frequency (0.01 Hz)', D21: 'Output current (0.01 A)', D60: 'Voltage (0.1 V)', D61: 'Current (0.01 A)', D62: 'Power (W)', D64: 'Energy low word (Wh)', D70: 'Peak power (W)' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Drive + power', bg: '#0b1630', elements: [
+            ...hmiHdr('DRIVE + ENERGY · MODBUS', null),
+            E('rect', 12, 80, 384, 250, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'MS300 DRIVE · ID 1' }),
+            E('button', 24, 112, 170, 56, { text: 'START', bit: 'M10', mode: 'momentary', color: 'green' }),
+            E('button', 204, 112, 180, 56, { text: 'STOP', bit: 'M11', mode: 'momentary', color: 'red' }),
+            E('input', 24, 178, 360, 60, { word: 'D10', dec: 2, unit: 'Hz', label: 'SPEED COMMAND', min: 0, max: 50 }),
+            E('num', 24, 248, 170, 56, { word: 'D20', dec: 2, unit: 'Hz', label: 'OUTPUT' }),
+            E('num', 204, 248, 180, 56, { word: 'D21', dec: 2, unit: 'A', label: 'CURRENT' }),
+            E('rect', 404, 80, 384, 250, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'ENERGY METER · ID 2' }),
+            E('num', 418, 112, 170, 52, { word: 'D60', dec: 1, unit: 'V', label: 'VOLTAGE' }),
+            E('num', 600, 112, 176, 52, { word: 'D61', dec: 2, unit: 'A', label: 'LINE CURRENT' }),
+            E('num', 418, 172, 170, 52, { word: 'D62', dec: 0, unit: 'W', label: 'POWER' }),
+            E('num', 600, 172, 176, 52, { word: 'D70', dec: 0, unit: 'W', label: 'PEAK' }),
+            E('num', 418, 232, 170, 52, { word: 'D64', dec: 3, unit: 'kWh', label: 'ENERGY' }),
+            E('button', 600, 232, 176, 52, { text: 'RESET PEAK', bit: 'M12', mode: 'momentary', color: 'blue' }),
+            E('lamp', 600, 292, 176, 32, { bit: 'Y1', text: 'HIGH POWER', onColor: '#eab308', offColor: '#334155', shape: 'rect' }),
+            E('motor', 330, 270, 60, 56, { bit: 'M0', text: '' }),
+            E('trend', 12, 340, 776, 130, { word: 'D62', word2: 'D20', dec: 0, min: 0, max: 600, span: 60, label: 'POWER (W) · FREQUENCY (0.01 Hz ÷ 10)' }),
+            E('alarm', 12, 426, 776, 44, { bit: 'M1129', text: 'COM2 TIME-OUT — a slave does not answer' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'modbus-function-codes', name: 'Modbus function codes lab: FC 01 · 03 · 05 · 06 · 16', level: 'advanced', tags: ['Modbus', 'MODRW', 'DTB', 'FC01', 'FC05', 'FC16', 'HMI'],
+    description: 'Every Modbus function code the PLC master uses, against one DTB4848 controller (station 1): read registers FC03 (PV, SV, limits, output), write one register FC06 (SV), write several registers FC16 (the two limits), write a bit FC05 (RUN / STOP, coil 0814H) and read it back FC01. Watch each frame in Monitor → Comm log.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('dtb', 'dtb4848', { label: 'OVEN', station: 1, ...COM }, { sv: 100, run: true, mode: 0 });
+      b.dev('lrun', 'lamp', { label: 'DTB RUN', color: 'green' });
+      b.dev('lheat', 'lamp', { label: 'HEATING', color: 'yellow' });
+      b.dev('lfail', 'lamp', { label: 'COMM FAIL', color: 'red' });
+      b.w('psu', 'L', 'dtb', 'L'); b.w('psu', 'N', 'dtb', 'N');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lheat', 'X1'); b.w('plc', 'Y2', 'lfail', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lheat', 'X2', '#1e3a8a'); b.w('lheat', 'X2', 'lfail', 'X2', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      b.w('plc', 'COM2', 'dtb', 'RS485');
+      const prog = program([
+        comRung(['MOV K1000 D10', 'MOV K2500 D20', 'MOV K0 D21']),
+        rung('FC03 · read 2 registers from 1000H: D0 = PV, D1 = SV (0.1 °C)', ['M1000 => MODRW K1 K3 H1000 D0 K2']),
+        rung('FC03 · read the range limits 1002H (upper) and 1003H (lower) → D4, D5', ['M1000 => MODRW K1 K3 H1002 D4 K2']),
+        rung('FC03 · read the heater output 1012H (0.1 %) → D6', ['M1000 => MODRW K1 K3 H1012 D6 K1']),
+        rung('FC06 · write ONE register: SV (1001H) ← D10, while the HMI button WRITE SV (M20) is held', ['M20 => MODRW K1 K6 H1001 D10 K1']),
+        rung('FC16 · write TWO registers: 1002H ← D20 (upper), 1003H ← D21 (lower), while WRITE LIMITS (M21) is held', ['M21 => MODRW K1 K16 H1002 D20 K2']),
+        rung('FC05 · the bit to write: D41 = 1 for RUN (M22), 0 for STOP (M23)', ['M22 => MOV K1 D41']),
+        rung('', ['M23 => MOV K0 D41']),
+        rung('FC05 · write the single coil 0814H (RUN / STOP) from D41 while RUN or STOP is held', ['M22| => MODRW K1 K5 H814 D41 K1', 'M23']),
+        rung('FC01 · read the coil 0814H back: D45 = 1 while the controller runs', ['M1000 => MODRW K1 K1 H814 D45 K1']),
+        rung('DTB RUN lamp (from the coil that was read back)', ['D45=K1 => OUT Y0']),
+        rung('HEATING lamp while the output is above 0 %', ['D6>K0 => OUT Y1']),
+        rung('COMM FAIL lamp flashes on a COM2 time-out', ['M1129 M1013 => OUT Y2']),
+      ], { Y0: 'DTB RUN lamp', Y1: 'HEATING lamp', Y2: 'COMM FAIL lamp', D0: 'PV (0.1 °C)', D1: 'SV (0.1 °C)', D4: 'Upper limit (0.1 °C)', D5: 'Lower limit (0.1 °C)', D6: 'Heater output (0.1 %)', D10: 'SV to write', D20: 'Upper limit to write', D21: 'Lower limit to write', D41: 'RUN bit to write', D45: 'RUN bit read back', M20: 'HMI WRITE SV', M21: 'HMI WRITE LIMITS', M22: 'HMI RUN', M23: 'HMI STOP' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Function codes', bg: '#0b1630', elements: [
+            ...hmiHdr('MODBUS FUNCTION CODES', null),
+            E('rect', 12, 80, 384, 190, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'READ · FC03 / FC01 · every scan' }),
+            E('num', 24, 110, 170, 52, { word: 'D0', dec: 1, unit: '°C', label: 'PV  1000H' }),
+            E('num', 204, 110, 180, 52, { word: 'D1', dec: 1, unit: '°C', label: 'SV  1001H' }),
+            E('num', 24, 170, 170, 46, { word: 'D4', dec: 1, unit: '°C', label: 'UPPER 1002H' }),
+            E('num', 204, 170, 180, 46, { word: 'D5', dec: 1, unit: '°C', label: 'LOWER 1003H' }),
+            E('num', 24, 222, 170, 42, { word: 'D6', dec: 1, unit: '%', label: 'OUT 1012H' }),
+            E('lamp', 204, 224, 180, 38, { bit: 'Y0', text: 'RUN coil 0814H', onColor: '#22c55e', offColor: '#334155', shape: 'rect' }),
+            E('rect', 404, 80, 384, 190, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'WRITE · held button = repeated request' }),
+            E('input', 414, 108, 218, 50, { word: 'D10', dec: 1, unit: '°C', label: 'SV TO WRITE', min: 0, max: 400 }),
+            E('button', 638, 108, 140, 50, { text: 'WRITE SV · FC06', bit: 'M20', mode: 'momentary', color: 'blue' }),
+            E('input', 414, 164, 108, 50, { word: 'D20', dec: 1, unit: '', label: 'UPPER', min: 0, max: 400 }),
+            E('input', 528, 164, 108, 50, { word: 'D21', dec: 1, unit: '', label: 'LOWER', min: 0, max: 400 }),
+            E('button', 642, 164, 136, 50, { text: 'LIMITS · FC16', bit: 'M21', mode: 'momentary', color: 'blue' }),
+            E('button', 414, 220, 176, 44, { text: 'RUN · FC05', bit: 'M22', mode: 'momentary', color: 'green' }),
+            E('button', 602, 220, 176, 44, { text: 'STOP · FC05', bit: 'M23', mode: 'momentary', color: 'red' }),
+            E('text', 14, 278, 772, 26, { text: 'FC01 read coil · FC03 read registers · FC05 write coil · FC06 write register · FC16 write registers', size: 14, color: '#93c5fd', align: 'left', bold: false }),
+            E('trend', 12, 308, 776, 112, { word: 'D0', word2: 'D1', dec: 1, min: 0, max: 400, span: 90, label: 'PV / SV (°C)' }),
+            E('alarm', 12, 426, 776, 44, { bit: 'M1129', text: 'COM2 TIME-OUT — the controller does not answer' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'pid-oven-recipes', name: 'PID oven line: recipes · DTB4848 · conveyor drive · HMI', level: 'advanced', tags: ['PID', 'DTB', 'Modbus', 'VFD', 'Recipes', 'HMI'], featured: true,
+    description: 'A baking line: the Delta DTB4848 PID controller (station 2) holds the oven temperature and the MS300 drive (station 1) runs the conveyor. The HMI has three recipes — DRY 80 °C / 20 Hz, BAKE 150 °C / 30 Hz, CURE 200 °C / 15 Hz — the PLC writes the set value and the belt speed. The belt only runs when the oven has been within ±5 °C of the set value for 5 s. The trend shows PV, SV and the heater output.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('vfd', 'ms300', {}, VFD_MODBUS);
+      b.dev('dtb', 'dtb4848', { label: 'OVEN PID', station: 2, ...COM }, { sv: 150, run: true, mode: 0 });
+      b.dev('motor', 'motor', { load: 35 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('lrun', 'lamp', { label: 'CONVEYOR', color: 'green' });
+      b.dev('lrdy', 'lamp', { label: 'OVEN STABLE', color: 'yellow' });
+      b.dev('lfail', 'lamp', { label: 'ALARM', color: 'red' });
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('psu', 'L', 'dtb', 'L'); b.w('psu', 'N', 'dtb', 'N');
+      b.w('vfd', 'U/T1', 'motor', 'U'); b.w('vfd', 'V/T2', 'motor', 'V'); b.w('vfd', 'W/T3', 'motor', 'W'); b.w('vfd', 'PE', 'motor', 'PE');
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lrdy', 'X1'); b.w('plc', 'Y2', 'lfail', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lrdy', 'X2', '#1e3a8a'); b.w('lrdy', 'X2', 'lfail', 'X2', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      b.w('plc', 'COM2', 'dtb', 'RS485'); b.w('dtb', 'RS485', 'vfd', 'RS485');
+      const prog = program([
+        comRung(['MOV K1500 D40', 'MOV K3000 D10', 'MOV K2 D90', 'SET M13']),
+        rung('Recipe 1 · DRY: oven 80.0 °C, belt 20.00 Hz', ['M30 =>| MOV K800 D40', '=>| MOV K2000 D10', '=> MOV K1 D90']),
+        rung('Recipe 2 · BAKE: oven 150.0 °C, belt 30.00 Hz', ['M31 =>| MOV K1500 D40', '=>| MOV K3000 D10', '=> MOV K2 D90']),
+        rung('Recipe 3 · CURE: oven 200.0 °C, belt 15.00 Hz', ['M32 =>| MOV K2000 D40', '=>| MOV K1500 D10', '=> MOV K3 D90']),
+        rung('Line latch: START (X0) or HMI START (M10); STOP (X1, NC) or HMI STOP (M11)', ['X0| X1 /M11 => OUT M0', 'M10|', 'M0']),
+        rung('Control error D32 = PV − SV (0.1 °C); D33 = its absolute value', ['M1000 => SUB D30 D31 D32']),
+        rung('', ['M1000 => MOV D32 D33']),
+        rung('', ['M1000 => ABS D33']),
+        rung('Oven stable: the error stays below 5.0 °C for 5 s (T0 = 50 × 100 ms)', ['D33<K50 => TMR T0 K50']),
+        rung('OVEN STABLE (M1)', ['T0 => OUT M1']),
+        rung('The conveyor runs while the line is on and the oven is stable', ['M0 M1 => OUT M2']),
+        rung('Command word for the drive (2000H): H12 = RUN forward, H1 = STOP', ['M2 => MOV H12 D0']),
+        rung('', ['/M2 => MOV H1 D0']),
+        rung('Station 1 · MS300: command word (FC06, 2000H)', ['M1000 => MODRW K1 K6 H2000 D0 K1']),
+        rung('Station 1 · MS300: frequency (FC06, 2001H) from the recipe D10', ['M1000 => MODRW K1 K6 H2001 D10 K1']),
+        rung('Station 1 · MS300: read output frequency + current (2103H, 2104H)', ['M1000 => MODRW K1 K3 H2103 D20 K2']),
+        rung('Station 2 · DTB4848 PID: read PV, SV (1000H, 1001H) → D30, D31', ['M1000 => MODRW K2 K3 H1000 D30 K2']),
+        rung('Station 2 · DTB4848 PID: write the recipe\'s set value D40 to SV (1001H)', ['M1000 => MODRW K2 K6 H1001 D40 K1']),
+        rung('Station 2 · DTB4848 PID: read the heater output (1012H, 0.1 %) → D34', ['M1000 => MODRW K2 K3 H1012 D34 K1']),
+        rung('Station 2 · DTB4848 PID: RUN / STOP coil 0814H from the HMI switch M13', ['M13 => MOV K1 D41']),
+        rung('', ['/M13 => MOV K0 D41']),
+        rung('', ['M1000 => MODRW K2 K5 H814 D41 K1']),
+        rung('CONVEYOR lamp', ['M2 => OUT Y0']),
+        rung('OVEN STABLE lamp', ['M1 => OUT Y1']),
+        rung('ALARM lamp flashes on a COM2 time-out or when the oven is more than 20 °C too hot', ['M1129| M1013 => OUT Y2', 'D32>K200']),
+      ], { X0: 'START', X1: 'STOP (NC)', Y0: 'CONVEYOR lamp', Y1: 'OVEN STABLE lamp', Y2: 'ALARM lamp', M0: 'Line on', M1: 'Oven stable', M2: 'Conveyor running', M13: 'HMI oven RUN switch', M30: 'HMI recipe DRY', M31: 'HMI recipe BAKE', M32: 'HMI recipe CURE', D0: 'VFD command word', D10: 'Belt speed (0.01 Hz)', D20: 'Output frequency (0.01 Hz)', D21: 'Output current (0.01 A)', D30: 'Oven PV (0.1 °C)', D31: 'Oven SV (0.1 °C)', D32: 'PV − SV (0.1 °C)', D33: '|PV − SV| (0.1 °C)', D34: 'Heater output (0.1 %)', D40: 'Set value to write (0.1 °C)', D90: 'Recipe number' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Line', bg: '#0b1630', elements: [
+            ...hmiHdr('BAKING LINE · PID OVEN', 'RECIPES ▶', 1),
+            E('rect', 12, 80, 384, 240, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'OVEN · DTB4848 PID · ID 2' }),
+            E('meter', 24, 112, 190, 150, { word: 'D30', dec: 1, unit: '°C', label: 'PV', min: 0, max: 250 }),
+            E('num', 224, 112, 160, 52, { word: 'D31', dec: 1, unit: '°C', label: 'SV' }),
+            E('num', 224, 170, 160, 52, { word: 'D34', dec: 1, unit: '%', label: 'HEATER OUT' }),
+            E('button', 224, 230, 160, 40, { text: 'OVEN RUN', bit: 'M13', mode: 'toggle', color: 'blue' }),
+            E('lamp', 224, 274, 160, 36, { bit: 'M1', text: 'STABLE', onColor: '#eab308', offColor: '#334155', shape: 'rect' }),
+            E('rect', 404, 80, 384, 240, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'CONVEYOR · MS300 · ID 1' }),
+            E('button', 418, 112, 170, 60, { text: 'START', bit: 'M10', mode: 'momentary', color: 'green' }),
+            E('button', 418, 180, 170, 60, { text: 'STOP', bit: 'M11', mode: 'momentary', color: 'red' }),
+            E('state', 418, 248, 170, 56, { word: 'D90', label: 'RECIPE', states: '0:NONE:#475569|1:DRY:#3b82f6|2:BAKE:#f59e0b|3:CURE:#ef4444' }),
+            E('num', 600, 112, 176, 56, { word: 'D20', dec: 2, unit: 'Hz', label: 'BELT SPEED' }),
+            E('num', 600, 176, 176, 56, { word: 'D21', dec: 2, unit: 'A', label: 'CURRENT' }),
+            E('motor', 640, 236, 80, 80, { bit: 'M2', text: '' }),
+            E('trend', 12, 330, 776, 140, { word: 'D30', word2: 'D31', dec: 1, min: 0, max: 250, span: 90, label: 'OVEN PV / SV (°C)' }),
+          ],
+        }, {
+          id: 's2', name: 'Recipes', bg: '#0b1630', elements: [
+            ...hmiHdr('RECIPES', '◀ LINE', 0),
+            E('rect', 12, 80, 256, 250, { fill: '#10224a', stroke: '#3b82f6', radius: 16, title: 'DRY' }),
+            E('text', 28, 120, 224, 60, { text: '80 °C · 20 Hz', size: 24, color: '#93c5fd', align: 'center', bold: true }),
+            E('button', 28, 250, 224, 60, { text: 'LOAD DRY', bit: 'M30', mode: 'momentary', color: 'blue' }),
+            E('rect', 272, 80, 256, 250, { fill: '#2a1c0c', stroke: '#f59e0b', radius: 16, title: 'BAKE' }),
+            E('text', 288, 120, 224, 60, { text: '150 °C · 30 Hz', size: 26, color: '#fcd34d', align: 'center', bold: true }),
+            E('button', 288, 250, 224, 60, { text: 'LOAD BAKE', bit: 'M31', mode: 'momentary', color: 'orange' }),
+            E('rect', 532, 80, 256, 250, { fill: '#2a0f12', stroke: '#ef4444', radius: 16, title: 'CURE' }),
+            E('text', 548, 120, 224, 60, { text: '200 °C · 15 Hz', size: 26, color: '#fca5a5', align: 'center', bold: true }),
+            E('button', 548, 250, 224, 60, { text: 'LOAD CURE', bit: 'M32', mode: 'momentary', color: 'red' }),
+            E('num', 12, 344, 250, 56, { word: 'D31', dec: 1, unit: '°C', label: 'OVEN SV NOW' }),
+            E('num', 272, 344, 250, 56, { word: 'D30', dec: 1, unit: '°C', label: 'OVEN PV NOW' }),
+            E('state', 532, 344, 256, 56, { word: 'D90', label: 'ACTIVE RECIPE', states: '0:NONE:#475569|1:DRY:#3b82f6|2:BAKE:#f59e0b|3:CURE:#ef4444' }),
+            E('alarm', 12, 420, 776, 44, { bit: 'M1129', text: 'COM2 TIME-OUT — a slave does not answer' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'pid-tuning-lab', name: 'PID tuning lab: PB · Ti · Td · auto-tune (DTB4848)', level: 'advanced', tags: ['PID', 'DTB', 'Tuning', 'Modbus', 'HMI'], featured: true,
+    description: 'Learn what the three PID numbers do. The PLC talks to a DTB4848 over Modbus: set the SV, choose the control method (PID · ON/OFF · Manual, 1005H), type a new proportional band PB (1009H), integral time Ti (100AH) and derivative time Td (100BH) and press APPLY, or let the controller find them with AUTO-TUNE (coil 0813H). The trend shows PV, SV and the heater output so you can see overshoot, speed and offset.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('dtb', 'dtb4848', { label: 'OVEN PID', station: 1, ...COM }, { sv: 120, run: true, mode: 0 });
+      b.dev('lrun', 'lamp', { label: 'RUN', color: 'green' });
+      b.dev('lat', 'lamp', { label: 'AUTO-TUNE', color: 'yellow' });
+      b.dev('lfail', 'lamp', { label: 'COMM FAIL', color: 'red' });
+      b.w('psu', 'L', 'dtb', 'L'); b.w('psu', 'N', 'dtb', 'N');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'lrun', 'X1'); b.w('plc', 'Y1', 'lat', 'X1'); b.w('plc', 'Y2', 'lfail', 'X1');
+      b.w('lrun', 'X2', 'psu', '-V2'); b.w('lrun', 'X2', 'lat', 'X2', '#1e3a8a'); b.w('lat', 'X2', 'lfail', 'X2', '#1e3a8a');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      b.w('plc', 'COM2', 'dtb', 'RS485');
+      const prog = program([
+        comRung(['MOV K1200 D40', 'MOV K80 D20', 'MOV K30 D21', 'MOV K3 D22', 'MOV K300 D37', 'SET M13']),
+        rung('Station 1 · DTB4848: read PV, SV (1000H, 1001H) → D30, D31', ['M1000 => MODRW K1 K3 H1000 D30 K2']),
+        rung('Read the PID settings back: 1009H PB, 100AH Ti, 100BH Td → D24, D25, D26', ['M1000 => MODRW K1 K3 H1009 D24 K3']),
+        rung('Read the heater output 1012H (0.1 %) → D34 and the control method 1005H → D35', ['M1000 => MODRW K1 K3 H1012 D34 K1']),
+        rung('', ['M1000 => MODRW K1 K3 H1005 D35 K1']),
+        rung('Read the auto-tune coil 0813H (FC01) → D43', ['M1000 => MODRW K1 K1 H813 D43 K1']),
+        rung('Write the set value D40 to SV (1001H, FC06)', ['M1000 => MODRW K1 K6 H1001 D40 K1']),
+        rung('Control method buttons: PID = 0, ON/OFF = 1, MANUAL = 2', ['M30 => MOV K0 D36']),
+        rung('', ['M31 => MOV K1 D36']),
+        rung('', ['M32 => MOV K2 D36']),
+        rung('Write 1005H ← D36 while one of the three buttons is held (FC06)', ['M30| => MODRW K1 K6 H1005 D36 K1', 'M31|', 'M32']),
+        rung('Manual mode: write the output (1012H, 0.1 %) from D37 — the controller only accepts it in manual mode', ['D35=K2 => MODRW K1 K6 H1012 D37 K1']),
+        rung('APPLY: write PB, Ti, Td (D20, D21, D22) to 1009H … 100BH with ONE request (FC16) while M33 is held', ['M33 => MODRW K1 K16 H1009 D20 K3']),
+        rung('AUTO-TUNE button: write 1 to the coil 0813H (FC05)', ['M34 => MOV K1 D42']),
+        rung('', ['M34 => MODRW K1 K5 H813 D42 K1']),
+        rung('RUN / STOP coil 0814H follows the HMI switch M13 (FC05)', ['M13 => MOV K1 D41']),
+        rung('', ['/M13 => MOV K0 D41']),
+        rung('', ['M1000 => MODRW K1 K5 H814 D41 K1']),
+        rung('RUN lamp', ['M13 => OUT Y0']),
+        rung('AUTO-TUNE lamp: the coil reads 1 while the controller is tuning', ['D43=K1 => OUT Y1']),
+        rung('COMM FAIL lamp flashes on a COM2 time-out', ['M1129 M1013 => OUT Y2']),
+      ], { Y0: 'RUN lamp', Y1: 'AUTO-TUNE lamp', Y2: 'COMM FAIL lamp', M13: 'HMI RUN switch', M30: 'HMI PID', M31: 'HMI ON/OFF', M32: 'HMI MANUAL', M33: 'HMI APPLY', M34: 'HMI AUTO-TUNE', D20: 'PB to write (0.1 °C)', D21: 'Ti to write (s)', D22: 'Td to write (s)', D24: 'PB read back', D25: 'Ti read back', D26: 'Td read back', D30: 'PV (0.1 °C)', D31: 'SV (0.1 °C)', D34: 'Heater output (0.1 %)', D35: 'Control method read back', D36: 'Control method to write', D37: 'Manual output to write (0.1 %)', D40: 'SV to write (0.1 °C)', D43: 'Auto-tune coil read back' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Tuning', bg: '#0b1630', elements: [
+            ...hmiHdr('PID TUNING · DTB4848', null),
+            E('rect', 12, 80, 392, 232, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'PROCESS' }),
+            E('meter', 22, 108, 180, 140, { word: 'D30', dec: 1, unit: '°C', label: 'PV', min: 0, max: 250 }),
+            E('num', 210, 108, 184, 48, { word: 'D31', dec: 1, unit: '°C', label: 'SV (READ)' }),
+            E('input', 210, 162, 184, 48, { word: 'D40', dec: 1, unit: '°C', label: 'SET SV', min: 0, max: 250 }),
+            E('num', 210, 216, 184, 44, { word: 'D34', dec: 1, unit: '%', label: 'OUTPUT' }),
+            E('button', 22, 258, 120, 46, { text: 'RUN / STOP', bit: 'M13', mode: 'toggle', color: 'blue' }),
+            E('state', 150, 258, 244, 46, { word: 'D35', label: 'METHOD', states: '0:PID:#22c55e|1:ON/OFF:#f59e0b|2:MANUAL:#a855f7' }),
+            E('rect', 412, 80, 376, 232, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'PID SETTINGS · 1009H 100AH 100BH' }),
+            E('input', 422, 108, 118, 56, { word: 'D20', dec: 1, unit: '°C', label: 'PB', min: 0.1, max: 200 }),
+            E('input', 546, 108, 108, 56, { word: 'D21', dec: 0, unit: 's', label: 'Ti', min: 0, max: 600 }),
+            E('input', 660, 108, 118, 56, { word: 'D22', dec: 0, unit: 's', label: 'Td', min: 0, max: 600 }),
+            E('num', 422, 170, 118, 44, { word: 'D24', dec: 1, unit: '°C', label: 'PB NOW' }),
+            E('num', 546, 170, 108, 44, { word: 'D25', dec: 0, unit: 's', label: 'Ti NOW' }),
+            E('num', 660, 170, 118, 44, { word: 'D26', dec: 0, unit: 's', label: 'Td NOW' }),
+            E('button', 422, 220, 170, 42, { text: 'APPLY · FC16', bit: 'M33', mode: 'momentary', color: 'green' }),
+            E('button', 604, 220, 174, 42, { text: 'AUTO-TUNE', bit: 'M34', mode: 'momentary', color: 'orange' }),
+            E('button', 422, 266, 112, 38, { text: 'PID', bit: 'M30', mode: 'momentary', color: 'blue' }),
+            E('button', 544, 266, 112, 38, { text: 'ON/OFF', bit: 'M31', mode: 'momentary', color: 'blue' }),
+            E('button', 666, 266, 112, 38, { text: 'MANUAL', bit: 'M32', mode: 'momentary', color: 'blue' }),
+            E('trend', 12, 322, 600, 150, { word: 'D30', word2: 'D31', dec: 1, min: 0, max: 250, span: 120, label: 'PV / SV (°C)' }),
+            E('input', 620, 322, 168, 50, { word: 'D37', dec: 1, unit: '%', label: 'MANUAL OUT', min: 0, max: 100 }),
+            E('lamp', 620, 380, 168, 40, { bit: 'Y1', text: 'AUTO-TUNING', onColor: '#eab308', offColor: '#334155', shape: 'rect' }),
+            E('alarm', 620, 428, 168, 44, { bit: 'M1129', text: 'COM2 TIME-OUT' }),
           ],
         }],
       };
