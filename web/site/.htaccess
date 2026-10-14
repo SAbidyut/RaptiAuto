@@ -1,0 +1,32 @@
+# RaptiAuto — Apache settings for this folder.
+DirectoryIndex index.php
+
+# file types the simulator needs (micropython.wasm must be served as application/wasm)
+AddType application/wasm .wasm
+AddType font/woff2 .woff2
+AddType image/svg+xml .svg
+AddType application/javascript .js
+
+# config.php is read by index.php only
+<Files "config.php">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Deny from all
+  </IfModule>
+</Files>
+
+# smaller downloads
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/wasm image/svg+xml
+</IfModule>
+
+# css/, js/ and fonts/ are cached for a month (index.php adds ?v=<version> to every file)
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 month"
+  ExpiresByType application/javascript "access plus 1 month"
+  ExpiresByType application/wasm "access plus 1 month"
+  ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>

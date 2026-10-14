@@ -21,6 +21,7 @@ import { autowire } from '../pi/autowire.js';
 import { searchExamples, SEARCH_HINTS } from './example-search.js';
 import { piHeroArt } from './pi-hero.js';
 import { MANUAL, PARTS, partChapters, searchManual } from '../manual/index.js';
+import { SECTION } from '../site.js';
 
 export const PAGES = {
   home: { title: 'Home', icon: 'home' },
@@ -36,6 +37,11 @@ export const PAGES = {
   about: { title: 'About RAPTI', icon: 'graduation' },
 };
 const TABS = [['home', 'Home', 'home'], ['examples', 'Examples', 'sparkles'], ['manual', 'Manual', 'book'], ['about', 'About', 'info']];
+// A section website (Arduino, PLC Lab or Raspberry Pi) shows only its own section: the other labs'
+// pages are hidden, the PLC / Pi lab page is Home, and examples and the manual keep to the section.
+const HIDDEN = { arduino: ['plclab', 'pilab'], plc: ['plclab', 'pilab', 'projects', 'boards', 'components', 'guide'], pi: ['plclab', 'pilab', 'projects', 'boards', 'components', 'guide'] }[SECTION] || [];
+const EX_KINDS = { arduino: ['arduino'], plc: ['plc'], pi: ['pi', 'pico'] }[SECTION] || null;
+const shows = (page) => !HIDDEN.includes(page);
 
 export class Shell {
   constructor(app) {
@@ -74,7 +80,7 @@ export class Shell {
 
   // ---------------------------------------------------------------- navigation
   go(page, { anchor } = {}) {
-    if (!PAGES[page]) page = 'home';
+    if (!PAGES[page] || !shows(page)) page = 'home';
     this.closeDrawer();
     const changed = page !== this.page;
     if (page !== 'manual' && this.unbackManual) { this.unbackManual(); this.unbackManual = null; this.manualCh = null; }
@@ -95,7 +101,7 @@ export class Shell {
     this.titleEl.innerHTML = '';
     if (this.page === 'home') this.titleEl.appendChild(h('button', { class: 'brand brand-btn', 'aria-label': 'About RaptiAuto', title: 'About', html: `${logoMark(34, 'tb')}${wordmark()}`, onclick: () => this.go('about') }));
     else this.titleEl.appendChild(h('h1', {}, PAGES[this.page].title));
-    const fill = { home: this.pageHome, projects: this.pageProjects, plclab: this.pageLab, pilab: this.pagePi, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, manual: this.pageManual, settings: this.pageSettings, about: this.pageAbout }[this.page];
+    const fill = { home: SECTION === 'plc' ? this.pageLab : SECTION === 'pi' ? this.pagePi : this.pageHome, projects: this.pageProjects, plclab: this.pageLab, pilab: this.pagePi, examples: this.pageExamples, boards: this.pageBoards, components: this.pageComponents, guide: this.pageGuide, manual: this.pageManual, settings: this.pageSettings, about: this.pageAbout }[this.page];
     fill.call(this, pageEl);
     this.host.innerHTML = '';
     this.host.append(pageEl, ...this.extras);
@@ -119,24 +125,22 @@ export class Shell {
     const group = (t) => h('div', { class: 'dr-group' }, t);
     this.drawer = h('aside', { class: 'drawer', 'aria-label': 'Menu' },
       h('div', { class: 'dr-head' },
-        h('div', { class: 'dr-brand', html: `${logoMark(52, 'dr')}<div>${wordmark()}<small>Arduino · PLC · electronics simulator</small></div>` }),
-        h('button', { class: 'dr-new', html: `${icon('plus', 19)}<span>New Project</span>`, onclick: () => { this.closeDrawer(); this.newProject(); } })),
+        h('div', { class: 'dr-brand', html: `${logoMark(52, 'dr')}<div>${wordmark()}<small>${{ arduino: 'Arduino · ESP32 · electronics simulator', plc: 'Delta PLC · HMI · VFD trainer', pi: 'Raspberry Pi · Pico · Python lab' }[SECTION] || 'Arduino · PLC · electronics simulator'}</small></div>` }),
+        h('button', { class: 'dr-new', html: `${icon('plus', 19)}<span>New Project</span>`, onclick: () => { this.closeDrawer(); if (SECTION === 'plc') this.newLab(); else if (SECTION === 'pi') this.newPiProject(); else this.newProject(); } })),
       h('nav', { class: 'dr-list' },
         group('Workspace'),
-        item('home', 'Home', 'home'),
-        item('projects', 'My Projects', 'folder', h('span', { class: 'dr-count' })),
-        item('examples', 'Examples', 'book', h('span', { class: 'dr-count' }, String(EXAMPLES.length + PI_EXAMPLES.length + PICO_EXAMPLES.length + LAB_EXAMPLES.length))),
-        act('Open / import file', 'upload', () => this.importProject()),
-        group('Industrial automation'),
-        item('plclab', 'Delta PLC Lab', 'cpu', h('span', { class: 'dr-new-badge' }, '3D')),
-        group('Raspberry Pi'),
-        item('pilab', 'Raspberry Pi Lab', 'terminal', h('span', { class: 'dr-new-badge' }, 'NEW')),
-        group('Library'),
-        item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
-        item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount()))),
+        item('home', SECTION === 'plc' ? 'Delta PLC Lab' : SECTION === 'pi' ? 'Raspberry Pi Lab' : 'Home', SECTION === 'plc' ? 'cpu' : SECTION === 'pi' ? 'terminal' : 'home'),
+        ...(shows('projects') ? [item('projects', 'My Projects', 'folder', h('span', { class: 'dr-count' }))] : []),
+        item('examples', 'Examples', 'book', h('span', { class: 'dr-count' }, String(exampleCount()))),
+        ...(SECTION !== 'pi' ? [act('Open / import file', 'upload', () => this.importProject())] : []),
+        ...(shows('plclab') ? [group('Industrial automation'), item('plclab', 'Delta PLC Lab', 'cpu', h('span', { class: 'dr-new-badge' }, '3D'))] : []),
+        ...(shows('pilab') ? [group('Raspberry Pi'), item('pilab', 'Raspberry Pi Lab', 'terminal', h('span', { class: 'dr-new-badge' }, 'NEW'))] : []),
+        ...(shows('boards') ? [group('Library'),
+          item('boards', 'Boards', 'chip', h('span', { class: 'dr-count' }, String(BOARD_TYPES.length))),
+          item('components', 'Components', 'layers', h('span', { class: 'dr-count' }, String(partCount())))] : []),
         group('Help'),
-        item('manual', 'Manual — PLC, Arduino, Pi', 'book', h('span', { class: 'dr-new-badge' }, 'NEW')),
-        item('guide', 'Guide — how to use', 'help'),
+        item('manual', SECTION ? 'Manual' : 'Manual — PLC, Arduino, Pi', 'book', h('span', { class: 'dr-new-badge' }, 'NEW')),
+        ...(shows('guide') ? [item('guide', 'Guide — how to use', 'help')] : []),
         item('settings', 'Settings', 'settings'),
         group('RAPTI'),
         item('about', 'About RAPTI', 'graduation'),
@@ -201,8 +205,8 @@ export class Shell {
           h('button', { class: 'btn btn-primary btn-lg', html: `${icon('plus', 20)}<span>New Project</span>`, onclick: () => this.newProject() }),
           h('button', { class: 'btn btn-glass btn-lg', html: `${icon('book', 19)}<span>Examples</span>`, onclick: () => this.go('examples') })))));
 
-    el.appendChild(this.labBanner());
-    el.appendChild(this.piBanner());
+    if (shows('plclab')) el.appendChild(this.labBanner());
+    if (shows('pilab')) el.appendChild(this.piBanner());
 
     // the menu of tiles that used to sit here now lives in the ☰ menu bar (the drawer) at the top left
 
@@ -264,12 +268,16 @@ export class Shell {
     if (!this.exCat) this.exCat = 'all';
     let q = this.exQuery || '';
     // Arduino categories, then the two labs
-    const cats = [
+    let cats = [
       { id: 'all', name: 'All', n: EXAMPLES.length + piAll.length + LAB_EXAMPLES.length },
       ...EXAMPLE_CATEGORIES.map((c) => ({ ...c, n: EXAMPLES.filter((e) => e.category === c.id).length })),
       { id: 'pi', name: 'Raspberry Pi', n: piAll.length }, { id: 'plc', name: 'PLC Lab', n: LAB_EXAMPLES.length },
     ].filter((c) => c.n);
-    const kindsFor = (c) => (c === 'pi' ? ['pi', 'pico'] : c === 'plc' ? ['plc'] : c === 'all' ? null : ['arduino']);
+    // a section website lists only its own examples
+    if (SECTION === 'plc' || SECTION === 'pi') cats = cats.filter((c) => c.id === SECTION);
+    else if (SECTION === 'arduino') cats = cats.filter((c) => c.id !== 'pi' && c.id !== 'plc').map((c) => (c.id === 'all' ? { ...c, n: EXAMPLES.length } : c));
+    if (!cats.some((c) => c.id === this.exCat)) this.exCat = cats[0].id;
+    const kindsFor = (c) => (c === 'pi' ? ['pi', 'pico'] : c === 'plc' ? ['plc'] : c === 'all' ? EX_KINDS : ['arduino']);
     const group = (ic, title, n) => h('div', { class: 'ex-group span-all', html: `${icon(ic, 17)}<b>${title}</b><span>${n}</span>` });
     const draw = () => {
       grid.innerHTML = '';
@@ -289,12 +297,12 @@ export class Shell {
       } else {
         if (this.exCat === 'all') {
           info.classList.add('hints');
-          info.append(h('span', { class: 'muted' }, 'Try:'), ...SEARCH_HINTS.map((t) => h('button', { class: 'ex-hint', onclick: () => { inp.value = t; q = t; this.exQuery = t; draw(); } }, t)));
+          info.append(h('span', { class: 'muted' }, 'Try:'), ...SEARCH_HINTS.filter((t) => !EX_KINDS || searchExamples(t, EX_KINDS).length).map((t) => h('button', { class: 'ex-hint', onclick: () => { inp.value = t; q = t; this.exQuery = t; draw(); } }, t)));
         }
         if (this.exCat === 'pi') for (const e of piAll) grid.appendChild(this.piExampleCard(e, last, thumbs));
         else if (this.exCat === 'plc') for (const ex of LAB_EXAMPLES) grid.appendChild(this.labExampleCard(ex));
         else for (const ex of EXAMPLES.filter((e) => this.exCat === 'all' || e.category === this.exCat)) grid.appendChild(this.exampleCard(ex));
-        if (this.exCat === 'all') {
+        if (this.exCat === 'all' && !SECTION) {
           grid.appendChild(h('button', { class: 'ex-more span-all', onclick: () => { this.exCat = 'pi'; markChip(); draw(); } }, h('span', { html: icon('terminal', 18) }), h('b', {}, `${piAll.length} Raspberry Pi and Pico examples`), h('span', { html: icon('forward', 18) })));
           grid.appendChild(h('button', { class: 'ex-more span-all', onclick: () => { this.exCat = 'plc'; markChip(); draw(); } }, h('span', { html: icon('cube', 18) }), h('b', {}, `${LAB_EXAMPLES.length} PLC Lab projects`), h('span', { html: icon('forward', 18) })));
         }
@@ -452,7 +460,8 @@ export class Shell {
   }
 
   manualIndex(el) {
-    if (!this.manualPart) this.manualPart = 'plc';
+    if (SECTION) this.manualPart = SECTION;
+    else if (!this.manualPart) this.manualPart = 'plc';
     const hero = h('section', { class: 'mx-hero' });
     const parts = h('div', { class: 'mx-parts', role: 'tablist' });
     const body = h('div');
@@ -467,7 +476,7 @@ export class Shell {
     const draw = (q) => {
       body.innerHTML = '';
       if (q.trim()) {
-        const hits = searchManual(q);
+        const hits = searchManual(q).filter((r) => !SECTION || r.ch.part === SECTION);
         if (!hits.length) { body.appendChild(h('p', { class: 'mx-empty' }, `Nothing found for “${q.trim()}”`)); return; }
         const list = h('div', { class: 'mx-hits' });
         for (const r of hits) {
@@ -483,7 +492,8 @@ export class Shell {
         h('div', {}, h('b', {}, ch.title), h('span', {}, ch.blurb), h('small', {}, `${ch.sections.length} sections`))));
       body.appendChild(grid);
     };
-    el.append(hero, parts);
+    el.append(hero);
+    if (!SECTION) el.append(parts); // a section website has only its own part of the manual
     search = searchBox(PARTS.find((x) => x.id === this.manualPart).search, draw);
     el.append(search, body);
     fillHero();
@@ -500,8 +510,9 @@ export class Shell {
     const fsVal = h('b', { class: 'set-val' }, String(s.fontSize));
     const step = (d) => { s.fontSize = Math.max(10, Math.min(24, (s.fontSize || 14) + d)); fsVal.textContent = String(s.fontSize); save(); };
     const group = (title, ...rows) => h('section', { class: 'set-group' }, h('h3', {}, title), h('div', { class: 'card set-card' }, ...rows));
+    const ard = SECTION !== 'plc' && SECTION !== 'pi'; // the editor settings belong to the Arduino section
     el.append(
-      group('Circuit editor',
+      ...(ard ? [group('Circuit editor',
         toggle('Show grid', 'Dotted background grid on the canvas', () => s.showGrid, (v) => { s.showGrid = v; }, 'grid'),
         toggle('Current flow animation', 'Moving dots show current in wires while simulating', () => s.flow, (v) => { s.flow = v; }, 'bolt'),
         toggle('Straight wires', 'Draw wires with sharp corners instead of rounded ones', () => s.wireStyle === 'straight', (v) => { s.wireStyle = v ? 'straight' : 'smooth'; }, 'wire')),
@@ -510,15 +521,15 @@ export class Shell {
           h('div', { class: 'stepper' }, h('button', { class: 'icon-btn sm', 'aria-label': 'Smaller', html: icon('minus', 18), onclick: () => step(-1) }), fsVal, h('button', { class: 'icon-btn sm', 'aria-label': 'Bigger', html: icon('plus', 18), onclick: () => step(1) })))),
       group('Landscape & full screen',
         toggle('Side by side in landscape', 'Show circuit and code together when the phone is sideways', () => s.split !== false, (v) => { s.split = v; }, 'columns'),
-        toggle('Side by side in full screen', 'Off: one panel at a time. While running, sketches that use Serial show circuit + Serial Monitor together', () => s.splitFs === true, (v) => { s.splitFs = v; }, 'fullscreen')),
-      group('Internet (IoT)',
-        toggle('Real internet', 'Weather, time, IP, prices and web pages in IoT sketches, Python and the Pi\'s Chromium come from the phone\'s internet when it is online. ThingSpeak, Blynk, Telegram and webhooks stay simulated (see the IoT dashboard)', () => s.realInternet !== false, (v) => { s.realInternet = v; }, 'globe')),
+        toggle('Side by side in full screen', 'Off: one panel at a time. While running, sketches that use Serial show circuit + Serial Monitor together', () => s.splitFs === true, (v) => { s.splitFs = v; }, 'fullscreen'))] : []),
+      ...(SECTION !== 'plc' ? [group('Internet (IoT)',
+        toggle('Real internet', 'Weather, time, IP, prices and web pages in IoT sketches, Python and the Pi\'s Chromium come from the phone\'s internet when it is online. ThingSpeak, Blynk, Telegram and webhooks stay simulated (see the IoT dashboard)', () => s.realInternet !== false, (v) => { s.realInternet = v; }, 'globe'))] : []),
       group('Feedback',
         toggle('Sound', 'Play buzzers and speakers during simulation', () => s.sound !== false, (v) => { s.sound = v; }, 'bell'),
         toggle('Vibration', 'Short haptic feedback when wiring and pressing buttons', () => s.haptics !== false, (v) => { s.haptics = v; Native.haptics = v; }, 'hand')),
-      group('Data',
+      ...(ard ? [group('Data',
         h('button', { class: 'set-row tap', onclick: () => this.go('projects') }, h('span', { class: 'set-ic', html: icon('folder', 19) }), h('div', { class: 'set-text' }, h('b', {}, 'Projects on this phone'), h('small', {}, `${listProjects().length} saved · export them from the project menu`)), h('span', { class: 'c-go', html: icon('forward', 18) })),
-        h('button', { class: 'set-row tap danger', onclick: () => this.deleteAll() }, h('span', { class: 'set-ic', html: icon('trash', 19) }), h('div', { class: 'set-text' }, h('b', {}, 'Delete all projects'), h('small', {}, 'Cannot be undone')))),
+        h('button', { class: 'set-row tap danger', onclick: () => this.deleteAll() }, h('span', { class: 'set-ic', html: icon('trash', 19) }), h('div', { class: 'set-text' }, h('b', {}, 'Delete all projects'), h('small', {}, 'Cannot be undone'))))] : []),
       h('p', { class: 'muted small center' }, `RaptiAuto v${Native.version()}`));
   }
 
@@ -837,11 +848,14 @@ export class Shell {
   }
 
   async importProject() {
-    const f = await Native.openFile('.rapti,.raptiplc,.json,.ino,.txt');
+    const f = await Native.openFile(SECTION === 'plc' ? '.raptiplc,.json' : SECTION === 'arduino' ? '.rapti,.json,.ino,.txt' : '.rapti,.raptiplc,.json,.ino,.txt');
     if (!f || !f.text) return;
     try {
       let p;
-      if (/raptiauto-plclab/.test(f.text.slice(0, 200)) || /\.raptiplc$/i.test(f.name || '')) {
+      const isLab = /raptiauto-plclab/.test(f.text.slice(0, 200)) || /\.raptiplc$/i.test(f.name || '');
+      if (SECTION === 'arduino' && isLab) { toast('This is a PLC Lab file — open it on the PLC Lab page', 'warn'); return; }
+      if (SECTION === 'plc' && !isLab) { toast('Choose a PLC Lab file (.raptiplc)', 'warn'); return; }
+      if (isLab) {
         const lab = importLab(f.text);
         saveLab(lab);
         toast('PLC lab imported', 'ok');
@@ -862,6 +876,11 @@ export class Shell {
 }
 
 function partCount() { return allDefs().filter((d) => !d.board && !d.hidden).length; }
+/** Examples of the sections on show (all three in the app). */
+function exampleCount() {
+  const n = { arduino: EXAMPLES.length, pi: PI_EXAMPLES.length + PICO_EXAMPLES.length, plc: LAB_EXAMPLES.length };
+  return SECTION ? n[SECTION] : n.arduino + n.pi + n.plc;
+}
 function fmtBytes(n) { return n >= 1048576 ? `${Math.round(n / 1048576)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`; }
 function searchBox(placeholder, onInput) {
   const inp = h('input', { class: 'input', type: 'search', placeholder, autocomplete: 'off' });

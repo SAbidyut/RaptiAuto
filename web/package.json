@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test ../tests/"
+    "test": "node --test ../tests/",
+    "site": "node build.mjs && node build-site.mjs"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.3",

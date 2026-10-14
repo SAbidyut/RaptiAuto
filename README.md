@@ -194,6 +194,16 @@ cd web && npm install && cd ..
 ./tools/build-apk.sh          # → release/RaptiAuto.apk
 ```
 
+### Website packages (PHP)
+
+Each section — Arduino, PLC Lab, Raspberry Pi — is also built as a website of its own, ready to upload to a PHP host:
+
+```sh
+cd web && npm run site        # → release/website/RaptiAuto-{Arduino,PLC,Raspberry-Pi}-Website.zip
+```
+
+Each zip holds one folder (`arduino/`, `plc/`, `raspberry-pi/`): `index.php`, `config.php` (title, description, base URL), `includes/` (header, footer, helpers), `css/`, `js/`, `fonts/`, `.htaccess` and a `README.txt`. The templates are in `web/site/`; the page sets `window.RAPTI_SITE` and the app (`web/src/site.js`) then shows only that section.
+
 Other scripts:
 
 | Command | Purpose |
