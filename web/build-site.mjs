@@ -8,6 +8,7 @@ import { mkdirSync, copyFileSync, rmSync, existsSync, readdirSync, readFileSync,
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const www = join(here, '..', 'build', 'www');
@@ -55,6 +56,10 @@ for (const s of SECTIONS) {
   mkdirSync(join(dir, 'js'), { recursive: true });
   for (const f of s.css) writeFileSync(join(dir, f), css[f]);
   for (const f of ['app.js', ...s.js]) copyFileSync(join(www, f), join(dir, 'js', f));
+  // the ?v= of every file: app version + a hash of the built files, so an update is never served from cache
+  const hash = createHash('sha1');
+  for (const f of [...s.css, ...['app.js', ...s.js].map((x) => 'js/' + x)]) hash.update(readFileSync(join(dir, f)));
+  const v = `${version}-${hash.digest('hex').slice(0, 8)}`;
   writeFileSync(join(dir, 'config.php'), `<?php
 // RaptiAuto — ${s.name} section: settings of this page.
 if (!defined('RAPTI')) { http_response_code(403); exit; }
@@ -72,7 +77,7 @@ return array(
     'base' => '',
 
     // added to every css / js URL (?v=…) so visitors get the new files after an update
-    'version' => ${php(version)},
+    'version' => ${php(v)},
 
     // style sheets, in this order
     'css' => array(${s.css.map(php).join(', ')}),

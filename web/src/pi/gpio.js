@@ -53,6 +53,7 @@ export class GpioSim {
    */
   attachHw(hw) {
     this.hw = hw || null;
+    if (this.hw) this.hw.quiet = (t) => this.quietUntil(t);
     if (this.hw && this.pins) for (const p of this.pins.values()) this.sync(p);
     this.inputsChanged();
   }
