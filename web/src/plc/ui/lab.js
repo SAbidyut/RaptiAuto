@@ -1,5 +1,5 @@
 // Delta PLC Lab screen: 3D panel + ladder editor + HMI + VFD + monitor, with the simulation loop.
-import { h, toast, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from '../../ui/widgets.js';
+import { h, toast, smoothSwap, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
 import { AudioEngine } from '../../ui/audio.js';
@@ -209,12 +209,14 @@ export class LabScreen {
 
   setFullscreen(on) {
     this.fullscreen = on;
-    this.panes = null; // full screen starts automatic again: one screen, two while running
-    this.root.classList.toggle('fs', on);
-    this.setChrome(!on, false);
-    this.updateLayout();
+    smoothSwap(() => {
+      this.panes = null; // full screen starts automatic again: one screen, two while running
+      this.root.classList.toggle('fs', on);
+      this.setChrome(!on, false);
+      this.updateLayout();
+      Native.setImmersive(on);
+    });
     if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
-    Native.setImmersive(on);
     Native.vibrate(8);
   }
 
@@ -231,6 +233,7 @@ export class LabScreen {
     const plc = this.plcDevice();
     const plcs = plcDevices(this.project);
     if (plcs.length > 1) { this.subEl.textContent = `${plcName(this.project, plc)} ▾`; this.subEl.classList.add('multi-plc'); return; }
+    if (!this.project.devices.length) { this.subEl.textContent = 'Empty lab · add parts with ＋'; this.subEl.classList.remove('multi-plc'); return; }
     const parts = [plc ? DEVICE_DEFS[plc.type].short : 'No PLC'];
     if (this.project.devices.some((d) => d.type === 'ms300')) parts.push('MS300');
     if (this.project.devices.some((d) => d.type === 'dop-107bv')) parts.push('DOP-107');

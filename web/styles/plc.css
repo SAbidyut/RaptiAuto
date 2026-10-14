@@ -778,3 +778,10 @@
 .cs-row small { color: var(--muted); text-align: right; font-size: 11px; }
 .cs-note { font-size: 12.5px; color: #cbd5e1; line-height: 1.45; margin: 0; }
 .cs-facts { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.45; color: #cbd5e1; }
+
+/* an empty lab: a card in the middle says where to start */
+.lab-empty { position: absolute; left: 42%; top: 50%; transform: translate(-50%, -50%); z-index: 6; width: min(72%, 320px); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 16px 16px; border-radius: 22px; text-align: center; background: rgba(10, 16, 32, .72); border: 1px solid rgba(34, 211, 238, .3); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 24px 60px -24px #000; }
+.lab-empty.hidden { display: none; }
+.lab-empty .le-ic { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 18px; color: var(--accent); background: rgba(34, 211, 238, .12); }
+.lab-empty b { font-family: var(--display); font-size: 19px; }
+.lab-empty p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }

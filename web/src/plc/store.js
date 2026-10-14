@@ -129,7 +129,7 @@ export function makeConn(devices, a, ap, b, bp, color) {
   const pa = findPort(da, ap), pb = findPort(db, bp);
   if (!pa || !pb) throw new Error(`conn: unknown port ${!pa ? a + '.' + ap : b + '.' + bp}`);
   const comm = pa.kind === 'comm';
-  return { id: labId('c'), a: { dev: a, port: ap }, b: { dev: b, port: bp }, comm, color: color || (comm ? null : wireColorFor(pa.sig === 'PE' || pb.sig === 'PE' ? 'PE' : pa.sig || pb.sig)) };
+  return { id: labId('c'), a: { dev: a, port: ap }, b: { dev: b, port: bp }, comm, color: color || (comm ? null : wireColorFor(pa.sig === 'PE' || pb.sig === 'PE' ? 'PE' : pa.sig || pb.sig, pa.sig === 'mot' ? pa.id : pb.id)) };
 }
 
 export function exportLab(p) {

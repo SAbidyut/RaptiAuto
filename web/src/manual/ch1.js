@@ -26,8 +26,8 @@ ${steps(
   'Open the <b>☰ menu</b> (top left of the Home page) and choose <b>Delta PLC Lab</b> — or tap the <b>PLC Lab</b> tile on the Home page.',
   'Tap <b>New project</b> for an empty panel, or pick one of the <b>Examples</b>. An example is copied into <b>My projects</b> when you open it, so you can change it freely.',
   'Your own labs are listed under <b>My projects</b>. Tap one to continue where you stopped.')}
-<p>A new lab starts with the main switch (MCB), the 24 V supply, a <b>DVP16ES2 PLC</b> and the laptop — all wired and powered. You only add what your project needs.</p>
-${open('blank', 'Open the blank lab')}`,
+<p>A new lab is an <b>empty bench</b>: nothing is placed and nothing is wired. You choose every part yourself with <b>＋ Add device</b> — typically the main switch (MCB), the 24 V supply, a PLC, the laptop, and then the HMI, VFD, motor, buttons and lamps your project needs — and wire them. If you would rather start with the PLC, supply and laptop already connected, open the <b>starter lab</b> from the examples:</p>
+${open('blank', 'Open the starter lab (PLC + power)')}`,
     },
     {
       id: 'tour', title: 'The screen, tab by tab',

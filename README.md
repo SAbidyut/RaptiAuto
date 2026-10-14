@@ -4,6 +4,25 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.25 — an empty PLC bench, R-Y-B motor wires
+
+- **PLC Lab → New project** now opens an **empty bench**: no device and no wire is placed for you. The student adds every part (MCB, supply, PLC, VFD, motor …) and wires it. A card in the middle ("An empty bench") has the **Add a device** button. The old pre-wired start is still in the examples as **Starter lab (PLC + power)**.
+- Default colours of motor-circuit wires follow **R-Y-B**: U / L1 / T1 red, V / L2 / T2 yellow, W / L3 / T3 blue (in the 3D lab, the 2D schematic and the "auto" colour of the wiring bar).
+
+## New in 2.24 — calmer full-screen switch
+
+- Entering and leaving full screen (Arduino editor, Pi lab, PLC lab) now goes behind a soft curtain: the screen fades out, the layout and the system bars switch and settle unseen, then it fades back in — nothing jumps around on the way.
+
+## New in 2.23 — no screws on the breaker
+
+
+- The MCB's load wires go straight into terminal openings — no screw heads show (the PE terminal keeps its screw).
+
+## New in 2.22 — 3D fixes: motor nameplate, MCB top
+
+- The motor nameplate sits on a flat pad in front of the cooling fins, so a fin no longer cuts through the text.
+- The MCB has no screws on its top any more: the mains cable enters through a rubber gland, and the rating / voltage / breaking-capacity printing is complete.
+
 ## New in 2.21 — manual for Arduino and Raspberry Pi, cleaner VFD keypad, leaner home page
 
 - **Manual, three parts** (tabs on the Manual page): **PLC Lab**, **Arduino** (8 chapters: the lab, the circuit canvas, programming, electronics, step-by-step projects, Serial / sensors / displays, IoT and master–slave, boards and reference) and **Raspberry Pi** (8 chapters: the lab, the GPIO, the circuit canvas, Python and Thonny, GPIO programming, projects, Desktop and Terminal, reference). 190+ new diagrams — every project is wired up picture by picture — and code listings with colours; the "Open this example" buttons open the real examples.

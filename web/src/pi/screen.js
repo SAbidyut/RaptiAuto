@@ -2,7 +2,7 @@
 // editor) · Pinout · Desktop · Thonny · Output for a Raspberry Pi 5 / 4, or Circuit · Pinout ·
 // Thonny for a Pico / Pico W / Pico 2 / Pico 2 W. Run powers the circuit and runs the Python file;
 // full screen works like the Arduino editor's (menus behind the ☰ handle).
-import { h, toast, pushBack, Sheet, popupMenu, confirmDialog } from '../ui/widgets.js';
+import { h, toast, smoothSwap, pushBack, Sheet, popupMenu, confirmDialog } from '../ui/widgets.js';
 import { icon } from '../ui/icons.js';
 import { Native } from '../native.js';
 import { AudioEngine } from '../ui/audio.js';
@@ -337,13 +337,16 @@ export class PiScreen {
   setFullscreen(on) {
     this.fullscreen = on;
     this.circuit.fullscreen = on;
-    this.root.classList.toggle('fs', on);
-    this.setChrome(!on, false);
+    smoothSwap(() => {
+      this.root.classList.toggle('fs', on);
+      this.setChrome(!on, false);
+      Native.setImmersive(on);
+    }, () => {
+      this.circuit.canvas.applyView();
+      setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 80);
+    });
     if (on && !this.settings.piFsHinted) { this.settings.piFsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
-    Native.setImmersive(on);
     Native.vibrate(8);
-    setTimeout(() => this.circuit.canvas.applyView(), 60);
-    setTimeout(() => { this.circuit.canvas.applyView(); if (this.thonny.editor) this.thonny.editor.refresh(); }, 400);
   }
 
   setChrome(on, buzz = true) {

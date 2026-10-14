@@ -34,6 +34,42 @@ export const backDepth = () => backStack.length;
 
 // ------------------------------------------------------------------ toasts
 let toastHost;
+let swapBusy = false, swapQueued = null;
+/**
+ * Change the layout (full screen on / off) behind a soft curtain: the screen fades out, the layout switches and
+ * settles (the system bars and the 3D / canvas views re-measure) while nothing can be seen, then it fades back in —
+ * so the viewer never sees the parts jump around. `after` runs just before the fade back in.
+ */
+export function smoothSwap(fn, after) {
+  if (swapBusy) { swapQueued = [fn, after]; return; }
+  const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { fn(); if (after) after(); return; }
+  swapBusy = true;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const c = document.createElement('div');
+  c.className = 'fs-curtain';
+  document.body.appendChild(c);
+  (async () => {
+    try {
+      await frame();
+      c.classList.add('on');
+      await wait(170);
+      fn();
+      await frame();
+      await wait(240);
+      if (after) after();
+      await frame();
+      c.classList.remove('on');
+      await wait(300);
+    } finally {
+      c.remove();
+      swapBusy = false;
+      if (swapQueued) { const [f, a2] = swapQueued; swapQueued = null; smoothSwap(f, a2); }
+    }
+  })();
+}
+
 export function toast(msg, type = 'info', ms = 2600) {
   if (!toastHost) { toastHost = h('div', { class: 'toast-host' }); document.body.appendChild(toastHost); }
   const ic = { info: 'info', ok: 'check', warn: 'warning', error: 'warning' }[type] || 'info';

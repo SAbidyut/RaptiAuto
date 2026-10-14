@@ -7,7 +7,7 @@ import { CodeEditor } from './code.js';
 import { SerialMonitor } from './serial.js';
 import { openLibrary } from './library.js';
 import { openPartProps, openWireSheet, openSimControls } from './inspector.js';
-import { h, toast, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from './widgets.js';
+import { h, toast, smoothSwap, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from './widgets.js';
 import { icon } from './icons.js';
 import { FsDock } from './fsdock.js';
 import { Native } from '../native.js';
@@ -276,15 +276,15 @@ export class Editor {
 
   setFullscreen(on) {
     this.fullscreen = on;
-    this.panes = null; // full screen starts automatic again
-    this.root.classList.toggle('fs', on);
-    this.setChrome(!on, false);
+    smoothSwap(() => {
+      this.panes = null; // full screen starts automatic again
+      this.root.classList.toggle('fs', on);
+      this.setChrome(!on, false);
+      this.updateLayout();
+      Native.setImmersive(on);
+    }, () => { this.canvas.applyView(); setTimeout(() => this.canvas.applyView(), 80); });
     if (on && !this.settings.fsHinted) { this.settings.fsHinted = true; this.app.saveSettings(); toast('Full screen — tap ☰ for the menus, drag it to move it'); }
-    this.updateLayout();
-    Native.setImmersive(on);
     Native.vibrate(8);
-    setTimeout(() => this.canvas.applyView(), 60);
-    setTimeout(() => this.canvas.applyView(), 400);
   }
 
   /** Full screen: show (on) or hide the menus and tool bars. */
