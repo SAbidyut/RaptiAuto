@@ -6,6 +6,8 @@ import { compileProgram } from '../web/src/plc/sim/ladder.js';
 import { PLC_MODELS } from '../web/src/plc/devices/defs.js';
 import { LAB_TASKS } from '../web/src/plc/tasks.js';
 import { partChapters } from '../web/src/manual/index.js';
+import { LAB_EXAMPLES } from '../web/src/plc/examples.js';
+import { buildGuide, STEP_GUIDES } from '../web/src/plc/guides.js';
 
 let failures = 0;
 function check(name, cond, detail = '') {
@@ -184,12 +186,34 @@ for (const ex of STEP_EXAMPLES) {
   check('04AD without 24 V: warning in the issue list', s.issues.some((i) => /DVP04AD-E2 has no power/.test(i.text)));
 }
 
-// the Bangla book opens every step lab, in order
+// the Step-by-step course opens every step lab, in order
 {
-  const html = partChapters('bn').flatMap((c) => c.sections.map((x) => x.html)).join('');
+  const html = partChapters('steps').flatMap((c) => c.sections.map((x) => x.html)).join('');
   const links = [...new Set([...html.matchAll(/data-ex="(step-[^"]+)"/g)].map((m) => m[1]))];
-  check('the Bangla book links every step lab', STEP_EXAMPLES.every((e) => links.includes(e.id)), STEP_EXAMPLES.filter((e) => !links.includes(e.id)).map((e) => e.id).join());
+  check('the Step-by-step course links every step lab', STEP_EXAMPLES.every((e) => links.includes(e.id)), STEP_EXAMPLES.filter((e) => !links.includes(e.id)).map((e) => e.id).join());
   check('…in the order of the steps', links.join() === STEP_EXAMPLES.map((e) => e.id).join(), links.join());
+}
+
+// the in-lab guide: hand-written for every step lab (one explanation per network), generated for all labs
+for (const ex of STEP_EXAMPLES) {
+  const p = buildExample(ex.id), g = STEP_GUIDES[ex.id];
+  check(`${ex.id}: has a hand-written guide`, !!g && g.run.length >= 4 && g.goal.length > 40);
+  check(`${ex.id}: the guide explains every network`, g && g.rungs.length === p.program.rungs.length, `${g && g.rungs.length} explanations, ${p.program.rungs.length} networks`);
+}
+for (const ex of LAB_EXAMPLES) {
+  const p = buildExample(ex.id), g = buildGuide(p, ex);
+  const html = g.sections.map((x) => x.html).join('');
+  check(`${ex.id}: guide has goal, run, parts, wiring, program, trouble, build`, ['goal', 'run', 'parts', 'wiring', 'program', 'trouble', 'build'].every((id) => g.sections.some((x) => x.id === id)), g.sections.map((x) => x.id).join());
+  const wiring = g.sections.find((x) => x.id === 'wiring').html;
+  const listed = [...wiring.matchAll(/<ol class="lg-wires"[^>]*>([\s\S]*?)<\/ol>/g)].reduce((n, m) => n + (m[1].match(/<li>/g) || []).length, 0);
+  check(`${ex.id}: the wiring list has every connection`, listed === p.conns.length, `${listed} listed, ${p.conns.length} conns`);
+  check(`${ex.id}: no undefined / NaN in the guide`, !/undefined|NaN|\[object/.test(html));
+}
+{
+  // a lab of your own (no example): the guide is generated from the bench
+  const p = buildExample('step-03-latch'); p.fromExample = null;
+  const g = buildGuide(p, null);
+  check('own lab: guide without run steps but with wiring and program', !g.sections.some((x) => x.id === 'run') && g.sections.some((x) => x.id === 'wiring') && g.sections.some((x) => x.id === 'program'));
 }
 
 console.log(failures ? `\n${failures} step test(s) FAILED` : '\nall step tests passed');

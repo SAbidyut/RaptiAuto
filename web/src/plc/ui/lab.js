@@ -15,6 +15,9 @@ import { HmiView } from './hmi-view.js';
 import { VfdView } from './vfd-view.js';
 import { MonitorView } from './monitor.js';
 import { LAB_TASKS } from '../tasks.js';
+import { LAB_EXAMPLES } from '../examples.js';
+import { buildGuide } from '../guides.js';
+import { MANUAL } from '../../manual/index.js';
 import { Sheet } from '../../ui/widgets.js';
 import { FsDock } from '../../ui/fsdock.js';
 
@@ -393,6 +396,7 @@ export class LabScreen {
       { icon: 'clock', label: `Simulation speed: ${fmtSpeed(this.speed || 1)}`, action: () => this.chooseSpeed() },
       { icon: 'sliders', label: `3D quality: ${this.settings.labQuality === 'low' ? 'Fast' : 'High'}`, action: () => { this.settings.labQuality = this.settings.labQuality === 'low' ? 'high' : 'low'; this.app.saveSettings(); toast('Re-open the lab to apply the 3D quality'); } },
       '-',
+      { icon: 'book', label: 'Guide to this lab (step by step)', action: () => this.showGuide() },
       this.tasks ? { icon: 'target', label: `Lab tasks (${this.project.tasksDone.length}/${this.tasks.length})`, action: () => this.showTasks() } : null,
       { icon: 'help', label: 'How to use the lab', action: () => this.help() },
     ]);
@@ -583,6 +587,31 @@ export class LabScreen {
       h('button', { class: 'btn btn-primary', onclick: () => sheet.close() }, 'OK')));
     const sheet = new Sheet({ title: `Lab tasks · ${done.length}/${this.tasks.length}`, content, icon: 'target', cls: 'sheet-tall' });
     sheet.open();
+  }
+
+  // ------------------------------------------------------------------ guide
+  /** The step-by-step guide of this lab: goal, how to run it, parts, wiring list, program, fault finding. */
+  showGuide() {
+    const ex = LAB_EXAMPLES.find((e) => e.id === this.project.fromExample) || null;
+    const g = buildGuide(this.project, ex);
+    const content = h('div', { class: 'lab-guide' });
+    const bar = h('div', { class: 'lg-bar' });
+    if (this.tasks) bar.appendChild(h('button', { class: 'chip', html: `${icon('target', 14)}<span>Tasks ${this.project.tasksDone.length}/${this.tasks.length}</span>`, onclick: () => { sheet.close(); this.showTasks(); } }));
+    const ci = g.course ? MANUAL.findIndex((c) => c.id === g.course[0]) : -1;
+    if (ci >= 0) bar.appendChild(h('button', { class: 'chip', html: `${icon('book', 14)}<span>Course chapter</span>`, onclick: () => { sheet.close(); this.saveNow(); this.app.showHome('manual'); this.app.home.openManual(ci, g.course[1]); } }));
+    if (bar.children.length) content.appendChild(bar);
+    const art = h('div', { class: 'mx-article lg-article' });
+    g.sections.forEach((sec, i) => {
+      const d = h('details', { class: 'lg-sec' });
+      if (i < 2) d.open = true;
+      d.appendChild(h('summary', {}, h('i', {}, String(i + 1)), sec.title));
+      d.appendChild(h('div', { class: 'lg-body', html: sec.html }));
+      art.appendChild(d);
+    });
+    content.appendChild(art);
+    const sheet = new Sheet({ title: `Guide · ${g.title}`, content, icon: 'book', cls: 'sheet-tall' });
+    sheet.open();
+    if (!this.project.guideSeen) { this.project.guideSeen = true; this.save(); }
   }
 
   updateFlows() {

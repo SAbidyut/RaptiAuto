@@ -15,13 +15,13 @@ function check(name, cond, detail = '') { if (!cond) failures++; console.log(`${
 // ---------------------------------------------------------------- structure
 const PLC = partChapters('plc');
 check('four parts, every chapter belongs to one', PARTS.length === 4 && MANUAL.every((c) => PARTS.some((p) => p.id === c.part)));
-check('the Bangla book has 7 chapters numbered 1…7', partChapters('bn').length === 7 && partChapters('bn').every((c, i) => c.no === i + 1));
+check('the Step-by-step course has 7 chapters numbered 1…7', partChapters('steps').length === 7 && partChapters('steps').every((c, i) => c.no === i + 1));
 check('nine PLC chapters', PLC.length === 9);
 check('chapter ids are unique, PLC chapters are numbered 1…9', new Set(MANUAL.map((c) => c.id)).size === MANUAL.length && PLC.every((c, i) => c.no === i + 1));
 check('the Arduino and Raspberry Pi parts have at least 6 chapters each', partChapters('arduino').length >= 6 && partChapters('pi').length >= 6);
 const wanted = ['PLC programming', 'Variable frequency drive (VFD)', 'Designing an HMI', 'Modbus: talking to devices'];
 for (const w of wanted) check(`chapter "${w}"`, PLC.some((c) => c.title === w));
-check('every chapter has at least 5 sections (3 in the Bangla book) with unique ids', MANUAL.every((c) => c.sections.length >= (c.part === 'bn' ? 3 : 5) && new Set(c.sections.map((s) => s.id)).size === c.sections.length));
+check('every chapter has at least 5 sections (3 in the Step-by-step course) with unique ids', MANUAL.every((c) => c.sections.length >= (c.part === 'steps' ? 3 : 5) && new Set(c.sections.map((s) => s.id)).size === c.sections.length));
 const all = MANUAL.flatMap((c) => c.sections.map((s) => s.html)).join('\n');
 check('no "undefined" / "NaN" / "[object" in the text', !/undefined(?! reference)|NaN|\[object/.test(all), (all.match(/.{30}(undefined|NaN|\[object).{20}/) || [''])[0]);
 const ids = new Set(LAB_EXAMPLES.map((e) => e.id));

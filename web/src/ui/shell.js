@@ -453,7 +453,7 @@ export class Shell {
   }
 
   manualIndex(el) {
-    if (!this.manualPart) this.manualPart = 'bn';
+    if (!this.manualPart) this.manualPart = 'steps';
     const hero = h('section', { class: 'mx-hero' });
     const parts = h('div', { class: 'mx-parts', role: 'tablist' });
     const body = h('div');
@@ -578,11 +578,11 @@ export class Shell {
       }
       body.innerHTML = '';
       if (this.labSeg === 'steps') {
-        // the small labs of the Bangla book, in order, with a link to the book
-        const bookCh = MANUAL.findIndex((c) => c.part === 'bn');
-        body.appendChild(h('button', { class: 'steps-book', onclick: () => { this.manualPart = 'bn'; this.go('manual'); if (bookCh >= 0) this.openManual(bookCh); } },
+        // the small labs of the Step-by-step course, in order, with a link to the course
+        const bookCh = MANUAL.findIndex((c) => c.part === 'steps');
+        body.appendChild(h('button', { class: 'steps-book', onclick: () => { this.manualPart = 'steps'; this.go('manual'); if (bookCh >= 0) this.openManual(bookCh); } },
           h('span', { class: 'sb-ic', html: icon('book', 22) }),
-          h('div', {}, h('b', {}, 'সহজ বাংলায় PLC — বইটি পড়ো'), h('small', {}, 'প্রতিটি ধাপের ব্যাখ্যা: ল্যাডার, VFD, Modbus, অ্যানালগ ইনপুট')),
+          h('div', {}, h('b', {}, 'Read the Step-by-step course'), h('small', {}, 'Every step explained: ladder, VFD, Modbus, analog input. Each lab also has its own Guide button.')),
           h('span', { html: icon('forward', 18) })));
         const grid = h('div', { class: 'ex-grid lab-ex-grid' });
         for (const ex of STEP_EXAMPLES) grid.appendChild(this.labExampleCard(ex));

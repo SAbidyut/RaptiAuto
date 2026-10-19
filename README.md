@@ -4,6 +4,12 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.27 — a Guide inside every lab, the Step-by-step course in English
+
+- **Guide button in every PLC lab** (next to Tasks at the top of the Lab screen, and in the ⋮ menu): a step-by-step walk-through of the open lab in collapsible sections — *What this lab does*, *Run it, step by step*, *Parts in this lab*, *Wiring list, wire by wire* (grouped: 230 V, 24 V inputs, outputs, drive terminals, analog, motor, communication; with wire colours and the drive parameters that differ from the factory setting), *The program, network by network* (the instruction list of every network with its comment), *Try it yourself*, *If it does not work* and *Build it yourself from an empty bench*.
+- The 16 **Step by step** labs have hand-written guides: the goal, what you learn, every network explained in plain words, detailed run / test steps, what to watch in Monitor, exercises and fault finding (Modbus time-out, wrong drive parameters, analog module without 24 V …). A Step-by-step lab opens its guide the first time. The other examples and your own labs get the generated guide.
+- **All in English**: the course (Manual → *Step by step*, 7 chapters), the 16 labs, their rung comments and tasks.
+
 ## New in 2.26 — Bangla step-by-step book, analog input module, laptop USB fixed
 
 - **সহজ বাংলায় PLC** — a new first part of the **Manual** (tab *বাংলা বই*): seven short chapters in simple Bangla, one new idea per step — ladder basics (button → lamp, NO / NC, latch, SET / RST), timers, the 1 s clock and counters, the MS300 on its terminals (MI1 / MI2, interlock), **Modbus RTU** (RS-485, D1120 / M1143, MODRW taken apart, the 2000H command word, writing the speed and reading the drive back, a fault-finding checklist and a review of a typical student FWD / REV Modbus program), **analog input** (0–10 V, 4–20 mA, scaling, averaging) and a final project, with practice exercises and a one-page reference. New Bangla diagrams throughout.
