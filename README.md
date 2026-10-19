@@ -4,6 +4,10 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.29 — keyboard instruction box removed
+
+- The typed instruction box of 2.28 (second tap on a ladder cell) is removed again. The Ladder tab works as in 2.27: tap a cell to select it, tap a filled cell again to change it with the keypad, and add instructions with the toolbar buttons or the instruction picker.
+
 ## New in 2.27 — a Guide inside every lab, the Step-by-step course in English
 
 - **Guide button in every PLC lab** (next to Tasks at the top of the Lab screen, and in the ⋮ menu): a step-by-step walk-through of the open lab in collapsible sections — *What this lab does*, *Run it, step by step*, *Parts in this lab*, *Wiring list, wire by wire* (grouped: 230 V, 24 V inputs, outputs, drive terminals, analog, motor, communication; with wire colours and the drive parameters that differ from the factory setting), *The program, network by network* (the instruction list of every network with its comment), *Try it yourself*, *If it does not work* and *Build it yourself from an empty bench*.
