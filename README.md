@@ -4,13 +4,6 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
-## New in 2.28 — type ladder instructions with the keyboard
-
-- **Ladder tab:** tap a cell to select it, tap it **again** and an instruction box opens for the phone keyboard — like the instruction input of ISPSoft on a PC. Type instruction-list text and press **Enter**: `LD X0`, `LDI X1`, `AND X2`, `ANI M0` (in series), `OR M0`, `ORI M1` (in parallel), `LDP` / `LDF` (edges), compares `LD= D0 K10`, `AND> D0 K5`, `DLD>=`, `FLD<`, outputs `OUT Y0`, `SET M0`, `RST C0`, `TMR T0 K50`, `CNT C0 K5`, and any instruction of the picker (`MOV K10 D0`, `MOVP`, `DMOV`, `ADD`, `MODRW K1 K6 H2000 D10 K1`, `FROM K0 K12 D0 K4` …). Short forms: `X0`, `/X1` (NC), `^X0` (rising edge), `-` (line).
-- The box **stays open**: the cursor moves on after every line, so a whole network can be typed in a row (`LD X0` ↵ `OR M0` ↵ `ANI X1` ↵ `OUT M0` ↵). A second output right after an output goes in parallel below it, a contact after an output starts the next network, a tap on another cell moves the cursor there.
-- A live preview names the instruction or says what is wrong (unknown instruction, missing operands, a device that is not allowed, X / Y are octal …) before it is placed. Tapping a filled cell twice opens it with its instruction (e.g. `ANI X1`) to change it. One-tap chips for the common mnemonics and the devices already used; *Keypad instead* opens the old keypad; *Help* lists every form.
-- On a computer keyboard simply start typing on the Ladder tab — the box opens with the first letter.
-
 ## New in 2.27 — a Guide inside every lab, the Step-by-step course in English
 
 - **Guide button in every PLC lab** (next to Tasks at the top of the Lab screen, and in the ⋮ menu): a step-by-step walk-through of the open lab in collapsible sections — *What this lab does*, *Run it, step by step*, *Parts in this lab*, *Wiring list, wire by wire* (grouped: 230 V, 24 V inputs, outputs, drive terminals, analog, motor, communication; with wire colours and the drive parameters that differ from the factory setting), *The program, network by network* (the instruction list of every network with its comment), *Try it yourself*, *If it does not work* and *Build it yourself from an empty bench*.

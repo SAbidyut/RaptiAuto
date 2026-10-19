@@ -9,7 +9,6 @@ import {
 } from '../sim/ladder.js';
 import { parseOperand, addrSortKey, SPECIAL, fmtAddr } from '../sim/address.js';
 import { openKeypad, openInstrPicker } from './keypad.js';
-import { parseInstrLine, elementLine, IL_CHIPS } from '../sim/il-input.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -837,158 +836,11 @@ export class LadderView {
     if (hit.header) { if (this.cur.rung === hit.rung) this.editComment(hit.rung); this.cur = { rung: hit.rung, row: 0, col: this.cur.col }; this.clampCursor(); this.render(); return; }
     const same = this.cur.rung === hit.rung && this.cur.row === hit.row && this.cur.col === hit.col;
     this.cur = { rung: hit.rung, row: hit.row, col: hit.col };
-    // with the instruction box open a tap only moves the cursor: the next line goes there
-    if (this.typeBox) { this.afterOut = false; this.render(); this.typeBox.moved(); return; }
     Native.vibrate(4);
     const el = this.elAtCursor();
     if (this.monitorActive() && el) { this.onlineMenu(el, e.clientX, e.clientY); this.render(); return; }
-    // a second tap on the selected cell: type the instruction with the keyboard (like ISPSoft)
-    if (same) { this.render(); this.typeInstr(); return; }
+    if (same && el) this.editAtCursor();
     this.render();
-  }
-
-  // ------------------------------------------------------------------ typed instructions
-  /**
-   * The instruction input box: type LD X0, ANI X1, OR M0, OUT Y0, TMR T0 K50, MOV K10 D0 … and press
-   * Enter. It stays open, so a whole network can be typed line after line; the cursor moves on by
-   * itself. `first` = a key already pressed on a hardware keyboard.
-   */
-  typeInstr(first = '') {
-    const at = this.elAtCursor();
-    // a filled cell opens with its instruction, so it can be changed (Enter replaces it)
-    let editing = !first && at && at.t !== 'H' ? { ...this.cur } : null;
-    this.afterOut = false;
-    const input = h('input', { class: 'input il-in', type: 'text', autocapitalize: 'characters', autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter', placeholder: 'LD X0 · OUT Y0 · MOV K10 D0' });
-    input.value = first || (editing ? elementLine(at, this.cur.col === 'out' ? 0 : this.cur.col) : '');
-    const where = h('div', { class: 'il-where' });
-    const prev = h('div', { class: 'il-prev' });
-    const log = h('div', { class: 'il-log' });
-    const ins = (word) => {
-      const v = input.value;
-      const sp = !v || /\s$/.test(v) ? '' : ' ';
-      input.value = /^[A-Z<>=&|^]+$/.test(word) && !/\s/.test(v.trim()) ? word + ' ' : v + sp + word + (word === '-' ? '' : ' ');
-      update(); input.focus();
-    };
-    const chips = h('div', { class: 'il-chips' }, ...IL_CHIPS.map((w) => h('button', { class: 'chip sm', onmousedown: (e) => e.preventDefault(), onclick: () => ins(w) }, w)));
-    const devs = h('div', { class: 'il-chips il-devs' }, ...this.recent().slice(0, 18).map((a) => h('button', { class: 'chip sm', onmousedown: (e) => e.preventDefault(), onclick: () => ins(a) }, a)));
-    const update = () => {
-      const c = this.cur;
-      where.textContent = `Network ${c.rung + 1} · row ${c.row + 1} · ${c.col === 'out' ? 'output column' : 'column ' + (c.col + 1)}${editing ? ' · Enter replaces this cell' : ''}`;
-      const v = input.value.trim();
-      if (!v) { prev.className = 'il-prev'; prev.textContent = 'Contacts: LD / LDI / AND / ANI (series), OR / ORI (parallel), LDP … · outputs: OUT, SET, RST, TMR, MOV …'; return; }
-      const r = parseInstrLine(v);
-      if (r.err) { prev.className = 'il-prev err'; prev.textContent = r.err; return; }
-      const d = INSTR[r.el.t];
-      prev.className = 'il-prev ok';
-      prev.textContent = `${r.place === 'parallel' ? 'In parallel (OR)' : r.place === 'output' ? 'Output' : r.place === 'stl' ? 'Step (on the bus bar)' : r.el.t === 'H' ? 'Line' : 'In series'}: ${r.el.t === 'H' ? 'horizontal line' : d.name}`;
-    };
-    const submit = () => {
-      const v = input.value.trim();
-      if (!v) { sheet.close(); return; }
-      const r = parseInstrLine(v);
-      if (r.err) { input.classList.remove('shake'); void input.offsetWidth; input.classList.add('shake'); Native.vibrate(20); return; }
-      const msg = this.placeTyped(r, editing);
-      editing = null;
-      if (msg.err) { prev.className = 'il-prev err'; prev.textContent = msg.err; return; }
-      log.prepend(h('div', { class: 'il-done' }, h('b', {}, '✓ ' + v.toUpperCase().replace(/\s+/g, ' ')), h('span', {}, msg.ok)));
-      while (log.children.length > 2) log.lastChild.remove();
-      input.value = '';
-      update(); input.focus();
-      Native.vibrate(6);
-    };
-    input.addEventListener('input', update);
-    input.addEventListener('keydown', (e) => {
-      // keep Enter / Escape away from the app's own key handling (Escape = Back would leave the tab)
-      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); submit(); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); sheet.close(); }
-    });
-    const content = h('div', { class: 'il-box' },
-      where,
-      h('div', { class: 'il-row1' }, input, h('button', { class: 'btn btn-primary il-enter', html: `${icon('check', 18)}<span>Enter</span>`, onmousedown: (e) => e.preventDefault(), onclick: submit })),
-      prev, chips, devs, log,
-      h('div', { class: 'il-foot' },
-        h('button', { class: 'btn btn-ghost', html: `${icon('keyboard', 16)}<span>Keypad instead</span>`, onclick: () => { sheet.close(); const el = this.elAtCursor(); if (el && el.t !== 'H') this.editAtCursor(); else openInstrPicker({ onPick: (t) => this.insertAny(t) }); } }),
-        h('button', { class: 'btn btn-ghost', html: `${icon('help', 16)}<span>Help</span>`, onclick: () => this.typeHelp() })));
-    const sheet = new Sheet({ title: 'Type an instruction', content, icon: 'keyboard', cls: 'il-sheet', modal: false, onClose: () => { this.typeBox = null; } });
-    this.typeBox = { moved: () => { editing = null; update(); input.focus(); } };
-    sheet.open();
-    update();
-    setTimeout(() => { input.focus(); const n = input.value.length; try { input.setSelectionRange(editing ? 0 : n, n); } catch (e) { /* ignore */ } }, 60);
-  }
-
-  /** Put a parsed instruction into the ladder at the cursor. Returns { ok: where it went } or { err }. */
-  placeTyped(r, editing) {
-    const c = this.cur, cols = this.prog.cols;
-    let rung = this.rung();
-    const el = r.el;
-    const here = () => `network ${c.rung + 1}`;
-    if (editing) {
-      // the cell the box was opened on: replace what is there when the kind fits
-      if (r.place === 'output' && c.col === 'out') { placeOutput(rung, c.row, el); this.afterOut = true; this.commit('Type'); return { ok: `replaced the output · ${here()}` }; }
-      if ((r.place === 'contact' || r.place === 'parallel') && c.col !== 'out' && rung.cells[c.row][c.col]) {
-        rung.cells[c.row][c.col] = el;
-        c.col = c.col >= cols - 1 ? 'out' : c.col + 1;
-        this.afterOut = false; this.commit('Type'); this.ensureVisible();
-        return { ok: `replaced the contact · ${here()}` };
-      }
-    }
-    if (r.place === 'stl') {
-      const first = rung.cells[0][0];
-      if (first && first.t !== 'H' && first.t !== 'STL' && !insertCell(rung, 0, 0)) return { err: 'The first row is full — delete a cell first' };
-      rung.cells[0][0] = el;
-      this.cur = { rung: c.rung, row: 0, col: 1 };
-      this.afterOut = false; this.commit('Type'); this.ensureVisible();
-      return { ok: `step at the bus bar · ${here()}` };
-    }
-    if (r.place === 'output') {
-      // after an output another output goes in parallel below it (like OUT Y0 / OUT Y1 under one condition)
-      if (this.afterOut && rung.outs[c.row]) {
-        // a new row at the bottom (below any OR branches), joined at the output column
-        const from = c.row;
-        addRow(rung);
-        c.row = rung.cells.length - 1;
-        for (let k = from; k < c.row; k++) rung.vl[k][cols - 1] = true;
-      }
-      placeOutput(rung, c.row, el);
-      c.col = 'out';
-      this.afterOut = true; this.commit('Type'); this.ensureVisible();
-      return { ok: `output · ${here()} · row ${c.row + 1}` };
-    }
-    if (c.col === 'out') {
-      // a contact after an output starts the next network
-      if (!this.afterOut || r.place === 'parallel') return { err: r.place === 'parallel' ? 'OR needs a contact before it — type LD … first' : 'Contacts go in the grid: tap a cell on the left of the network' };
-      this.prog.rungs.splice(c.rung + 1, 0, emptyRung(cols));
-      this.cur = { rung: c.rung + 1, row: 0, col: 0 };
-      return this.placeTyped(r, null);
-    }
-    if (r.place === 'parallel') {
-      let col = c.col;
-      if (!rung.cells[c.row][col] && col > 0 && rung.cells[c.row][col - 1] && rung.cells[c.row][col - 1].t !== 'H') col--;
-      const row0 = c.row;
-      placeParallel(rung, row0, col, el);
-      c.row = row0; c.col = Math.min(cols - 1, col + 1);
-      this.afterOut = false; this.commit('Type'); this.ensureVisible();
-      return { ok: `in parallel below column ${col + 1} · ${here()}` };
-    }
-    if (rung.cells[c.row][c.col] && c.col === cols - 1 && !editing && rung.cells[c.row].every(Boolean)) return { err: 'This row is full — type the output now (OUT …)' };
-    placeContact(rung, c.row, c.col, el);
-    const col = c.col;
-    c.col = col >= cols - 1 ? 'out' : col + 1;
-    this.afterOut = false; this.commit('Type'); this.ensureVisible();
-    return { ok: `column ${col + 1} · ${here()}` };
-  }
-
-  typeHelp() {
-    dialog({
-      title: 'Typing instructions',
-      body: `<div class="lab-help">
-        <p>Tap a cell, tap it <b>again</b> and type — like the instruction input of ISPSoft. Press <b>Enter</b>: the instruction goes into the ladder and the box stays open for the next one.</p>
-        <p><b>Contacts</b> (in the grid): <code>LD X0</code> / <code>AND X0</code> (NO, in series), <code>LDI X1</code> / <code>ANI X1</code> (NC), <code>OR M0</code> / <code>ORI M0</code> (in parallel below), <code>LDP X0</code> / <code>LDF X0</code> (edges), compares <code>LD= D0 K10</code>, <code>AND&gt; D0 K5</code>, <code>DLD&gt;= D0 K100000</code>. Short forms: <code>X0</code>, <code>/X1</code> (NC), <code>^X0</code> (rising edge), <code>-</code> (line).</p>
-        <p><b>Outputs</b>: <code>OUT Y0</code>, <code>SET M0</code>, <code>RST M0</code>, <code>TMR T0 K50</code>, <code>CNT C0 K5</code>, <code>MOV K10 D0</code>, <code>MOVP</code> / <code>DMOV</code>, <code>ADD D0 K1 D0</code>, <code>MODRW K1 K6 H2000 D10 K1</code>, <code>FROM K0 K12 D0 K4</code> … any instruction of the picker.</p>
-        <p><b>A whole network in a row</b>: <code>LD X0</code> ↵ <code>OR M0</code> ↵ <code>ANI X1</code> ↵ <code>OUT M0</code> ↵. A second output right after an output goes in parallel below it; a contact after an output starts the next network.</p>
-        <p class="muted">On a computer keyboard just start typing on the Ladder tab — the box opens with the first letter.</p></div>`,
-      actions: [{ label: 'Got it', value: true, cls: 'btn-primary' }],
-    });
   }
 
   elAtCursor() {
@@ -1082,8 +934,6 @@ export class LadderView {
     else if (k === 'F7') this.insertOutput('OUT');
     else if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') this.undo();
     else if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'y') this.redo();
-    // any letter (or / ^ -) opens the instruction input with that character, like ISPSoft
-    else if (k.length === 1 && /[A-Za-z/^-]/.test(k) && !e.ctrlKey && !e.metaKey && !e.altKey) this.typeInstr(k.toUpperCase());
     else handled = false;
     if (handled) { e.preventDefault(); this.clampCursor(); this.ensureVisible(); }
   }
@@ -1135,7 +985,6 @@ export class LadderView {
         <p><b>32-bit:</b> tap <b>16-bit</b> in the keypad to get the <b>D…</b> form (DMOV, DADD …): the value uses two registers (D0 and D1). <b>Operands:</b> <code>K4M0</code> = M0–M15 as one number (K1 … K4, up to K8 in 32-bit), <code>F1.5</code> = floating-point constant, <code>E0 … E7 / F0 … F7</code> = index registers, <code>D10E0</code> = D(10 + E0). <code>M1018</code> ON makes DSIN / DCOS / DTAN use degrees.</p>
         <p>The diagram always fits the screen width; networks are stacked and the program grows downward — scroll up and down.</p>
         <p><b>CJ / CALL:</b> give the target network a pointer — long-press its number → <b>Pointer label</b>. Subroutines go after <b>FEND</b> and end with <b>SRET</b>. <b>Step ladder:</b> <code>M1002 → SET S0</code>, each step starts with <b>STL Sn</b> (first cell), <b>SET Sm</b> moves to the next step, <b>RET</b> ends the block.</p>
-        <p><b>Type it like on a PC:</b> tap a cell, then tap it <b>again</b> — a box opens for the phone keyboard. Type <code>LD X0</code>, <code>ANI X1</code>, <code>OR M0</code>, <code>OUT Y0</code>, <code>TMR T0 K50</code>, <code>MOV K10 D0</code> … and press Enter; the box stays open for the next line. On a computer just start typing.</p>
         <p>Enter the device with the keypad. <b>X / Y are octal</b> on Delta PLCs (X0–X7, X10–X17). Timers T0–T199 count in 100 ms: <code>TMR T0 K50</code> = 5 s.</p>
         <p>Tap an element again to edit it, long-press for more. <b>│</b> links the cell's right edge to the row below.</p>
         <p><b>Download</b> writes the program over USB; while online and in RUN the ladder shows <b style="color:#4ade80">live power flow</b>. Tap an element to force inputs or change values.</p>

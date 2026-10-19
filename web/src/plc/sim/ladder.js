@@ -806,22 +806,6 @@ function checkInstr(el, ops) {
  * Returns { ok, errors:[{rung,row,col,msg}], warnings:[…], rungs (executable), labels (P → index in rungs),
  * stateCount, steps, il:[{rung, lines, error}] }.
  */
-/** Operand errors of one instruction (as the compiler would report them), or null when it is fine. */
-export function checkElement(el, model = null) {
-  const d = INSTR[el.t];
-  if (!d) return `Unknown instruction ${el.t}`;
-  const ops = [];
-  const wide = is32(el), flt = isFloatInstr(el.t);
-  for (let i = 0; i < d.ops.length; i++) {
-    const r = checkOperand(el.a[i], d.ops[i], { model, warn: () => {} });
-    if (r.err) return `${mnemonic(el)}: ${r.err}`;
-    const w = widthCheck(r.op, d.ops[i], wide || ((d.ops[i] === 'fsrc' || d.ops[i] === 'fdst') && flt));
-    if (w) return `${mnemonic(el)}: ${w}`;
-    ops.push(r.op);
-  }
-  return checkInstr(el, ops);
-}
-
 export function compileProgram(program, model) {
   const prog = normalizeProgram(program);
   const errors = [], warnings = [];
