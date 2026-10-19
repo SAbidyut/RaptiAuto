@@ -14,6 +14,7 @@ import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
 import { LAB_EXAMPLES, buildExample, emptyLab } from '../plc/examples.js';
+import { STEP_EXAMPLES } from '../plc/examples-steps.js';
 import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from '../pi/examples.js';
 import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } from '../pi/boards.js';
@@ -452,7 +453,7 @@ export class Shell {
   }
 
   manualIndex(el) {
-    if (!this.manualPart) this.manualPart = 'plc';
+    if (!this.manualPart) this.manualPart = 'bn';
     const hero = h('section', { class: 'mx-hero' });
     const parts = h('div', { class: 'mx-parts', role: 'tablist' });
     const body = h('div');
@@ -572,11 +573,21 @@ export class Shell {
     const body = h('div', { class: 'seg-body' });
     const draw = (scroll) => {
       seg.innerHTML = '';
-      for (const [id, label, n] of [['examples', 'Examples', LAB_EXAMPLES.length], ['mine', 'My projects', labs.length]]) {
+      for (const [id, label, n] of [['steps', 'Step by step', STEP_EXAMPLES.length], ['examples', 'Examples', LAB_EXAMPLES.length], ['mine', 'My projects', labs.length]]) {
         seg.appendChild(h('button', { class: 'seg' + (this.labSeg === id ? ' active' : ''), onclick: () => { this.labSeg = id; draw(); } }, label, h('span', { class: 'chip-n' }, String(n))));
       }
       body.innerHTML = '';
-      if (this.labSeg === 'mine') {
+      if (this.labSeg === 'steps') {
+        // the small labs of the Bangla book, in order, with a link to the book
+        const bookCh = MANUAL.findIndex((c) => c.part === 'bn');
+        body.appendChild(h('button', { class: 'steps-book', onclick: () => { this.manualPart = 'bn'; this.go('manual'); if (bookCh >= 0) this.openManual(bookCh); } },
+          h('span', { class: 'sb-ic', html: icon('book', 22) }),
+          h('div', {}, h('b', {}, 'সহজ বাংলায় PLC — বইটি পড়ো'), h('small', {}, 'প্রতিটি ধাপের ব্যাখ্যা: ল্যাডার, VFD, Modbus, অ্যানালগ ইনপুট')),
+          h('span', { html: icon('forward', 18) })));
+        const grid = h('div', { class: 'ex-grid lab-ex-grid' });
+        for (const ex of STEP_EXAMPLES) grid.appendChild(this.labExampleCard(ex));
+        body.appendChild(grid);
+      } else if (this.labSeg === 'mine') {
         if (!labs.length) {
           body.appendChild(h('div', { class: 'empty-state small-empty' },
             h('div', { class: 'empty-ic', html: icon('folder', 30) }),

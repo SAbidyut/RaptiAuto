@@ -11,16 +11,18 @@ import ch9 from './ch9.js';
 
 import ARDUINO from './ard/index.js';
 import PI from './pi/index.js';
+import BANGLA from './bn/index.js';
 
 /** The three parts of the manual (the tabs of the Manual page). */
 export const PARTS = [
+  { id: 'bn', name: 'বাংলা বই', sub: 'সহজ ভাষায় · ধাপে ধাপে', title: 'সহজ বাংলায় PLC, VFD, Modbus আর অ্যানালগ', lead: 'একটি বোতাম আর একটি বাতি থেকে শুরু করে পট-কন্ট্রোলড Modbus মোটর পর্যন্ত — ১৬টি ছোট ধাপ, প্রতিটির সাথে একটি ল্যাব যা এক ট্যাপে খোলে।', search: 'বইয়ে খোঁজো: টাইমার, Modbus, অ্যানালগ …' },
   { id: 'plc', name: 'PLC Lab', sub: 'PLC · VFD · HMI · Modbus', title: 'Learn PLC, VFD, HMI and Modbus', lead: 'From the first ladder rung to a Modbus network with a PID oven — nine chapters, with diagrams and examples that open with one tap.', search: 'Search the manual: Modbus, timer, PB …' },
   { id: 'arduino', name: 'Arduino', sub: 'Circuits · Code · IoT', title: 'Build circuits and code them', lead: 'Wire parts on the breadboard, write the sketch and watch it run — step by step, with a wiring picture for every project.', search: 'Search the manual: servo, LCD, Serial …' },
   { id: 'pi', name: 'Raspberry Pi', sub: 'Python · GPIO · Desktop', title: 'Python on the Raspberry Pi', lead: 'The Pi and Pico in your pocket: GPIO, Thonny, the desktop and the terminal, with diagrams for every step.', search: 'Search the manual: GPIO, gpiozero, Thonny …' },
 ];
 
 const tag = (part, list) => list.map((c) => Object.assign(c, { part }));
-export const MANUAL = [...tag('plc', [ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8, ch9]), ...tag('arduino', ARDUINO), ...tag('pi', PI)];
+export const MANUAL = [...tag('bn', BANGLA), ...tag('plc', [ch1, ch2, ch3, ch4, ch5, ch6, ch7, ch8, ch9]), ...tag('arduino', ARDUINO), ...tag('pi', PI)];
 /** Chapters of one part, in order. */
 export const partChapters = (part) => MANUAL.filter((c) => c.part === part);
 

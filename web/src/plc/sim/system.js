@@ -57,6 +57,8 @@ export class LabSystem {
         rt.hmi = new HmiRuntime(this.project.hmi, this.hmiLink(rt));
       } else if (rt.kind === 'motor') {
         rt.rpm = 0; rt.angle = 0;
+      } else if (rt.kind === 'ad') {
+        rt.ad = new AdModule();
       } else if (SLAVE_CLASSES[rt.kind]) {
         // Modbus slave on the RS-485 bus (temperature controller, sensor, energy meter)
         rt.mb = new SLAVE_CLASSES[rt.kind](dev, () => deviceProps(rt.dev));
@@ -343,6 +345,20 @@ export class LabSystem {
           }
           break;
         }
+        case 'ad': {
+          // DVP04AD-E2: 24 V DC on 24V / 0V, then every channel as on the EX2 (I+ bridged to V+ = current input)
+          const r = diff(id, '24V', id, '0V');
+          const ad = rt.ad;
+          ad.powered = !!(r && !r.ac && r.d >= 18);
+          ad.overvolt = !!(r && r.ac);
+          for (let ch = 1; ch <= 4; ch++) {
+            const vr = diff(id, `V${ch}+`, id, `VI${ch}-`), ir = diff(id, `I${ch}+`, id, `VI${ch}-`);
+            const mA = find(node(id, `I${ch}+`)) === find(node(id, `V${ch}+`)) || (!vr && !!ir);
+            const rr = mA ? ir || vr : vr;
+            ad.measure(ch - 1, rr && !rr.ac && !rr.same ? rr.d : 0);
+          }
+          break;
+        }
         case 'mbth': {
           // 10–30 V DC between V+ and V−
           const r = diff(id, 'V+', id, 'V-');
@@ -399,6 +415,10 @@ export class LabSystem {
         default: break;
       }
     }
+    // expansion modules clip onto the right side of the last PLC on the rail: module K0, K1 … for FROM / TO
+    const plcs = this.byKind('plc'), host = plcs[plcs.length - 1] || null, ads = this.byKind('ad');
+    for (const p of plcs) p.cpu.ext = p === host ? ads.map((a) => a.ad) : [];
+    for (const a of ads) a.ad.plc = host ? host.dev.id : null;
     // motors ↔ drives (phase order decides the direction)
     const phases = ['U/T1', 'V/T2', 'W/T3'];
     for (const v of this.byKind('vfd')) { v.vfd.motor.connected = false; v.motorId = null; v.motorOff = null; }
@@ -805,6 +825,11 @@ export class LabSystem {
           if (!rt.mb.powered) add('warn', `${this.slaveName(rt)} has no power — wire L and N from the MCB.`, rt.dev.id);
           else if (!this.commNet()(rt.dev.id, 'RS485')) add('info', `${this.slaveName(rt)}: its RS-485 terminals are not connected to the bus.`, rt.dev.id);
           break;
+        case 'ad':
+          if (rt.ad.overvolt) add('error', `${name}: 230 V AC on the 24 V DC supply of the module!`, rt.dev.id);
+          else if (!rt.ad.powered) add('warn', `${name} has no power — wire its 24V to +24 V and 24G (0V) to 0 V.`, rt.dev.id);
+          else if (!rt.ad.plc) add('warn', `${name}: there is no PLC for the module to clip onto.`, rt.dev.id);
+          break;
         case 'mbth':
           if (rt.overvolt) add('error', `${this.slaveName(rt)}: 230 V AC on a 10–30 V DC sensor!`, rt.dev.id);
           else if (rt.reversed) add('warn', `${this.slaveName(rt)}: supply reversed — V+ is +24 V, V− is 0 V.`, rt.dev.id);
@@ -925,4 +950,48 @@ function describeVfdReq(req, values) {
     return `Write ${hex(a)} = ${hex(v)}${what ? ' → ' + what : ''}${req.fc === 16 ? ` (+${values.length - 1})` : ''}`;
   }
   return `FC ${req.fc}`;
+}
+
+/**
+ * Delta DVP04AD-E2 analog input module: the control registers (CR) the PLC reads with FROM and
+ * writes with TO. CR#0 model code, CR#1 input mode (one hex digit per channel: 0 = ±10 V, 1 = 0–10 V,
+ * 2 = ±20 mA, 3 = 0–20 mA, 4 = 4–20 mA), CR#2–5 samples averaged (1–100), CR#6–9 averaged values,
+ * CR#12–15 present values (full scale ±32000).
+ */
+export class AdModule {
+  constructor() {
+    this.cr = new Array(48).fill(0);
+    this.cr[0] = 0x0401;
+    for (let k = 0; k < 4; k++) this.cr[2 + k] = 10;
+    this.hist = [[], [], [], []];
+    this.powered = false;
+    this.plc = null;
+  }
+  mode(ch) { return (this.cr[1] >> (ch * 4)) & 15; }
+  /** One reading of a channel: volts between V+ (or I+, the current input) and VI−. */
+  measure(ch, volts) {
+    if (!this.powered) { this.cr[12 + ch] = 0; this.cr[6 + ch] = 0; this.hist[ch].length = 0; return; }
+    const m = this.mode(ch);
+    // a current loop is carried as the voltage it makes across the 250 Ω input (20 mA = 5 V)
+    const ma = volts / 0.25;
+    let v;
+    switch (m) {
+      case 1: v = volts * 3200; break;
+      case 2: v = ma * 1600; break;
+      case 3: v = ma * 1600; break;
+      case 4: v = (ma - 4) * 2000; break;
+      default: v = volts * 3200;
+    }
+    const lo = m === 1 || m === 3 || m === 4 ? 0 : -32000;
+    v = Math.round(Math.max(lo, Math.min(32000, v)));
+    this.cr[12 + ch] = v;
+    const h = this.hist[ch], n = Math.max(1, Math.min(100, this.cr[2 + ch] || 1));
+    h.push(v);
+    while (h.length > n) h.shift();
+    this.cr[6 + ch] = Math.round(h.reduce((a, b) => a + b, 0) / h.length);
+  }
+  read(i) { return i >= 0 && i < this.cr.length ? this.cr[i] : 0; }
+  write(i, v) {
+    if (i === 1 || (i >= 2 && i <= 5)) this.cr[i] = v & 0xFFFF;
+  }
 }

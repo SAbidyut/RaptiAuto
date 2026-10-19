@@ -4,6 +4,13 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.26 — Bangla step-by-step book, analog input module, laptop USB fixed
+
+- **সহজ বাংলায় PLC** — a new first part of the **Manual** (tab *বাংলা বই*): seven short chapters in simple Bangla, one new idea per step — ladder basics (button → lamp, NO / NC, latch, SET / RST), timers, the 1 s clock and counters, the MS300 on its terminals (MI1 / MI2, interlock), **Modbus RTU** (RS-485, D1120 / M1143, MODRW taken apart, the 2000H command word, writing the speed and reading the drive back, a fault-finding checklist and a review of a typical student FWD / REV Modbus program), **analog input** (0–10 V, 4–20 mA, scaling, averaging) and a final project, with practice exercises and a one-page reference. New Bangla diagrams throughout.
+- **16 "Step by step" labs** (PLC Lab → *Step by step* tab, also in Examples): each is a small, fully wired and downloaded lab with Bangla rung comments and self-checking tasks — from *Step 01 · one button → one lamp* to *Step 16 · pot → DVP04AD-E2 → PLC → Modbus → VFD*.
+- **Delta DVP04AD-E2 analog input module** (＋ Add device → *PLC expansion modules*): clips onto the right side of the PLC in 3D and 2D, 24 V supply, four channels with V+ / I+ / VI− (I+ bridged to V+ = current input), POWER / ERROR / A→D LEDs and live channel values in 2D. The PLC reads it with **FROM** and configures it with **TO** (new instruction group *12 · Special modules*): CR#1 input mode per channel (±10 V, 0–10 V, ±20 mA, 0–20 mA, 4–20 mA), CR#2–5 samples averaged, CR#6–9 averaged values, CR#12–15 present values, full scale ±32000.
+- **Laptop USB cable fixed in 3D**: the plug sat upright next to the laptop and the cable ended in mid-air; the plug now sits in the laptop's USB port and the cable leaves from it.
+
 ## New in 2.25 — an empty PLC bench, R-Y-B motor wires
 
 - **PLC Lab → New project** now opens an **empty bench**: no device and no wire is placed for you. The student adds every part (MCB, supply, PLC, VFD, motor …) and wires it. A card in the middle ("An empty bench") has the **Add a device** button. The old pre-wired start is still in the examples as **Starter lab (PLC + power)**.

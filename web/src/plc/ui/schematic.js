@@ -15,7 +15,7 @@ const GAP_MIN = 34;     // minimum gap between devices
 const MARGIN = 26;      // band margin left / right
 const CONSOLE_PER_ROW = 8;
 
-const CAT_COLOR = { plc: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', sensor: '#14b8a6', switchgear: '#f43f5e', motor: '#94a3b8', pc: '#64748b', modbus: '#c084fc' };
+const CAT_COLOR = { plc: '#3b82f6', ext: '#3b82f6', hmi: '#06b6d4', vfd: '#a855f7', power: '#f59e0b', field: '#22c55e', sensor: '#14b8a6', switchgear: '#f43f5e', motor: '#94a3b8', pc: '#64748b', modbus: '#c084fc' };
 // the same colours as the 3D Network view: RS-485 violet, RS-232 amber, USB sky blue
 export const BUS_COLOR = { rs232: '#f59e0b', rs485: '#a78bfa', usb: '#38bdf8' };
 const LAMP = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
@@ -42,7 +42,7 @@ function edgeOf(def, port) {
   return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
 }
 
-const BODY_H = { plc: 196, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112, tc: 150, mbth: 132, meter: 132 };
+const BODY_H = { plc: 196, ad: 196, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112, tc: 150, mbth: 132, meter: 132 };
 
 function symbolFor(dev) {
   const def = DEVICE_DEFS[dev.type];
@@ -55,7 +55,7 @@ function symbolFor(dev) {
   top.sort(order); bottom.sort(def.sim === 'plc' ? (a, b) => plcKey(a) - plcKey(b) : order);
   const slotW = (p) => (p.kind === 'comm' ? COMM_W : P);
   const rowW = (row) => row.reduce((s, p) => s + slotW(p), 0);
-  const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130, tc: 130, mbth: 124, meter: 116 }[def.sim] || 104;
+  const minW = { plc: 300, ad: 150, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130, tc: 130, mbth: 124, meter: 116 }[def.sim] || 104;
   const w = Math.max(minW, rowW(top) + SIDE * 2, rowW(bottom) + SIDE * 2);
   const h = BODY_H[def.sim] || 118;
   const slots = new Map();
@@ -71,7 +71,7 @@ function symbolFor(dev) {
 // ====================================================================== layout + routing
 function bandsFor(devices) {
   const rail1 = [], rail2 = [], desk = [], hmi = [], consoleDevs = [], motors = [];
-  const ORDER = { mcb: 0, power: 1, plc: 2 };
+  const ORDER = { mcb: 0, power: 1, plc: 2, ext: 2.5 };
   for (const d of devices) {
     const def = DEVICE_DEFS[d.type];
     if (!def) continue;
@@ -653,6 +653,21 @@ function drawDevice(g, sym) {
         set(btn, 'r', t ? 11 : 9);
         const s = t ? 'TRIPPED' : 'OK';
         if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state ' + (t ? 'err' : 'ok')); }
+      };
+      break;
+    }
+    case 'ad': {
+      // DVP04AD-E2: DELTA + model, POWER / ERROR / A→D LEDs and the four channel readings
+      el('rect', { class: 'sd-plcface', x: 10, y: 30, width: w - 20, height: h - 60, rx: 6 }, g);
+      txt(22, 52, '▲ DELTA', 'sd-plclogo');
+      txt(22, 72, 'DVP04AD-E2', 'sd-mini l');
+      const st = {};
+      [['POWER', '#36ff6a'], ['ERROR', '#ff3b30'], ['A→D', '#ffb020']].forEach(([t, c], i) => { st[t] = led(w - 26, 46 + i * 14, c, 3.4); txt(w - 34, 49 + i * 14, t, 'sd-mini r'); });
+      const vals = [0, 1, 2, 3].map((k) => { txt(22, 100 + k * 18, `CH${k + 1}`, 'sd-mini l'); return txt(w - 20, 100 + k * 18, '', 'sd-mini r'); });
+      update = (rt, t) => {
+        const a = rt.ad;
+        ledOn(st.POWER, a && a.powered); ledOn(st.ERROR, a && a.powered && !a.plc && Math.floor(t * 3) % 2); ledOn(st['A→D'], a && a.powered && !!a.plc && Math.floor(t * 4) % 2);
+        vals.forEach((e, k) => { const s = a && a.powered ? String(a.cr[12 + k]) : '—'; if (e.textContent !== s) e.textContent = s; });
       };
       break;
     }

@@ -83,6 +83,23 @@ function plcPorts(type) {
   return ports;
 }
 
+/** DVP04AD-E2: as tall and deep as the PLC, terminal rows like the PLC (CH1 / CH2 on top, CH3 / CH4 below). */
+export const AD_GEO = {
+  w: 62,
+  top: ['24V', '0V', 'FE', 'V1+', 'I1+', 'VI1-', 'V2+', 'I2+', 'VI2-'],
+  bottom: ['V3+', 'I3+', 'VI3-', 'V4+', 'I4+', 'VI4-'],
+  groups: { top: [[0, 1, 'DC IN'], [3, 5, 'CH1'], [6, 8, 'CH2']], bottom: [[0, 2, 'CH3'], [3, 5, 'CH4']] },
+};
+export const adTermLabel = (id) => ({ '0V': '24G', FE: '⏚' }[id] || id.replace(/-$/, '−'));
+function adPorts() {
+  const G = PLC_GEO, m = { w: AD_GEO.w };
+  const ports = [];
+  for (const [list, y, dir] of [[AD_GEO.top, G.holeTop, up(0.35)], [AD_GEO.bottom, G.holeBot, down(0.35)]]) {
+    list.forEach((id, i) => ports.push({ id, label: adTermLabel(id), kind: 'term', pos: [plcTermX(m, list.length, i), y, G.face], dir, sig: id === '24V' ? '+24' : id === '0V' ? '0V' : id === 'FE' ? 'PE' : 'an', pitch: (m.w - 8) / list.length }));
+  }
+  return ports;
+}
+
 /** Old (≤ 2.9) PLC terminal ids → the real terminal names. */
 export const PLC_PORT_RENAMES = { 'dvp-20ex2': { AIG: 'VI0-', AOG: 'AG0', C0: 'ZP', C1: 'ZP' } };
 
@@ -111,6 +128,15 @@ export const DEVICE_DEFS = {
   'dvp-16es2': plcDef('dvp-16es2', 'DVP16ES200R: 8 inputs X0–X7 (S/S common, sink or source), 8 relay outputs Y0–Y7 in two groups (C0: Y0–Y3, C1: Y4–Y7), 100–240 V AC supply with a 24 V DC 0.5 A output (+24V / 24G), COM1 RS-232, COM2 and COM3 RS-485. The most popular Delta starter PLC.'),
   'dvp-32es2': plcDef('dvp-32es2', 'DVP32ES200R: 16 inputs X0–X17, 16 relay outputs Y0–Y17 in four groups of four (C0 … C3), 24 V DC output +24V / 24G, COM1 RS-232, COM2 and COM3 RS-485.'),
   'dvp-20ex2': plcDef('dvp-20ex2', 'DVP20EX200T: 8 inputs X0–X7, 6 NPN transistor outputs Y0–Y5 (power UP = +24 V, ZP = 0 V; an ON output pulls its load to ZP), 4 analog inputs V0+ / I0+ / VI0− … (±10 V, or ±20 mA with In+ bridged to Vn+; D1110–D1113, ±2000) and 2 analog outputs VO0 / IO0 / AG (0–10 V or 0–20 mA; D1116–D1117, 0–2000).'),
+
+  // ---------------------------------------------------------------- right-side expansion (clips onto the PLC)
+  'dvp04ad-e2': {
+    type: 'dvp04ad-e2', name: 'Delta DVP04AD-E2 analog input module', short: 'DVP04AD-E2', part: '4 AI · ±10 V · ±20 mA · 4–20 mA', brand: 'Delta', category: 'ext', sim: 'ad', zone: 'rail1', max: 2,
+    size: [AD_GEO.w, PLC_GEO.h, PLC_GEO.d],
+    description: 'Analog input module for the DVP-ES2 / EX2: it clips onto the right side of the PLC. 24 V DC on 24V / 0V. Four channels CH1–CH4, each with V+ (voltage), I+ (current: bridge I+ to V+) and VI− (the channel common). The PLC reads it with FROM: FROM K0 K12 D0 K4 → present values of CH1–CH4 in D0–D3 (CR#12–15); CR#6–9 are the averaged values, CR#1 the input mode (one hex digit per channel: 0 = ±10 V, 1 = 0–10 V, 2 = ±20 mA, 3 = 0–20 mA, 4 = 4–20 mA). Full scale is ±32000 (0–10 V → 0–32000, 4–20 mA → 0–32000).',
+    props: [], defaults: {},
+    ports: () => adPorts(),
+  },
 
   // ---------------------------------------------------------------- HMI
   'dop-107bv': {
@@ -413,6 +439,7 @@ function plcDef(type, description) {
 
 export const CATEGORIES = [
   { id: 'plc', name: 'Delta PLC', icon: 'cpu' },
+  { id: 'ext', name: 'PLC expansion modules', icon: 'cpu' },
   { id: 'hmi', name: 'Delta HMI', icon: 'display' },
   { id: 'vfd', name: 'Delta VFD', icon: 'motor' },
   { id: 'power', name: 'Power', icon: 'bolt' },

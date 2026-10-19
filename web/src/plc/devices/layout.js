@@ -20,7 +20,7 @@ export const SCENE = {
   laptop: { x: -760, z: 300, rotY: 0.62 },
 };
 
-const RAIL1_ORDER = { mcb: 0, power: 1, plc: 2 };
+const RAIL1_ORDER = { mcb: 0, power: 1, plc: 2, ext: 2.5 };
 
 /**
  * Returns Map(deviceId → {pos:[x,y,z], rot:[rx,ry,rz], zone}) plus `console` geometry.
@@ -41,11 +41,14 @@ export function layoutDevices(devices) {
   }
   // rail 1: left → right (MCB, power supplies, PLC)
   rail1.sort((a, b) => (RAIL1_ORDER[cat(a)] ?? 3) - (RAIL1_ORDER[cat(b)] ?? 3));
-  let x = S.duct.x0 + 32;
+  let x = S.duct.x0 + 32, prev = null;
   for (const d of rail1) {
     const [w, h] = DEVICE_DEFS[d.type].size;
+    // an expansion module clips onto the right side of the PLC (or of the module before it)
+    if (prev && cat(d) === 'ext' && (prev === 'plc' || prev === 'ext')) x -= 15;
     out.set(d.id, { pos: [x + w / 2, S.rail1Y - h / 2, S.deviceZ], rot: [0, 0, 0], zone: 'rail1' });
     x += w + 16;
+    prev = cat(d);
   }
   // rail 2: drives from the right; a device never sits on the middle vertical duct (it goes on its left)
   x = S.duct.x1 - 38;

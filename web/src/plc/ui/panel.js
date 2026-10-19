@@ -870,7 +870,8 @@ export class PanelView {
     else if (def.category === 'modbus') {
       const pr = deviceProps(dev);
       tip = `${def.short} added as station ${pr.station} (${pr.baud} bps ${pr.format} ${pr.protocol}). ${def.sim === 'mbth' ? 'Power: V+ → +24 V, V− → 0 V.' : 'Power: L / N from the MCB (or another device\'s L / N).'} RS-485: tap its RS-485 terminals, then PLC COM2 or the last device of the line (daisy chain). The PLC COM2 and every slave need the same format — see Settings, then the Network chip.`;
-    } else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
+    } else if (def.sim === 'ad') tip = 'DVP04AD-E2 clipped onto the PLC. Power: 24V → +24 V, 24G → 0 V. Signal: sensor OUT → V1+, VI1− → the sensor\'s 0 V (4–20 mA: bridge I1+ to V1+). Read it with FROM K0 K12 D0 K4 (CH1–CH4 → D0–D3, 0–10 V = 0–32000).';
+    else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
     this.lab.commitHardware('Add ' + def.short);
     this.select({ kind: 'dev', id: dev.id });
     setTimeout(() => this.scene.focus(dev.id), 60);

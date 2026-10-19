@@ -1,5 +1,6 @@
 // Lab exercises: self-checking task lists for each example. Every check(ctx) runs a few times a
 // second; ctx = { sys, lab, P, rt(id), dev(id), cpu, vfd, motor, dl (downloaded program JSON), memo }.
+import { DEVICE_DEFS } from './devices/defs.js';
 
 const hz = (c) => (c.vfd && c.vfd.powered ? c.vfd.f : 0);
 const near = (a, b, tol = 0.15) => Math.abs(a - b) <= tol;
@@ -107,6 +108,90 @@ export const LAB_TASKS = {
     { text: 'Watch D1110 (AI CH0) in Monitor → Devices', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },
     { text: 'Limit the speed to half: replace MOV with DIV D1110 K2 D1116 and Download', check: (c) => has(c, '"DIV"') && has(c, '"D1116"') },
   ],
+  // ---------------------------------------------------------------- Step by step (Bangla)
+  'step-01-button-lamp': [
+    { text: 'Simulate চাপো — PLC RUN হবে', check: (c) => !!(c.cpu && c.cpu.running) },
+    { text: 'Operate মোডে PUSH বোতাম চেপে ধরো — বাতি জ্বলবে', check: (c) => { const ok = !!(c.rt('l1') && c.rt('l1').on); if (ok) c.memo.on = true; return ok; } },
+    { text: 'বোতাম ছেড়ে দাও — বাতি নিভে যাবে', check: (c) => !!(c.memo.on && c.rt('l1') && !c.rt('l1').on) },
+    { text: 'Ladder ট্যাবে X0-কে NC (/X0) বানাও, Download করো — এখন উল্টো কাজ করবে', check: (c) => has(c, '"NC"') },
+  ],
+  'step-02-no-nc': [
+    { text: 'Simulate চাপো — শুধু লাল (NC) বাতি জ্বলে', check: (c) => !!(c.rt('lr') && c.rt('lr').on && c.rt('lg') && !c.rt('lg').on) },
+    { text: 'বোতাম চেপে ধরো — সবুজ জ্বলে, লাল নেভে', check: (c) => !!(c.rt('lg') && c.rt('lg').on && c.rt('lr') && !c.rt('lr').on) },
+    { text: 'Monitor ট্যাবে X0, Y0, Y1 দেখো', check: (c) => c.lab.tab === 'monitor' },
+  ],
+  'step-03-latch': [
+    { text: 'START একবার চাপো — বোতাম ছাড়ার পরও RUN বাতি জ্বলে থাকে', check: (c) => { const ok = !!(c.rt('lrun') && c.rt('lrun').on && !c.rt('start').pressed); if (ok) c.memo.l = true; return ok; } },
+    { text: 'STOP চাপো — ল্যাচ ভেঙে যায়', check: (c) => !!(c.memo.l && c.rt('lrun') && !c.rt('lrun').on) },
+    { text: 'Ladder ট্যাবে বাতি জ্বলা অবস্থায় সবুজ পাওয়ার-ফ্লো দেখো (Y0 কন্টাক্ট দিয়ে)', check: (c) => c.lab.tab === 'ladder' && !!(c.cpu && c.cpu.Y[0]) },
+  ],
+  'step-04-set-rst': [
+    { text: 'ON চাপো — বাতি জ্বলে থাকে', check: (c) => { const ok = !!(c.rt('l1') && c.rt('l1').on && !c.rt('on').pressed); if (ok) c.memo.s = true; return ok; } },
+    { text: 'OFF চাপো — বাতি নেভে', check: (c) => !!(c.memo.s && c.rt('l1') && !c.rt('l1').on) },
+    { text: 'দুটো বোতাম একসাথে চাপো — নিচের RST রাং জেতে (শেষের রাং-ই শেষ কথা)', check: (c) => !!(c.rt('on').pressed && c.rt('off').pressed && c.cpu && !c.cpu.Y[0]) },
+  ],
+  'step-05-timer': [
+    { text: 'START চাপো — হলুদ WAIT বাতি জ্বলে', check: (c) => { const ok = !!(c.rt('lwait') && c.rt('lwait').on); if (ok) c.memo.w = true; return ok; } },
+    { text: '৫ সেকেন্ড অপেক্ষা করো — সবুজ DONE বাতি', check: (c) => !!(c.memo.w && c.rt('ldone') && c.rt('ldone').on) },
+    { text: 'টাইমার 10 সেকেন্ড করো (TMR T0 K100), Download করো', check: (c) => has(c, '"K100"') },
+  ],
+  'step-06-blink': [
+    { text: 'সিলেক্টর ON করো — বাতি জ্বলে-নেভে', check: (c) => !!(c.dev('sel') && c.dev('sel').state.on && c.cpu && c.cpu.running) },
+    { text: 'Monitor ট্যাবে M1013 লিখে দেখো — নিজে থেকেই অন-অফ হচ্ছে', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },
+    { text: 'M1013-এর জায়গায় M1012 (0.1 s ঘড়ি) দাও, Download করো — দ্রুত জ্বলবে', check: (c) => has(c, '"M1012"') },
+  ],
+  'step-07-counter': [
+    { text: 'COUNT বোতাম ৩ বার চাপো — Monitor-এ C0 = 3', check: (c) => !!(c.cpu && c.cpu.CV[0] >= 3) },
+    { text: '৫ বার হলে FULL বাতি জ্বলে', check: (c) => { const ok = !!(c.rt('lfull') && c.rt('lfull').on); if (ok) c.memo.f = true; return ok; } },
+    { text: 'RESET চাপো — C0 = 0', check: (c) => !!(c.memo.f && c.cpu && c.cpu.CV[0] === 0) },
+  ],
+  'step-08-vfd-run': [
+    { text: 'START চাপো — মোটর ঘোরে (VFD কিপ্যাডে Hz বাড়ে)', check: (c) => hz(c) > 5 },
+    { text: 'VFD ট্যাবে Pr.01-12 (accel) 1 s করো — দ্রুত স্পিড ওঠে', check: (c) => !!(c.vfd && c.vfd.params['01-12'] === 1) },
+    { text: 'STOP চাপো — মোটর থামে', check: (c) => !!(c.vfd && c.vfd.powered && hz(c) === 0 && c.cpu && !c.cpu.Y[4]) },
+  ],
+  'step-09-vfd-fwd-rev': [
+    { text: 'FWD চাপো — মোটর সামনে ঘোরে', check: (c) => { const ok = hz(c) > 5; if (ok) c.memo.f = true; return ok; } },
+    { text: 'চলার সময় REV চাপো — কিছুই হয় না (ইন্টারলক)', check: (c) => !!(c.memo.f && c.rt('rev').pressed && c.cpu && !c.cpu.M[1]) },
+    { text: 'STOP, তারপর REV — মোটর পেছনে ঘোরে', check: (c) => hz(c) < -5 },
+  ],
+  'step-10-modbus-run': [
+    { text: 'START চাপো — RS-485 দিয়ে H12 যায়, মোটর 30 Hz-এ চলে', check: (c) => near(hz(c), 30) },
+    { text: 'Network চিপ চাপো — COM2 কেবলে ডেটা প্যাকেট দেখো', check: (c) => !!(c.cpu && c.cpu.running && c.lab.views.panel.netView) },
+    { text: 'স্পিড 45 Hz করো: MOV K4500 D11, Download', check: (c) => near(hz(c), 45) },
+  ],
+  'step-11-modbus-fwd-rev': [
+    { text: 'FORWARD — D10 = H12, মোটর সামনে', check: (c) => { const ok = near(hz(c), 30); if (ok) c.memo.f = true; return ok; } },
+    { text: 'STOP — D10 = H1', check: (c) => !!(c.memo.f && c.cpu && c.cpu.D[10] === 1) },
+    { text: 'REVERSE — D10 = H22, মোটর পেছনে', check: (c) => near(hz(c), -30) },
+    { text: 'Monitor-এ COM2 লগে TX / RX ফ্রেম দেখো', check: (c) => c.lab.tab === 'monitor' },
+  ],
+  'step-12-modbus-speed': [
+    { text: 'START — 20 Hz', check: (c) => near(hz(c), 20) },
+    { text: '+5 Hz দুবার — 30 Hz, D20 = 3000', check: (c) => near(hz(c), 30) && !!(c.cpu && Math.abs(c.cpu.D[20] - 3000) < 20) },
+    { text: '+5 Hz বারবার চাপো — 50 Hz-এ থেমে যায় (সীমা)', check: (c) => !!(c.cpu && c.cpu.D[11] === 5000) },
+  ],
+  'step-13-analog-read': [
+    { text: 'Simulate — Monitor-এ D0 (0–32000) আর D10 (0.1 °C) দেখো', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.D[0] > 0) },
+    { text: 'TEMP ট্রান্সমিটার ট্যাপ করে 70 °C-এর বেশি করো — HOT বাতি', check: (c) => !!(c.rt('lhot') && c.rt('lhot').on) },
+    { text: 'সীমা 40.0 °C করো (D10>K400), Download', check: (c) => has(c, '"K400"') },
+  ],
+  'step-14-analog-4-20ma': [
+    { text: 'Simulate — D11 ≈ 50 (5.0 bar)', check: (c) => !!(c.cpu && Math.abs(c.cpu.D[11] - 50) <= 2) },
+    { text: 'চাপ 2 bar করো — পাম্প চালু', check: (c) => { const ok = !!(c.rt('lpump') && c.rt('lpump').on); if (ok) c.memo.p = true; return ok; } },
+    { text: 'চাপ 7 bar করো — পাম্প বন্ধ', check: (c) => !!(c.memo.p && c.rt('lpump') && !c.rt('lpump').on) },
+  ],
+  'step-15-analog-average': [
+    { text: 'Monitor-এ D0 (গড়) আর D4 (এখন) দেখো', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },
+    { text: 'TEMP হঠাৎ বদলাও — D4 সাথে সাথে, D0 আস্তে আস্তে বদলায়', check: (c) => !!(c.cpu && Math.abs(c.cpu.D[0] - c.cpu.D[4]) > 1500) },
+    { text: 'গড় 50 করো (TO K0 K2 K50 K1), Download', check: (c) => has(c, '"K50"') },
+  ],
+  'step-16-analog-modbus-speed': [
+    { text: 'FORWARD চাপো — মোটর পটের মতো স্পিডে চলে (60 % = 30 Hz)', check: (c) => hz(c) > 5 },
+    { text: 'পট ঘুরিয়ে 100 % করো — 50 Hz', check: (c) => near(hz(c), 50, 0.5) },
+    { text: 'STOP, তারপর REVERSE', check: (c) => hz(c) < -5 },
+    { text: 'সর্বোচ্চ স্পিড 40 Hz করো (MUL D12 K4 D14), Download', check: (c) => has(c, '"MUL"') && has(c, '"K4"') },
+  ],
   'blank': [
     { text: 'Add a push button and a pilot lamp with ＋ in the 3D lab', check: (c) => c.P.devices.some((d) => d.type === 'pb') && c.P.devices.some((d) => d.type === 'lamp') },
     { text: 'Wire the button: PSU +V → button 13, button 14 → PLC X0', check: (c) => wired(c, 'pb', ['13', '14'], 'X0') },
@@ -117,7 +202,7 @@ export const LAB_TASKS = {
 };
 
 function wired(c, type, ports, plcPort) {
-  const plc = c.P.devices.find((d) => /^dvp-/.test(d.type));
+  const plc = c.P.devices.find((d) => DEVICE_DEFS[d.type] && DEVICE_DEFS[d.type].category === 'plc');
   if (!plc) return false;
   for (const d of c.P.devices.filter((x) => x.type === type)) {
     for (const cn of c.P.conns) {

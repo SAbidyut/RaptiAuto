@@ -5,7 +5,7 @@ import {
   THREE, MAT, FLIP, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
   glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M,
 } from './kit.js';
-import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps } from '../devices/defs.js';
+import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, AD_GEO, plcTermX, plcTermLabel, adTermLabel, devicePorts, deviceProps } from '../devices/defs.js';
 import { drawSegDisplay } from './sevenseg.js';
 import { MODBUS_BUILDERS } from './models-modbus.js';
 
@@ -163,6 +163,73 @@ function buildPlc(dev) {
   };
 }
 function norm3(v) { const l = Math.hypot(...v); return v.map((x) => x / l); }
+
+// ====================================================================== DVP04AD-E2 (right-side module)
+// The same housing as the PLC, narrower: grey terminal blocks (24 V + CH1 / CH2 on top, CH3 / CH4
+// below), DELTA + model on the face and the POWER / ERROR / A→D LEDs.
+function buildAd(dev) {
+  const G = PLC_GEO, w = AD_GEO.w, m = { w };
+  const group = new THREE.Group();
+  const B = new Builder();
+  const body = mat('plcBlack', { color: 0x1e2024, roughness: 0.55 });
+  const face = mat('plcFace', { color: 0x16181b, roughness: 0.45 });
+  const grey = mat('plcTermGrey', { color: 0xa9adb1, roughness: 0.6 });
+  B.add(rbox(w, G.h, 40, 3), body, M4(0, G.h / 2, 20));
+  B.add(rbox(w - 1, 15, 32, 2), body, M4(0, 92, G.face - 16));
+  B.add(rbox(w - 1, 15, 32, 2), body, M4(0, 18, G.face - 16));
+  B.add(rbox(w - 2, 57.5, 30, 3), face, M4(0, 55, G.d - 15));
+  B.add(rbox(w - 5, 12, 26, 1.5), grey, M4(0, 104.6, 49));
+  B.add(rbox(w - 5, 12, 26, 1.5), grey, M4(0, 5.4, 49));
+  for (const [list, y, dz] of [[AD_GEO.top, 105.4, 0.6], [AD_GEO.bottom, 4.6, -0.6]]) {
+    list.forEach((id, i) => addScrew(B, [plcTermX(m, list.length, i), y, 62.2], norm3([0, dz, 1]), Math.min(2.2, ((w - 8) / list.length) * 0.36)));
+  }
+  B.add(box(24, 10, 16), MAT.darkPlastic, M4(0, -1, 18)); // DIN clip
+  B.build(group);
+  const shoulder = (list, groups, top) => decal(w, 15, (g, W) => {
+    const n = list.length, X = (i) => plcTermX(m, n, i) + W / 2;
+    const yHole = top ? 4 : 11, yLbl = top ? 9.4 : 5.8, yCap = top ? 12.7 : 2.4;
+    list.forEach((id, i) => {
+      g.fillStyle = '#060708'; g.beginPath(); g.arc(X(i), yHole, Math.min(1.9, (W - 8) / n * 0.34), 0, Math.PI * 2); g.fill();
+      const lbl = adTermLabel(id);
+      txt(g, lbl, X(i), yLbl, { size: lbl.length > 3 ? 1.3 : 1.6, weight: 700, color: '#e8eaed' });
+    });
+    for (const [i0, i1, t] of groups) {
+      const x0 = X(i0) - 1.6, x1 = X(i1) + 1.6, yl = top ? yCap - 1.3 : yCap + 1.3;
+      g.strokeStyle = '#c9cdd3'; g.lineWidth = 0.22;
+      g.beginPath(); g.moveTo(x0, yl + (top ? -0.8 : 0.8)); g.lineTo(x0, yl); g.lineTo(x1, yl); g.lineTo(x1, yl + (top ? -0.8 : 0.8)); g.stroke();
+      g.font = `800 1.45px ${FONT}`;
+      const tw = g.measureText(t).width + 1.2, xm = (x0 + x1) / 2;
+      g.fillStyle = '#d9dce0'; g.fillRect(xm - tw / 2, yl - 0.85, tw, 1.7);
+      txt(g, t, xm, yl + 0.05, { size: 1.45, weight: 800, color: '#111317' });
+    }
+  }, { ppm: 16 });
+  const st = shoulder(AD_GEO.top, AD_GEO.groups.top, true); st.position.set(0, 92, G.face + 0.05); group.add(st);
+  const sb = shoulder(AD_GEO.bottom, AD_GEO.groups.bottom, false); sb.position.set(0, 18, G.face + 0.05); group.add(sb);
+  const front = decal(w - 3, 57, (g, W, H) => {
+    const X = (x) => x + W / 2, Y = (y) => 55 + H / 2 - y;
+    deltaLogo(g, X(-w / 2 + 9), Y(74), 3.2, '#eef0f2');
+    txt(g, 'DVP04AD-E2', X(-w / 2 + 6), Y(64), { size: 3, align: 'left', weight: 800, color: '#eef0f2', font: FONT_D });
+    txt(g, '4 AI · ±10 V · ±20 mA', X(-w / 2 + 6), Y(58.5), { size: 1.8, align: 'left', weight: 700, color: '#c9cdd3' });
+    ['POWER', 'ERROR', 'A→D'].forEach((t, i) => txt(g, t, X(-w / 2 + 12), Y(48 - i * 6), { size: 1.9, align: 'left', weight: 700, color: '#e3e5e8' }));
+    txt(g, 'ANALOG INPUT', X(0), Y(31), { size: 2.2, weight: 800, color: '#9aa1ab' });
+  }, { ppm: 14 });
+  front.position.set(0, 55, G.d + 0.05);
+  group.add(front);
+  const ledGeo = rbox(2.2, 1.3, 0.8, 0.3);
+  const leds = [ledMat('#36ff6a'), ledMat('#ff3b30'), ledMat('#ffb020')];
+  leds.forEach((lm, i) => { const me = new THREE.Mesh(ledGeo, lm); me.position.set(-w / 2 + 8.5, 48 - i * 6, G.d + 0.3); group.add(me); });
+  return {
+    group, controls: [],
+    update(rt, ctx) {
+      const a = rt.ad;
+      const p = !!(a && a.powered);
+      let ch = setLed(leds[0], p);
+      ch = setLed(leds[1], p && !a.plc && Math.floor(ctx.t * 3) % 2) || ch;
+      ch = setLed(leds[2], p && !!a.plc && Math.floor(ctx.t * 4) % 2) || ch;
+      return ch;
+    },
+  };
+}
 
 // ====================================================================== HMI (DOP-107BV)
 function buildHmi(dev, ctx) {
@@ -1288,7 +1355,7 @@ function buildLaptop(dev, ctx) {
   return { group, controls: [screen], update() { return false; } };
 }
 
-const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop, ...MODBUS_BUILDERS };
+const BUILDERS = { plc: buildPlc, ad: buildAd, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop, ...MODBUS_BUILDERS };
 
 export function buildModel(dev, ctx) {
   const def = DEVICE_DEFS[dev.type];
