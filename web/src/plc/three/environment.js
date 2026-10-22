@@ -27,7 +27,7 @@ export function setupLights(scene, renderer, { shadows = true } = {}) {
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     const c = key.shadow.camera;
-    c.left = -1000; c.right = 1000; c.top = 900; c.bottom = -700; c.near = 500; c.far = 3600;
+    c.left = -1100; c.right = 1500; c.top = 950; c.bottom = -800; c.near = 400; c.far = 3800;
     key.shadow.bias = -0.0004;
     key.shadow.normalBias = 0.6;
     key.shadow.radius = 3;
@@ -68,12 +68,12 @@ export function buildEnvironment(layout, devices) {
   root.name = 'environment';
   // ---- workbench
   const deskTex = noiseTex(256, 256, '#2a2f38', 10, { repeat: 6 });
-  const desk = new THREE.Mesh(new THREE.BoxGeometry(3400, 40, 1900), new THREE.MeshStandardMaterial({ map: deskTex, roughness: 0.78, metalness: 0.05 }));
-  desk.position.set(-100, -20, 350);
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(3900, 40, 1900), new THREE.MeshStandardMaterial({ map: deskTex, roughness: 0.78, metalness: 0.05 }));
+  desk.position.set(150, -20, 350);
   desk.receiveShadow = true;
   root.add(desk);
-  const edge = new THREE.Mesh(new THREE.BoxGeometry(3400, 6, 1900), mat('deskEdge', { color: 0x3b4352, roughness: 0.5 }));
-  edge.position.set(-100, -43, 350);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(3900, 6, 1900), mat('deskEdge', { color: 0x3b4352, roughness: 0.5 }));
+  edge.position.set(150, -43, 350);
   root.add(edge);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(14000, 14000), mat('floor', { color: 0x070b16, roughness: 0.95 }));
   floor.rotation.x = -Math.PI / 2; floor.position.y = -760;

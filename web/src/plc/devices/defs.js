@@ -93,7 +93,7 @@ const SIG_COLOR = {
 /** Motor phase wires follow the R-Y-B convention: phase 1 red, phase 2 yellow, phase 3 blue. */
 const PHASE_COLOR = ['#dc2626', '#facc15', '#2563eb'];
 export function phaseOf(portId) {
-  const m = /^(?:U|L1|T1|U\/T1)$/.test(portId) ? 0 : /^(?:V|L2|T2|V\/T2)$/.test(portId) ? 1 : /^(?:W|L3|T3|W\/T3)$/.test(portId) ? 2 : -1;
+  const m = /^(?:U|U1|U2|L1|T1|U\/T1)$/.test(portId) ? 0 : /^(?:V|V1|V2|L2|T2|V\/T2)$/.test(portId) ? 1 : /^(?:W|W1|W2|L3|T3|W\/T3)$/.test(portId) ? 2 : -1;
   return m;
 }
 /** Default colour of a wire for a signal; `portId` picks the phase colour for the motor-circuit (3~) terminals. */
@@ -105,6 +105,13 @@ export function wireColorFor(sig, portId) {
 // field modules on the operator console: 64 × 86 mm plates with 4 mm banana sockets
 const OUTPUT_PROP = { id: 'output', label: 'Output', type: 'select', options: { PNP: 'PNP (switches +24 V)', NPN: 'NPN (switches 0 V)' } };
 const sockRow = (ids, labels, sig) => row(ids, { x0: -((ids.length - 1) * 17) / 2, x1: ((ids.length - 1) * 17) / 2, y: 69, z: 6, dir: FRONT, sig, kind: 'sock', labels }); // top of the module = toward the back of the console (the modules are built turned, see three/models.js)
+
+/** Incremental encoder on a motor shaft: 24 V HTL push-pull outputs A, B (90° apart) and Z (once a turn). */
+const ENCODER_PROP = { id: 'encoder', label: 'Encoder on the shaft', type: 'select', options: { none: 'None', 100: '100 PPR', 360: '360 PPR', 1000: '1000 PPR' } };
+export const encoderPpr = (p) => (p && p.encoder && p.encoder !== 'none' ? +p.encoder || 0 : 0);
+/** The encoder's terminal block (E+ E0 A B Z) on top of the encoder, behind the shaft coupling. */
+const encoderPorts = (p) => (encoderPpr(p) ? row(['E+', 'E0', 'A', 'B', 'Z'], { x0: -24, x1: 24, y: 136, z: 0, dir: [0, 1, 0.15], sig: (id) => (id === 'E+' ? '+24' : id === 'E0' ? '0V' : 'in'), labels: ['+24', '0V', 'A', 'B', 'Z'] }).map((q) => ({ ...q, pos: [186, q.pos[1], q.pos[0]] })) : []);
+const LOAD_PROP = { id: 'load', label: 'Mechanical load (%)', type: 'number', min: 0, max: 200 };
 
 export const DEVICE_DEFS = {
   // ---------------------------------------------------------------- PLC
@@ -166,6 +173,17 @@ export const DEVICE_DEFS = {
       { id: 'L', label: 'L (230 V)', kind: 'term', pos: [-15, 10, 64], dir: down(0.6), sig: 'L', pitch: 12 },
       { id: 'N', label: 'N', kind: 'term', pos: [-3, 10, 64], dir: down(0.6), sig: 'N', pitch: 12 },
       { id: 'PE', label: '⏚ PE', kind: 'term', pos: [17, 60, 50], dir: FRONT, sig: 'PE', pitch: 10 },
+    ],
+  },
+
+  'mains3': {
+    type: 'mains3', name: 'Main supply 3-phase 400 V + MCCB 4P', short: 'Supply 3~ 400 V', part: 'MCCB 4P C16 · 400 / 230 V 50 Hz', brand: '', category: 'power', sim: 'mains3', zone: 'rail1', max: 1,
+    size: [92, 90, 72],
+    description: 'Three-phase mains 400 V / 230 V 50 Hz (L1 L2 L3 N PE) through a 4-pole C16 breaker. Between two phases there are 400 V, between a phase and N 230 V. L1 → L2 → L3 is the phase sequence: a motor wired U–V–W to L1–L2–L3 turns clockwise, swap two phases to reverse it. Feeds contactors, overload relays and the 400 V motors; a 230 V device (power supply, PLC, contactor coil) goes between one phase and N. Trips on a short circuit between two phases or a phase and N.',
+    props: [], defaults: {}, state: { on: true },
+    ports: () => [
+      ...row(['L1', 'L2', 'L3', 'N'], { x0: -36, x1: 18, y: 10, z: 64, dir: down(0.6), sig: (id) => (id === 'N' ? 'N' : 'mot') }),
+      { id: 'PE', label: '⏚ PE', kind: 'term', pos: [36, 60, 50], dir: FRONT, sig: 'PE', pitch: 10 },
     ],
   },
 
@@ -300,10 +318,10 @@ export const DEVICE_DEFS = {
     ],
   },
   'olr': {
-    type: 'olr', name: 'Thermal overload relay', short: 'Overload relay', part: '2.5–4 A · 1NC + 1NO', brand: '', category: 'switchgear', sim: 'olr', zone: 'rail2', max: 4,
+    type: 'olr', name: 'Thermal overload relay', short: 'Overload relay', part: '0.6–6 A · 1NC + 1NO · class 10', brand: '', category: 'switchgear', sim: 'olr', zone: 'rail2', max: 4,
     size: [45, 66, 86],
-    description: 'Thermal overload relay that goes under the contactor: the motor current passes 1/L1–2/T1, 3/L2–4/T2, 5/L3–6/T3; on overload the NC 95–96 opens (wire it in series with the contactor coil or to a PLC input) and the NO 97–98 closes. Tap the button to test-trip it, tap again to reset.',
-    props: [{ id: 'label', label: 'Label', type: 'text' }], defaults: { label: 'F1' }, state: { tripped: false },
+    description: 'Thermal overload relay that goes under the contactor: the motor current passes 1/L1–2/T1, 3/L2–4/T2, 5/L3–6/T3 and heats three bimetals. Set the dial to the motor\'s rated current: 1.2 × the setting trips it after a few minutes, 6 × (a stalled motor, a lost phase) in a few seconds (class 10). On a trip the NC 95–96 opens (wire it in series with the contactor coil or to a PLC input) and the NO 97–98 closes. In a star-delta starter it carries the winding current: set it to 0.58 × the motor current. Tap the button to test-trip it, tap again to reset (once the bimetals have cooled).',
+    props: [{ id: 'label', label: 'Label', type: 'text' }, { id: 'setting', label: 'Current setting (A)', type: 'number', min: 0.5, max: 10 }], defaults: { label: 'F1', setting: 3.6 }, state: { tripped: false },
     ports: () => [
       ...row(['L1', 'L2', 'L3', '95', '97'], { x0: -17, x1: 17, y: 58, z: 80, dir: up(0.6), sig: (id) => (/^L/.test(id) ? 'mot' : 'in'), labels: ['1/L1', '3/L2', '5/L3', '95', '97'] }),
       ...row(['T1', 'T2', 'T3', '96', '98'], { x0: -17, x1: 17, y: 8, z: 80, dir: down(0.6), sig: (id) => (/^T/.test(id) ? 'mot' : 'in'), labels: ['2/T1', '4/T2', '6/T3', '96', '98'] }),
@@ -385,12 +403,69 @@ export const DEVICE_DEFS = {
   'motor': {
     type: 'motor', name: '3-phase induction motor', short: 'Motor 0.75 kW', part: '0.75 kW · 4-pole · 1420 rpm', brand: '', category: 'motor', sim: 'motor', zone: 'motor', max: 3,
     size: [300, 205, 170],
-    description: '0.75 kW 4-pole squirrel-cage motor, 220 V Δ, 50 Hz, 1420 rpm. Connect U, V, W to the VFD output. Swap two phases to reverse it.',
-    props: [{ id: 'load', label: 'Mechanical load (%)', type: 'number', min: 0, max: 200 }],
-    defaults: { load: 40 },
-    ports: () => [
+    description: '0.75 kW 4-pole squirrel-cage motor, 220 V Δ, 50 Hz, 1420 rpm. Connect U, V, W to the VFD output. Swap two phases to reverse it. With an encoder on the shaft its A / B / Z pulses go to the PLC high-speed counter inputs (X0, X1).',
+    props: [LOAD_PROP, ENCODER_PROP],
+    defaults: { load: 40, encoder: 'none' },
+    ports: (p) => [
       ...row(['U', 'V', 'W', 'PE'], { x0: -22, x1: 22, y: 186, z: 0, dir: [0, 1, 0.25], sig: (id) => (id === 'PE' ? 'PE' : 'mot'), labels: ['U', 'V', 'W', '⏚'] }),
+      ...encoderPorts(p),
     ],
+  },
+  'motor6': {
+    type: 'motor6', name: '3-phase motor, 6 terminals (Y / Δ)', short: 'Motor 1.5 kW Y/Δ', part: '1.5 kW · 400 V Δ · 3.4 A · 1440 rpm', brand: '', category: 'motor', sim: 'motor6', zone: 'motor', max: 3,
+    size: [300, 205, 170],
+    description: '1.5 kW 4-pole motor for the 400 V mains, connected in delta. All six winding ends are in the terminal box: U1–U2, V1–V2, W1–W2 (back row W2 U2 V2, front row U1 V1 W1). Fit the Δ links (U1–W2, V1–U2, W1–V2) for a direct-on-line start from a contactor, or take the links out for a star-delta starter: KM1 feeds U1 V1 W1, KM2 (delta) joins W2 U2 V2 to L1 L2 L3, KM3 (star) joins W2 U2 V2 together. Every winding is made for 400 V: in star it gets only 230 V — a third of the starting current and of the torque. A lost phase makes it hum without starting.',
+    props: [{ id: 'links', label: 'Links in the terminal box', type: 'select', options: { delta: 'Δ links (direct-on-line)', star: 'Y links (star)', none: 'No links (star-delta starter)' } }, LOAD_PROP, ENCODER_PROP],
+    defaults: { links: 'delta', load: 30, encoder: 'none' },
+    ports: (p) => [
+      ...row(['W2', 'U2', 'V2'], { x0: -24, x1: 24, y: 186, z: -13, dir: [0, 1, -0.2], sig: 'mot' }),
+      ...row(['U1', 'V1', 'W1'], { x0: -24, x1: 24, y: 186, z: 13, dir: [0, 1, 0.25], sig: 'mot' }),
+      { id: 'PE', label: '⏚', kind: 'term', pos: [34, 186, 0], dir: [0, 1, 0.25], sig: 'PE', pitch: 12 },
+      ...encoderPorts(p),
+    ],
+  },
+
+  // ---------------------------------------------------------------- machines (process models on the bench)
+  'conveyor': {
+    type: 'conveyor', name: 'Belt conveyor with sensors + pusher', short: 'Conveyor', part: '700 mm belt · 0.25 kW gear motor · 4 sensors · pusher', brand: '', category: 'machine', sim: 'conveyor', zone: 'machine', max: 1,
+    size: [880, 290, 380], box: [[-400, 0, -235], [480, 290, 145]],
+    description: 'A 700 mm belt driven by a 0.25 kW gear motor (U V W: 230 V Δ for the MS300 drive, or 400 V Y for a contactor on the 3-phase mains). Boxes come from the feeder at the left — tap it, or set an automatic feed — metal (grey) and plastic (blue) mixed. Sensors (PNP, 24 V from +24 / 0V): S1 photo-eye at the entry, S2 inductive above the belt (metal only), S3 photo-eye at the pusher, S4 photo-eye at the end. Y1 (24 V coil to 0V) fires the pneumatic pusher: a box in front of it is pushed into the reject chute. Boxes that reach the end drop into the bin. With an encoder on the head pulley A / B give 100 pulses per 100 mm of belt.',
+    props: [
+      { id: 'label', label: 'Label', type: 'text' },
+      { id: 'conn', label: 'Gear motor connection', type: 'select', options: { D230: 'Δ 230 V (MS300 drive)', Y400: 'Y 400 V (3-phase mains)' } },
+      { id: 'feed', label: 'Box feeder', type: 'select', options: { manual: 'By hand (tap the feeder)', slow: 'Automatic · every 4 s', fast: 'Automatic · every 2 s' } },
+      { id: 'mix', label: 'Boxes', type: 'select', options: { mixed: 'Metal + plastic', metal: 'Metal only', plastic: 'Plastic only' } },
+      LOAD_PROP,
+      { id: 'encoder', label: 'Encoder on the head pulley', type: 'select', options: { none: 'None', 100: '100 PPR (1 pulse / mm)' } },
+    ],
+    defaults: { label: 'CONVEYOR', conn: 'D230', feed: 'manual', mix: 'mixed', load: 30, encoder: 'none' }, state: { boxes: [], done: 0, rejected: 0, fed: 0 },
+    ports: (p) => [
+      ...row(['U', 'V', 'W', 'PE', '+24', '0V'], { x0: -355, x1: -225, y: 176, z: -140, dir: [0, 1, -0.3], sig: (id) => (id === 'PE' ? 'PE' : id === '+24' ? '+24' : id === '0V' ? '0V' : 'mot'), labels: ['U', 'V', 'W', '⏚', '+24', '0V'] }),
+      ...row(['S1', 'S2', 'S3', 'S4', 'Y1', ...(encoderPpr(p) ? ['A', 'B'] : [])], { x0: -355, x1: -355 + 26 * (encoderPpr(p) ? 6 : 4), y: 176, z: -116, dir: [0, 1, 0.3], sig: (id) => (id === 'Y1' ? 'out' : 'in') }),
+    ],
+  },
+  'tank': {
+    type: 'tank', name: 'Water tank: pump, drain valve, level sensors', short: 'Level tank', part: '10 L tank · 24 V pump · 24 V valve · 2 floats · 0–10 V level', brand: '', category: 'machine', sim: 'tank', zone: 'machine', max: 1,
+    size: [470, 660, 300], box: [[-240, 0, -150], [230, 660, 150]],
+    description: 'A clear process tank (360 mm, about 10.8 L) over a sump. The 24 V DC pump (P+ / P−, about 12 L/min) fills it; SPD (0–10 V against P−) sets its speed — leave it open for full speed. The drain valve (V+ / V−, 24 V, normally closed) empties it back into the sump; the hand valve at the bottom is the consumer (tap the tank to open it). Floats (dry contacts from FC): LL closes above the low mark (60 mm), LH above the high mark (300 mm). The level transmitter on top (+24 / 0V, LT) gives 0–10 V for 0–360 mm. Above 350 mm the tank overflows.',
+    props: [{ id: 'label', label: 'Label', type: 'text' }],
+    defaults: { label: 'TANK' }, state: { level: 90, demand: 0 },
+    ports: () => [
+      ...row(['P+', 'P-', 'SPD', 'V+', 'V-', 'FC'], { x0: -228, x1: -153, y: 150, z: -15, dir: [0, 1, -0.3], sig: (id) => (id === 'P+' || id === 'V+' ? 'out' : id === 'SPD' ? 'an' : id === 'FC' ? 'in' : '0V'), labels: ['P+', 'P−', 'SPD', 'V+', 'V−', 'FC'] }),
+      ...row(['LL', 'LH', '+24', '0V', 'LT'], { x0: -228, x1: -168, y: 150, z: 15, dir: [0, 1, 0.3], sig: (id) => (id === '+24' ? '+24' : id === '0V' ? '0V' : id === 'LT' ? 'an' : 'in') }),
+    ],
+  },
+  'cylinder': {
+    type: 'cylinder', name: 'Pneumatic cylinder + 5/2 valve', short: 'Cylinder', part: 'Ø32 × 100 mm double-acting · 5/2 valve 24 V · 2 reed sensors', brand: '', category: 'machine', sim: 'cyl', zone: 'machine', max: 3,
+    size: [420, 150, 200], box: [[-210, 0, -100], [330, 150, 100]],
+    description: 'A double-acting cylinder (Ø32, 100 mm stroke) with its 5/2 solenoid valve and two reed sensors on the barrel: B1 = retracted (−), B2 = extended (+), PNP 24 V from +24 / 0V. Single-solenoid valve: Y1 ON extends, Y1 OFF lets the spring retract it. Double-solenoid valve: a pulse on Y1 extends, a pulse on Y2 retracts — the valve remembers the last one. Coils: 24 V DC from Y1 / Y2 to 0V. Name the cylinders A, B … for sequences like A+ B+ B− A−.',
+    props: [
+      { id: 'label', label: 'Label', type: 'text' },
+      { id: 'valve', label: 'Valve', type: 'select', options: { single: '5/2 single solenoid (spring return)', double: '5/2 double solenoid (memory)' } },
+      { id: 'speed', label: 'Speed (flow control)', type: 'select', options: { slow: 'Slow · 1.5 s', normal: 'Normal · 0.8 s', fast: 'Fast · 0.4 s' } },
+    ],
+    defaults: { label: 'A', valve: 'single', speed: 'normal' }, state: { pos: 0 },
+    ports: (p) => row(['+24', '0V', 'B1', 'B2', 'Y1', ...(p.valve === 'double' ? ['Y2'] : [])], { x0: -190, x1: -190 + 24 * (p.valve === 'double' ? 5 : 4), y: 46, z: -78, dir: [0, 1, -0.2], sig: (id) => (id === '+24' ? '+24' : id === '0V' ? '0V' : /^Y/.test(id) ? 'out' : 'in'), labels: ['+24', '0V', 'B1 −', 'B2 +', 'Y1', 'Y2'] }),
   },
   'laptop': {
     type: 'laptop', name: 'Laptop · ISPSoft', short: 'Laptop', part: 'Programming PC', brand: '', category: 'pc', sim: 'laptop', zone: 'desk', max: 1,
@@ -421,13 +496,14 @@ export const CATEGORIES = [
   { id: 'sensor', name: 'Industrial sensors', icon: 'sensor' },
   { id: 'modbus', name: 'Modbus RS-485 devices', icon: 'network' },
   { id: 'motor', name: 'Motors', icon: 'settings' },
+  { id: 'machine', name: 'Machines & process models', icon: 'factory' },
   { id: 'pc', name: 'Computer', icon: 'display' },
 ];
 
 export const getDeviceDef = (type) => DEVICE_DEFS[type] || null;
 
 /** Devices that carry a user label (START, KM1, LS1 …) shown with their name. */
-export const hasLabel = (def) => !!def && ['field', 'sensor', 'switchgear', 'modbus'].includes(def.category);
+export const hasLabel = (def) => !!def && ['field', 'sensor', 'switchgear', 'modbus', 'machine'].includes(def.category);
 
 export function deviceProps(dev) {
   const d = DEVICE_DEFS[dev.type];

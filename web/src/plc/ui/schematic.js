@@ -2,6 +2,7 @@
 // (picking, markers, selection, focus, live states). Devices are drawn as terminal-block symbols in
 // rows like the panel (rail 1, rail 2, operator console); every wire is routed orthogonally through
 // the "wire ducts" between the rows and the gaps between devices, each on its own track.
+import { CONV, TANK } from '../sim/machines.js';
 import { DEVICE_DEFS, devicePorts, deviceProps, busName, hasLabel } from '../devices/defs.js';
 import { boxInSelection, polylineInSelection } from '../../ui/gestures.js';
 
@@ -35,14 +36,14 @@ const shortLabel = (port) => (port.kind === 'comm' ? (port.id === 'RS485' ? 'RS-
 // ====================================================================== symbols
 /** Which edge of the block a terminal sits on. */
 function edgeOf(def, port) {
-  if (['console', 'motor', 'hmi', 'desk'].includes(def.zone)) return 'top';
-  if (def.sim === 'mcb') return 'bottom';
+  if (['console', 'motor', 'hmi', 'desk', 'machine'].includes(def.zone)) return 'top';
+  if (def.sim === 'mcb' || def.sim === 'mains3') return 'bottom';
   if (def.sim === 'plc') return port.kind === 'comm' || port.pos[1] < def.size[1] / 2 ? 'bottom' : 'top';
   if (def.sim === 'vfd') return port.pos[1] > 40 ? 'top' : 'bottom';
   return port.pos[1] > def.size[1] / 2 ? 'top' : 'bottom';
 }
 
-const BODY_H = { plc: 196, mcb: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112, tc: 150, mbth: 132, meter: 132 };
+const BODY_H = { plc: 196, mcb: 128, mains3: 128, psu: 118, vfd: 214, hmi: 196, laptop: 178, motor: 156, motor6: 168, contactor: 150, olr: 140, relay: 130, cb: 128, tb: 112, tc: 150, mbth: 132, meter: 132, conveyor: 170, tank: 200, cyl: 130 };
 
 function symbolFor(dev) {
   const def = DEVICE_DEFS[dev.type];
@@ -55,7 +56,7 @@ function symbolFor(dev) {
   top.sort(order); bottom.sort(def.sim === 'plc' ? (a, b) => plcKey(a) - plcKey(b) : order);
   const slotW = (p) => (p.kind === 'comm' ? COMM_W : P);
   const rowW = (row) => row.reduce((s, p) => s + slotW(p), 0);
-  const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, mcb: 110, psu: 130, tc: 130, mbth: 124, meter: 116 }[def.sim] || 104;
+  const minW = { plc: 300, vfd: 220, hmi: 230, laptop: 180, motor: 150, motor6: 190, mcb: 110, mains3: 150, psu: 130, tc: 130, mbth: 124, meter: 116, conveyor: 380, tank: 210, cyl: 190 }[def.sim] || 104;
   const w = Math.max(minW, rowW(top) + SIDE * 2, rowW(bottom) + SIDE * 2);
   const h = BODY_H[def.sim] || 118;
   const slots = new Map();
@@ -70,14 +71,15 @@ function symbolFor(dev) {
 
 // ====================================================================== layout + routing
 function bandsFor(devices) {
-  const rail1 = [], rail2 = [], desk = [], hmi = [], consoleDevs = [], motors = [];
-  const ORDER = { mcb: 0, power: 1, plc: 2 };
+  const rail1 = [], rail2 = [], desk = [], hmi = [], consoleDevs = [], motors = [], machines = [];
+  const ORDER = { mcb: 0, power: 1, plc: 2, mains3: 3 };
+  const key = (d) => (d.type === 'mcb' || d.type === 'mains3' ? d.type : DEVICE_DEFS[d.type].category);
   for (const d of devices) {
     const def = DEVICE_DEFS[d.type];
     if (!def) continue;
-    ({ rail1, rail2, desk, hmi, console: consoleDevs, motor: motors }[def.zone] || rail1).push(d);
+    ({ rail1, rail2, desk, hmi, console: consoleDevs, motor: motors, machine: machines }[def.zone] || rail1).push(d);
   }
-  rail1.sort((a, b) => (ORDER[a.type === 'mcb' ? 'mcb' : DEVICE_DEFS[a.type].category] ?? 3) - (ORDER[b.type === 'mcb' ? 'mcb' : DEVICE_DEFS[b.type].category] ?? 3));
+  rail1.sort((a, b) => (ORDER[key(a)] ?? 3) - (ORDER[key(b)] ?? 3));
   const bands = [];
   if (rail1.length) bands.push({ zone: 'rail1', devs: rail1 });
   const mid = [...desk, ...hmi, ...rail2];
@@ -87,6 +89,7 @@ function bandsFor(devices) {
     if (i === 0) row.push(...motors);
     bands.push({ zone: 'console', devs: row });
   }
+  if (machines.length) bands.push({ zone: 'machine', devs: machines });
   return bands;
 }
 
@@ -356,6 +359,135 @@ function drawDevice(g, sym) {
       };
       break;
     }
+    case 'mains3': {
+      txt(w / 2, 30, 'MAINS 3~ 400 V', 'sd-title');
+      el('rect', { x: w / 2 - 40, y: 42, width: 80, height: 48, rx: 5, class: 'sd-well' }, g);
+      const lever = el('rect', { x: w / 2 - 34, y: 46, width: 68, height: 18, rx: 3, class: 'sd-lever' }, g);
+      const st = txt(w / 2, 106, 'ON', 'sd-state');
+      txt(w / 2, 120 - 4, 'MCCB 4P C16', 'sd-sub');
+      ctl(w / 2 - 44, 38, 88, 58, 'toggle', { label: 'Main breaker 3-phase' });
+      update = (rt) => {
+        const on = !!rt.dev.state.on;
+        set(lever, 'y', on ? 46 : 68);
+        set(lever, 'class', on ? 'sd-lever on' : 'sd-lever');
+        const s = rt.tripped && !on ? 'TRIPPED' : on ? 'ON' : 'OFF';
+        if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state' + (s === 'TRIPPED' ? ' err' : on ? ' ok' : '')); }
+      };
+      break;
+    }
+    case 'motor6': {
+      const cx = w / 2, cy = h / 2 + 18;
+      el('circle', { cx, cy, r: 40, class: 'sd-motor' }, g);
+      const fan = el('g', { class: 'sd-fan' }, g);
+      for (let i = 0; i < 3; i++) el('line', { x1: cx, y1: cy, x2: cx + Math.cos(i * 2.094) * 32, y2: cy + Math.sin(i * 2.094) * 32 }, fan);
+      el('circle', { cx, cy, r: 20, class: 'sd-motor-in' }, g);
+      txt(cx, cy + 5, 'M 3~', 'sd-title');
+      const links = props.links === 'delta' ? 'Δ links' : props.links === 'star' ? 'Y links' : 'no links · Y/Δ';
+      txt(cx, 34, `1.5 kW 400 V Δ · ${links}`, 'sd-mini');
+      const conn = txt(cx - 66, cy - 26, '', 'sd-state');
+      const rpm = txt(cx, h - 6, '0 rpm', 'sd-sub');
+      update = (rt) => {
+        set(fan, 'transform', `rotate(${((rt.angle || 0) * 180 / Math.PI).toFixed(1)} ${cx} ${cy})`);
+        set(fan, 'class', Math.abs(rt.rpm || 0) > 5 ? 'sd-fan on' : 'sd-fan');
+        const c = rt.hum ? 'HUM' : rt.fed === 'mains' ? (rt.p > 0.4 && rt.p < 0.75 ? 'Y' : rt.p >= 0.75 ? 'Δ' : '') : '';
+        if (conn.textContent !== c) { conn.textContent = c; set(conn, 'class', 'sd-state' + (c === 'HUM' ? ' err' : c ? ' ok' : '')); }
+        const s = `${Math.round(rt.rpm || 0)} rpm${rt.fed ? ` · ${(rt.amps || 0).toFixed(1)} A` : ''}`;
+        if (rpm.textContent !== s) rpm.textContent = s;
+      };
+      break;
+    }
+    case 'conveyor': {
+      // the belt with its boxes, the sensors S1 … S4 and the pusher
+      const bx0 = 40, bx1 = w - 30, by = 96, L = bx1 - bx0;
+      el('rect', { x: bx0 - 6, y: by - 6, width: L + 12, height: 12, rx: 6, class: 'sd-well' }, g);
+      const beltLine = el('line', { x1: bx0, y1: by, x2: bx1, y2: by, class: 'sd-belt' }, g);
+      txt(bx0 - 10, by - 30, 'FEED', 'sd-mini');
+      ctl(bx0 - 30, by - 50, 46, 50, 'feed', { label: 'Feeder: put a box on the belt' });
+      const at = (k) => bx0 + CONV.at[k] * L;
+      const sens = {};
+      for (const k of ['S1', 'S2', 'S3', 'S4']) {
+        const x = at(k);
+        el('line', { x1: x, y1: by - 36, x2: x, y2: by + 10, class: 'sd-beam on' }, g).setAttribute('opacity', k === 'S2' ? 0 : 0.35);
+        sens[k] = led(x, by - 42, '#ffb020', 4);
+        txt(x, by - 50, k, 'sd-mini');
+      }
+      const px = at('push');
+      const plate = el('rect', { x: px - 14, y: by + 14, width: 28, height: 6, rx: 2, fill: '#f59e0b' }, g);
+      const coil = led(px + 24, by + 30, '#ff3434', 4);
+      txt(px, by + 44, 'PUSHER Y1', 'sd-mini');
+      ctl(px - 30, by + 10, 60, 40, 'press', { label: 'Pusher valve: manual override' });
+      const boxes = [];
+      for (let i = 0; i < 10; i++) { const b = el('rect', { x: 0, y: by - 22, width: 16, height: 16, rx: 2, class: 'sd-box' }, g); b.style.display = 'none'; boxes.push(b); }
+      const info = txt(w / 2, h - 34, '', 'sd-sub');
+      txt(w / 2, h - 14, title, 'sd-label');
+      update = (rt) => {
+        const st = rt.dev.state, list = st.boxes || [];
+        boxes.forEach((b, i) => {
+          const it = list[i];
+          if (!it) { if (b.style.display !== 'none') b.style.display = 'none'; return; }
+          b.style.display = '';
+          set(b, 'x', (bx0 + (it.x / CONV.L) * L - 8).toFixed(1));
+          set(b, 'y', (by - 22 + (it.push || 0) * 40).toFixed(1));
+          set(b, 'class', it.m ? 'sd-box metal' : 'sd-box');
+        });
+        for (const k in sens) ledOn(sens[k], !!(rt.powered && rt.sens && rt.sens[k]));
+        set(plate, 'y', (by + 14 - (rt.push || 0) * 26).toFixed(1));
+        ledOn(coil, !!rt.coil);
+        set(beltLine, 'class', Math.abs(rt.belt || 0) > 1 ? 'sd-belt on' : 'sd-belt');
+        const s = `${Math.round(Math.abs(rt.belt || 0))} mm/s · bin ${st.done || 0} · rejected ${st.rejected || 0}`;
+        if (info.textContent !== s) info.textContent = s;
+      };
+      break;
+    }
+    case 'tank': {
+      const tx = w / 2 - 10, ty = 40, tw = 70, th = 110;
+      el('rect', { x: tx, y: ty, width: tw, height: th, rx: 4, class: 'sd-well' }, g);
+      const water = el('rect', { x: tx + 2, y: ty + th - 2, width: tw - 4, height: 0, class: 'sd-water' }, g);
+      for (const [k, mark] of [['LH', TANK.high], ['LL', TANK.low]]) {
+        const y = ty + th - (mark / TANK.H) * th;
+        el('line', { x1: tx - 6, y1: y, x2: tx, y2: y, class: 'sd-ptr' }, g);
+        txt(tx - 10, y + 4, k, 'sd-mini r');
+      }
+      const lv = txt(tx + tw / 2, ty + th / 2, '', 'sd-value');
+      const pump = el('circle', { cx: tx - 40, cy: ty + th - 10, r: 13, class: 'sd-motor' }, g);
+      txt(tx - 40, ty + th + 16, 'PUMP', 'sd-mini');
+      const valve = led(tx + tw + 22, ty + th - 6, '#ff3434', 5);
+      txt(tx + tw + 22, ty + th + 16, 'DRAIN', 'sd-mini');
+      const hand = txt(tx + tw / 2, ty + th + 16, '', 'sd-mini');
+      ctl(tx, ty, tw, th, 'tankValve', { label: `${title}: hand valve` });
+      txt(w / 2, h - 12, title, 'sd-label');
+      update = (rt) => {
+        const l = Math.max(0, Math.min(TANK.H, rt.dev.state.level ?? 0)), hh = ((th - 4) * l) / TANK.H;
+        set(water, 'y', (ty + th - 2 - hh).toFixed(1)); set(water, 'height', hh.toFixed(1));
+        const s = `${Math.round((l / TANK.H) * 100)} %`;
+        if (lv.textContent !== s) lv.textContent = s;
+        set(pump, 'class', (rt.pump || 0) > 0.02 ? 'sd-motor on' : 'sd-motor');
+        ledOn(valve, !!rt.valve);
+        const d = rt.dev.state.demand || 0, hs = d > 0.02 ? `hand ${Math.round(d * 100)} %` : '';
+        if (hand.textContent !== hs) hand.textContent = hs;
+      };
+      break;
+    }
+    case 'cyl': {
+      const cy = 72, x0 = 30, x1 = w - 60;
+      el('rect', { x: x0, y: cy - 14, width: x1 - x0, height: 28, rx: 4, class: 'sd-well' }, g);
+      const rod = el('rect', { x: x1, y: cy - 4, width: 30, height: 8, rx: 2, class: 'sd-rod' }, g);
+      const tip = el('rect', { x: x1 + 26, y: cy - 10, width: 12, height: 20, rx: 2, fill: '#dc2626' }, g);
+      const b1 = led(x0 + 14, cy - 22, '#ffb020', 4), b2 = led(x1 - 14, cy - 22, '#ffb020', 4);
+      txt(x0 + 14, cy - 30, 'B1 −', 'sd-mini'); txt(x1 - 14, cy - 30, 'B2 +', 'sd-mini');
+      const y1 = led(x0 + 10, cy + 26, '#ff3434', 4);
+      txt(x0 + 34, cy + 30, props.valve === 'double' ? 'Y1   Y2' : 'Y1 · 5/2', 'sd-mini l');
+      const y2 = props.valve === 'double' ? led(x0 + 58, cy + 26, '#ff3434', 4) : null;
+      ctl(x0, cy - 16, x1 - x0, 32, 'press', { label: `${title} valve: manual override` });
+      txt(w / 2, h - 12, `${title} · Ø32 × 100`, 'sd-label');
+      update = (rt) => {
+        const p = rt.dev.state.pos ?? 0;
+        set(rod, 'width', (30 + p * 50).toFixed(1)); set(tip, 'x', (x1 + 26 + p * 50).toFixed(1));
+        ledOn(b1, !!(rt.powered && p <= 0.03)); ledOn(b2, !!(rt.powered && p >= 0.97));
+        ledOn(y1, !!rt.y1); if (y2) ledOn(y2, !!rt.y2);
+      };
+      break;
+    }
     case 'psu': {
       txt(w / 2, h / 2 - 8, '24 V DC', 'sd-title');
       txt(w / 2, h / 2 + 8, def.part, 'sd-sub');
@@ -445,7 +577,7 @@ function drawDevice(g, sym) {
       const rpm = txt(cx, h - 6, '0 rpm', 'sd-sub');
       update = (rt) => {
         set(fan, 'transform', `rotate(${((rt.angle || 0) * 180 / Math.PI).toFixed(1)} ${cx} ${cy})`);
-        const s = `${Math.round(rt.rpm || 0)} rpm`;
+        const s = `${Math.round(rt.rpm || 0)} rpm${rt.fed ? ` · ${(rt.amps || 0).toFixed(1)} A` : ''}`;
         if (rpm.textContent !== s) rpm.textContent = s;
         set(fan, 'class', Math.abs(rt.rpm || 0) > 5 ? 'sd-fan on' : 'sd-fan');
       };
@@ -644,12 +776,14 @@ function drawDevice(g, sym) {
     case 'olr': {
       const cx = w / 2, cy = h / 2;
       txt(cx, cy - 18, props.label || 'F1', 'sd-title');
-      txt(cx, cy - 2, def.part.split(' · ')[0], 'sd-sub');
+      const amps = txt(cx, cy - 2, `set ${props.setting} A`, 'sd-sub');
       const btn = el('circle', { cx: cx + 26, cy: cy + 18, r: 9, fill: '#1f5fd6', class: 'sd-cap' }, g);
       const st = txt(cx - 10, cy + 22, 'OK', 'sd-state ok');
       ctl(cx - 40, cy - 28, 80, 70, 'toggle', { label: `${props.label || 'Overload relay'}: trip / reset` });
       update = (rt) => {
         const t = !!rt.dev.state.tripped;
+        const a = rt.amps > 0.05 ? `${rt.amps.toFixed(1)} A / set ${props.setting} A` : `set ${props.setting} A`;
+        if (amps.textContent !== a) amps.textContent = a;
         set(btn, 'r', t ? 11 : 9);
         const s = t ? 'TRIPPED' : 'OK';
         if (st.textContent !== s) { st.textContent = s; set(st, 'class', 'sd-state ' + (t ? 'err' : 'ok')); }

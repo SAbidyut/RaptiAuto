@@ -12,6 +12,7 @@ import { LabSystem } from '../sim/system.js';
 import { defaultParams } from '../sim/vfd.js';
 import { fmtName } from '../sim/modbus.js';
 import { openCommSheet } from './comm-sheet.js';
+import { FaultTools } from './faults.js';
 
 const WIRE_COLORS = [['auto', 'Auto'], ['#dc2626', 'Red'], ['#1e3a8a', 'Dark blue'], ['#2563eb', 'Blue'], ['#7c4a1e', 'Brown'], ['#f97316', 'Orange'], ['#e5e7eb', 'White'], ['#111827', 'Black'], ['#a855f7', 'Violet'], ['#eab308', 'Yellow'], ['pe', 'Earth']];
 const thumbs = new Map();
@@ -25,6 +26,10 @@ const BUNDLES = [
   [['U/T1', 'V/T2', 'W/T3'], ['L1', 'L2', 'L3']],
   [['T1', 'T2', 'T3'], ['L1', 'L2', 'L3']],
   [['T1', 'T2', 'T3'], ['U', 'V', 'W']],
+  // 3-phase supply → contactor / breaker, contactor / overload relay → the 6-terminal motor
+  [['L1', 'L2', 'L3'], ['L1', 'L2', 'L3']],
+  [['T1', 'T2', 'T3'], ['U1', 'V1', 'W1']],
+  [['T1', 'T2', 'T3'], ['W2', 'U2', 'V2']],
 ];
 
 export class PanelView {
@@ -205,6 +210,8 @@ export class PanelView {
       tool('plus', 'Add device', () => this.openLibrary()),
       tool('list', 'Wiring list', () => this.openWiringList()),
       tool('warning', 'Check the lab', () => this.showIssues()),
+      this.meterBtn = tool('meter', 'Multimeter', () => this.faults.toggleMeter()),
+      tool('target', 'Fault finding', () => this.faults.openChallenge()),
       h('div', { class: 'tool-sep' }),
       this.selToolBtn = tool('select', 'Select (box)', () => this.toggleSelectTool()),
       tool('undo', 'Undo', () => this.lab.undo()),
@@ -235,6 +242,7 @@ export class PanelView {
     // Network view legend: what the packets mean and the live state of the bus
     this.netCard = h('div', { class: 'net-legend hidden' });
     this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.emptyEl, this.chooser, this.taskPill, this.netCard);
+    this.faults = new FaultTools(this);
     this.setMode('wire');
   }
 
@@ -287,6 +295,7 @@ export class PanelView {
     if (this.cardAcc < 0.4) return;
     this.cardAcc = 0;
     if (this.potCard && this.potCard.upd) this.potCard.upd();
+    if (this.faults) this.faults.frame();
     this.updateNetCard();
     this.updateEmpty();
   }
@@ -376,7 +385,10 @@ export class PanelView {
     add((d) => d.type === 'dop-107bv', 'HMI', 'screen');
     add((d) => d.type === 'ms300', 'VFD', 'gauge');
     if (devs.some((d) => DEVICE_DEFS[d.type].zone === 'console')) this.chips.appendChild(chip('Console', 'console', 'button'));
-    add((d) => d.type === 'motor', 'Motor', 'motor');
+    add((d) => d.type === 'motor' || d.type === 'motor6', 'Motor', 'motor');
+    add((d) => d.type === 'conveyor', 'Conveyor', 'layers');
+    add((d) => d.type === 'tank', 'Tank', 'gauge');
+    add((d) => d.type === 'cylinder', 'Cylinder', 'move');
     add((d) => d.type === 'drp024', 'Power', 'bolt');
     add((d) => d.type === 'laptop', 'Laptop', 'display');
     this.updateChipFade();
@@ -409,7 +421,7 @@ export class PanelView {
       const ctl = this.scene.pickControl(e.clientX, e.clientY);
       // the laptop is not a push button: a finger on it may start an orbit / pinch. A clean tap
       // selects it (Ladder button in the bar) instead of jumping to another tab under the finger
-      if (ctl && ctl.action !== 'laptop') { this.pressControl(ctl, e); return; }
+      if (ctl && ctl.action !== 'laptop' && !(this.faults && this.faults.wantsPort(e.clientX, e.clientY))) { this.pressControl(ctl, e); return; }
     }
     // second press of a double tap: sliding zooms (Google Maps), releasing zooms in a step
     const first = this.taps.second(e.clientX, e.clientY);
@@ -443,7 +455,9 @@ export class PanelView {
     const sys = this.scene.system;
     switch (ctl.action) {
       case 'press': sys.act(ctl.devId, 'press', true); Native.vibrate(10); break;
-      case 'toggle': sys.act(ctl.devId, 'toggle'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; this.scene.dirty = true; break;
+      case 'toggle': { const msg = sys.act(ctl.devId, 'toggle'); if (msg) toast(msg, 'warn'); Native.vibrate(14); this.lab.save(); this.scene.renderer.shadowMap.needsUpdate = true; this.scene.dirty = true; break; }
+      case 'feed': { const msg = sys.act(ctl.devId, 'feed'); if (msg) toast(msg, 'info'); Native.vibrate(8); this.scene.dirty = true; break; }
+      case 'tankValve': this.openTankValve(ctl.devId); break;
       case 'vfdKey': {
         if (!this.lab.sys) { toast('Press Simulate to power the drive'); break; }
         const a = this.active;
@@ -555,6 +569,7 @@ export class PanelView {
   }
 
   tap(x, y) {
+    if (this.faults && this.faults.onTap(x, y)) return;
     if (this.selectTool) {
       // Select tool: tapping adds a device / cable to the selection or removes it
       const cable = this.scene.pickCable(x, y);
@@ -582,12 +597,12 @@ export class PanelView {
     this.select(null);
   }
 
-  showChooser(list, x, y) {
+  showChooser(list, x, y, pick = (dev, port) => this.portTapped(dev, port)) {
     const r = this.el.getBoundingClientRect();
     this.chooser.innerHTML = '';
     this.chooser.appendChild(h('div', { class: 'pc-title' }, 'Which terminal?'));
     for (const p of list) {
-      this.chooser.appendChild(h('button', { class: 'pc-item', onclick: () => { this.chooser.classList.add('hidden'); this.portTapped(p.dev, p.port); } },
+      this.chooser.appendChild(h('button', { class: 'pc-item', onclick: () => { this.chooser.classList.add('hidden'); pick(p.dev, p.port); } },
         h('b', {}, p.port.label), h('small', {}, this.lab.deviceName(p.dev))));
     }
     this.chooser.style.left = Math.max(8, Math.min(r.width - 190, x - r.left - 90)) + 'px';
@@ -858,6 +873,11 @@ export class PanelView {
       if (P.hmi.screens.every((s) => !s.elements.length)) P.hmi.screens[0].elements = starterScreen();
     } else if (def.sim === 'vfd') tip = 'Drive added. Wire MCB L / N → R/L1 · S/L2 and U/T1 V/T2 W/T3 → motor. For Modbus, plug RS-485 (RJ45) into PLC COM2.';
     else if (def.sim === 'motor') tip = 'Motor added. Tap U/T1 on the drive, then U on the motor — V and W are connected for you.';
+    else if (def.sim === 'motor6') tip = 'Motor 400 V added (Δ links fitted). Direct-on-line: 3-phase supply → contactor → overload relay → U1 V1 W1. For star-delta set "No links" in its settings and wire W2 U2 V2 too.';
+    else if (def.sim === 'mains3') tip = '3-phase supply added: L1 L2 L3 = 400 V between phases, 230 V to N. Feed contactors from L1 L2 L3; a 230 V device (power supply, PLC) goes between ONE phase and N.';
+    else if (def.sim === 'conveyor') tip = 'Conveyor added. Motor: U V W from the MS300 (or through a contactor in Y 400 V). Sensors: +24 / 0V from the supply, S1 … S4 → PLC inputs; Y1 = pusher valve. Tap the feeder to put a box on.';
+    else if (def.sim === 'tank') tip = 'Tank added. P+ / P− = 24 V pump, V+ / V− = drain valve; FC is the float common (→ +24 V), LL / LH → PLC inputs; LT = 0–10 V level (+24 / 0V). Tap the tank to open the hand valve.';
+    else if (def.sim === 'cyl') tip = 'Cylinder added. +24 / 0V for the reed sensors, B1 (back) and B2 (out) → PLC inputs, Y1 (and Y2) ← PLC outputs, the coils return to 0V.';
     else if (def.sim === 'psu') tip = 'Power supply added. Tap L on the MCB, then L on the supply — N and ⏚ follow automatically.';
     else if (def.sim === 'contactor') tip = 'Contactor added. Coil: PLC Y → A1, A2 → 0 V (C0 to +24 V). Main contacts: drive U/T1 → 1/L1 (V and W follow), 2/T1 → motor U. 13–14 can report back to a PLC input.';
     else if (def.sim === 'olr') tip = 'Overload relay added. Put it between the contactor and the motor (2/T1 → 1/L1 …) and wire the NC 95–96 in series with the stop circuit or to a PLC input.';
@@ -1118,6 +1138,28 @@ export class PanelView {
     this.potCard = h('div', { class: 'pot-card mb-card' },
       h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'DTB4848'} · set value`), val), range,
       h('div', { class: 'chips-row mb-chips' }, run, ...modes, tune),
+      h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
+    this.potCard.upd = upd;
+    this.el.appendChild(this.potCard);
+    upd();
+  }
+
+  /** Hand valve of the tank (the consumer): 0 … 100 % open. */
+  openTankValve(devId) {
+    this.closePot();
+    const dev = this.lab.project.devices.find((d) => d.id === devId);
+    if (!dev) return;
+    const val = h('b', {}, '');
+    const range = h('input', { class: 'range', type: 'range', min: 0, max: 100, value: Math.round((dev.state.demand || 0) * 100) });
+    const upd = () => {
+      const rt = this.scene.system && this.scene.system.rts.get(devId);
+      const lv = dev.state.level ?? 0;
+      val.textContent = `${range.value} % open · level ${Math.round(lv)} mm${rt && rt.qOut ? ` · out ${(rt.qOut * 0.06).toFixed(1)} L/min` : ''}`;
+    };
+    range.addEventListener('input', () => { if (this.scene.system) this.scene.system.act(devId, 'demand', +range.value / 100); else dev.state.demand = +range.value / 100; upd(); this.scene.dirty = true; });
+    range.addEventListener('change', () => this.lab.save());
+    this.potCard = h('div', { class: 'pot-card' },
+      h('div', { class: 'ctl-head' }, h('label', {}, `${deviceProps(dev).label || 'Tank'} · hand valve`), val), range,
       h('button', { class: 'sel-close', html: icon('close', 18), onclick: () => this.closePot() }));
     this.potCard.upd = upd;
     this.el.appendChild(this.potCard);

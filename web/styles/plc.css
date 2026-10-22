@@ -630,6 +630,13 @@
 .sd-motor-in { fill: #334155; }
 .sd-fan line { stroke: #94a3b8; stroke-width: 4; stroke-linecap: round; }
 .sd-fan.on line { stroke: #cbd5e1; }
+.sd-motor.on { fill: #16a34a; stroke: #4ade80; }
+.sd-belt { stroke: #475569; stroke-width: 5; stroke-dasharray: 8 6; }
+.sd-belt.on { stroke: #94a3b8; animation: sd-belt-run .6s linear infinite; }
+@keyframes sd-belt-run { to { stroke-dashoffset: -14; } }
+.sd-box { fill: #2563eb; stroke: #93c5fd; stroke-width: 1; }
+.sd-box.metal { fill: #9ca3af; stroke: #e5e7eb; }
+.sd-rod { fill: #e5e7eb; }
 .schem.far .sd-tlabel, .schem.far .sd-mini, .schem.far .sd-sub { display: none; }
 
 /* wires */
@@ -785,3 +792,64 @@
 .lab-empty .le-ic { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 18px; color: var(--accent); background: rgba(34, 211, 238, .12); }
 .lab-empty b { font-family: var(--display); font-size: 19px; }
 .lab-empty p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+
+/* ---- multimeter + fault finding (Lab tab) */
+.meter-card { position: absolute; top: 54px; left: calc(10px + var(--safe-l)); z-index: 5; width: 232px; padding: 10px 12px 10px; border-radius: 20px; background: linear-gradient(180deg, #f5c518, #e0a800); border: 2px solid #8a6a00; box-shadow: 0 10px 28px rgba(0, 0, 0, .45); color: #1f2937; animation: barIn .2s ease; }
+.meter-card .sel-close { position: absolute; right: 4px; top: 4px; color: #1f2937; }
+.meter-card .mm-head { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 12.5px; letter-spacing: .3px; text-transform: uppercase; }
+.meter-card .mm-lcd { margin-top: 6px; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; padding: 6px 10px; border-radius: 10px; background: #b7c8a4; border: 2px solid #3f4a35; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .3); font-family: var(--mono); color: #111; min-height: 46px; }
+.meter-card .mm-lcd.warn { background: #f8b4b4; }
+.meter-card .mm-val { font-size: 30px; font-weight: 700; letter-spacing: 1px; }
+.meter-card .mm-unit { font-size: 15px; font-weight: 700; }
+.meter-card .mm-sub { margin-top: 4px; font-size: 11.5px; font-weight: 600; min-height: 15px; line-height: 1.25; }
+.meter-card .mm-modes { display: flex; gap: 6px; margin-top: 6px; }
+.meter-card .mm-mode { flex: 1; height: 30px; border-radius: 99px; border: 2px solid #3f3300; background: #2b2b2b; color: #e5e7eb; font-weight: 800; font-size: 13px; }
+.meter-card .mm-mode.on { background: #111827; color: #fde047; box-shadow: 0 0 0 2px #fde047 inset; }
+.meter-card .mm-probes { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
+.meter-card .mm-probe { display: flex; align-items: center; gap: 6px; padding: 2px 6px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meter-card .mm-probe span { overflow: hidden; text-overflow: ellipsis; }
+.meter-card .mm-probe i { flex: none; width: 11px; height: 11px; border-radius: 50%; border: 2px solid #1f2937; }
+.meter-card .mm-probe.red i { background: #ef4444; }
+.meter-card .mm-probe.com i { background: #111827; }
+.meter-card .mm-probe.next { background: rgba(255, 255, 255, .45); }
+.meter-card .mm-actions { display: flex; gap: 6px; margin-top: 6px; }
+.meter-card .mm-actions .chip { height: 28px; font-size: 12px; background: rgba(17, 24, 39, .85); color: #f8fafc; border-color: transparent; }
+.lab-tools .tool.on { background: rgba(245, 197, 24, .25); color: #fde047; }
+.fault-bar { position: absolute; bottom: 62px; left: 50%; transform: translateX(-50%); z-index: 5; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 6px 0 12px; border-radius: 99px; background: rgba(40, 10, 10, .88); border: 1px solid rgba(248, 113, 113, .55); color: #fecaca; font-size: 12.5px; font-weight: 700; backdrop-filter: blur(10px); white-space: nowrap; animation: barIn .2s ease; }
+.lab.fs .pane-panel .fault-bar { bottom: calc(62px + var(--safe-b)); }
+.panel-view.meter-on .lab-hint { top: auto; bottom: 112px; }
+.fault-bar .fb-t { display: inline-flex; align-items: center; gap: 5px; }
+.fault-bar b { font-family: var(--mono); color: #fff; }
+.fault-bar .chip { height: 28px; font-size: 12px; }
+.fault-bar .fb-report { background: rgba(34, 197, 94, .22); border-color: rgba(74, 222, 128, .6); color: #bbf7d0; }
+.fault-start .fault-best { display: flex; align-items: center; gap: 6px; color: #fde68a; }
+.fault-pick { display: flex; flex-direction: column; gap: 2px; max-height: 38vh; overflow: auto; padding: 6px; border-radius: 12px; border: 1px solid var(--line); }
+.fault-opt { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: 13px; }
+.fault-what { display: flex; flex-direction: column; gap: 8px; }
+.fault-choice { text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line2); background: rgba(255, 255, 255, .04); color: var(--text); font-weight: 600; }
+.fault-list { margin: 0 0 8px 18px; }
+
+/* ---- SFC view of the step ladder (Ladder tab) */
+.sfc-host { flex: 1; min-height: 0; overflow: auto; padding: 8px 4px 24px; background: radial-gradient(circle at 20% 0%, rgba(56, 189, 248, .06), transparent 60%); }
+.sfc-svg { display: block; font-family: var(--mono); }
+.sfc-empty { fill: #94a3b8; font-size: 14px; }
+.sfc-step rect { fill: #0f1d3a; stroke: #64748b; stroke-width: 2; }
+.sfc-step rect.inner { fill: none; stroke-width: 1.5; }
+.sfc-step.on rect { fill: #14532d; stroke: #4ade80; filter: drop-shadow(0 0 8px rgba(74, 222, 128, .7)); }
+.sfc-step.on rect.inner { fill: none; filter: none; }
+.sfc-n { fill: #e2e8f0; font-size: 17px; font-weight: 700; }
+.sfc-name { fill: #93c5fd; font-size: 13px; font-family: var(--font, sans-serif); font-weight: 700; }
+.sfc-step.on .sfc-name { fill: #bbf7d0; }
+.sfc-link { stroke: #64748b; stroke-width: 2; fill: none; }
+.sfc-arrow { fill: #64748b; }
+.sfc-tr { stroke: #cbd5e1; stroke-width: 4; stroke-linecap: round; }
+.sfc-tr.on { stroke: #facc15; }
+.sfc-cond { fill: #cbd5e1; font-size: 13px; font-weight: 700; }
+.sfc-cond.on { fill: #fde047; }
+.sfc-cmt { fill: #64748b; font-weight: 500; font-size: 11.5px; font-family: var(--font, sans-serif); }
+.sfc-jump { fill: #a78bfa; font-size: 13px; font-weight: 700; }
+.sfc-act { fill: #111a30; stroke: #475569; stroke-width: 1.5; }
+.sfc-act.on { stroke: #4ade80; fill: #0f2a1c; }
+.sfc-acttxt { fill: #cbd5e1; font-size: 12.5px; font-weight: 600; }
+.sfc-acttxt.on { fill: #bbf7d0; }
+.lb-sfc.on { background: rgba(74, 222, 128, .18); color: #86efac; }
