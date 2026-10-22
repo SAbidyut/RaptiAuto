@@ -376,7 +376,7 @@ export class NetOverlay {
       o.material = f;
     };
     for (const [id, e] of S.models) if (!this.netDevs.has(id)) e.model.group.traverse((o) => fade(o, 0.16));
-    for (const obj of [S.ducts, S.mains]) if (obj) obj.traverse((o) => fade(o, 0.1));
+    for (const obj of [S.ducts, S.mainsGroup]) if (obj) obj.traverse((o) => fade(o, 0.1));
     for (const cab of S.cables.values()) {
       if (cab.userData.comm) continue;
       cab.traverse((o) => { if (o !== cab.userData.tube && o !== cab) o.visible = false; });

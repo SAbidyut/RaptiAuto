@@ -31,6 +31,13 @@ export class PlcCpu {
     this.rtcOffset = 0; // TWR: the PLC clock minus the phone clock (ms)
     this.chan = [{ pos: 0 }, { pos: 0 }]; // pulse output channels CH0 (Y0/Y1) and CH1 (Y2/Y3)
     this.Xphys = new Uint8Array(256);
+    // high-speed inputs X0–X7: encoder pulses arrive faster than the scan, so the lab hands them over
+    // counted (hsAcc), with the channel they come from (A / B / Z) and the turning direction
+    this.hsAcc = new Float64Array(8);
+    this.hsN = new Int32Array(8);
+    this.hsCh = new Array(8).fill(null);
+    this.hsSign = new Int8Array(8).fill(1);
+    this.hsLive = new Uint8Array(8);
     this.ai = [0, 0, 0, 0];
     this.forceX = new Map();
     this.forceY = new Map();
@@ -346,9 +353,23 @@ export class PlcCpu {
     return n;
   }
 
+  /** Pulses from an encoder output (channel A / B / Z) on input Xk; d < 0 = turning backwards. */
+  hsFeed(k, ch, d) {
+    this.hsAcc[k] += Math.abs(d);
+    this.hsCh[k] = ch;
+    if (d) this.hsSign[k] = d > 0 ? 1 : -1;
+    this.hsLive[k] = 40;
+  }
+
   scan(dt) {
     this.dt = dt;
     this.clock += dt;
+    // high-speed inputs: whole pulses of this scan
+    for (let k = 0; k < 8; k++) {
+      const n = Math.floor(this.hsAcc[k]);
+      this.hsAcc[k] -= n; this.hsN[k] = n;
+      if (this.hsLive[k]) this.hsLive[k]--; else this.hsCh[k] = null;
+    }
     // input refresh
     for (let i = 0; i < 256; i++) this.X[i] = this.Xphys[i];
     for (const [i, v] of this.forceX) this.X[i] = v;
@@ -522,13 +543,31 @@ export class PlcCpu {
         return;
       }
       case 'DCNT': {
-        // C200–C234 count the rung's rising edges, C235–C242 the pulses on X0–X7 while the rung is ON;
-        // M1200+n ON counts down
+        // C200–C234 count the rung's rising edges, C235–C242 the pulses on X0–X7 while the rung is ON
+        // (M1200+n ON counts down), C251–C254 are A/B-phase counters on X0/X1, X2/X3, X4/X5, X6/X7
         const n = a[0].idx, K = this.getDWord(a[1]);
-        const src = n >= 235 ? this.X[n - 235] : pw;
-        const edge = src && !st[e.sid];
-        st[e.sid] = src;
-        if (pw && edge) this.CV[n] = (this.CV[n] + (this.M[1000 + n] ? -1 : 1)) | 0;
+        if (n >= 251 && n <= 254) {
+          const xa = (n - 251) * 2, xb = xa + 1;
+          if (this.hsCh[xa]) {
+            // pulses handed over by the lab: A leads B turning forwards → up
+            const dir = this.hsCh[xa] === 'B' && this.hsCh[xb] === 'A' ? -this.hsSign[xa] : this.hsCh[xb] ? this.hsSign[xa] : 1;
+            if (pw) this.CV[n] = (this.CV[n] + dir * this.hsN[xa]) | 0;
+            st[e.sid] = this.X[xa];
+          } else {
+            // slow pulses (buttons): count on the rising edge of A, B ON = backwards
+            const A = this.X[xa], edge = A && !st[e.sid];
+            st[e.sid] = A;
+            if (pw && edge) this.CV[n] = (this.CV[n] + (this.X[xb] ? -1 : 1)) | 0;
+          }
+        } else if (n >= 235 && n <= 242 && this.hsCh[n - 235]) {
+          if (pw) this.CV[n] = (this.CV[n] + (this.M[1000 + n] ? -1 : 1) * this.hsN[n - 235]) | 0;
+          st[e.sid] = this.X[n - 235];
+        } else {
+          const src = n >= 235 ? this.X[n - 235] : pw;
+          const edge = src && !st[e.sid];
+          st[e.sid] = src;
+          if (pw && edge) this.CV[n] = (this.CV[n] + (this.M[1000 + n] ? -1 : 1)) | 0;
+        }
         this.C[n] = this.CV[n] >= K ? 1 : 0;
         return;
       }
@@ -625,7 +664,8 @@ export class PlcCpu {
         if (!pw) { s.cnt = 0; s.left = win; s.lv = this.X[x]; return; }
         if (rise || s.left === undefined) { s.cnt = 0; s.left = win; s.lv = this.X[x]; }
         const lv = this.X[x];
-        if (lv && !s.lv) s.cnt++;
+        if (x < 8 && this.hsCh[x]) s.cnt += this.hsN[x]; // encoder pulses handed over by the lab
+        else if (lv && !s.lv) s.cnt++;
         s.lv = lv;
         s.left -= dt;
         if (s.left <= 0) { this.D[d] = i16(s.cnt); s.cnt = 0; s.left += win; }
@@ -1170,7 +1210,11 @@ export class PlcCpu {
       }
       // ---------------------------------------------------------------- high-speed counter compare
       case 'DHSCS': case 'DHSCR': {
-        const c = this.CV[a[1].idx], hit = c === this.getDWord(a[0]);
+        // the counter can pass several pulses in one scan: act when it reaches or crosses the value
+        const c = this.CV[a[1].idx], v = this.getDWord(a[0]);
+        const was = this.state(e, () => ({ c })).c;
+        this.state(e).c = c;
+        const hit = c === v || (was < v && c > v) || (was > v && c < v);
         if (!hit) break;
         const d = this.R(a[2]);
         if (e.t === 'DHSCS') this.setBit(d, 1);

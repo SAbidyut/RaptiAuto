@@ -9,6 +9,7 @@ import {
 } from '../sim/ladder.js';
 import { parseOperand, addrSortKey, SPECIAL, fmtAddr } from '../sim/address.js';
 import { openKeypad, openInstrPicker } from './keypad.js';
+import { SfcView, sfcModel } from './sfc-view.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -52,9 +53,11 @@ export class LadderView {
     this.stopBtn = B('lb-stop', `${icon('stop', 15)}<span>STOP</span>`, 'PLC STOP', () => this.plcRun(false));
     this.monBtn = B('lb-mon', `${icon('activity', 17)}<span>Monitor</span>`, 'Ladder monitor', () => { this.monitor = !this.monitor; this.monBtn.classList.toggle('on', this.monitor); this.render(); });
     this.monBtn.classList.add('on');
+    // the step ladder as an SFC chart (only when the program has STL steps)
+    this.sfcBtn = B('lb-txt lb-sfc hidden', '<b>SFC</b>', 'SFC view of the step ladder (STL)', () => this.toggleSfc());
     const sep = () => h('span', { class: 'lb-sep' });
     this.bar = h('div', { class: 'lad-bar' },
-      this.dlBtn, this.runBtn, this.stopBtn, this.monBtn, sep(),
+      this.dlBtn, this.runBtn, this.stopBtn, this.monBtn, this.sfcBtn, sep(),
       B('lb-sym', sym('NO'), 'Normally open contact (LD / AND)', () => this.insertContact('NO')),
       B('lb-sym', sym('NC'), 'Normally closed contact (LDI / ANI)', () => this.insertContact('NC')),
       B('lb-sym', sym('ORNO'), 'Parallel NO contact (OR)', () => this.insertParallel('NO')),
@@ -88,7 +91,9 @@ export class LadderView {
     this.banner = h('div', { class: 'lad-banner hidden' });
     this.out = h('div', { class: 'lad-out hidden' });
     this.foot = h('div', { class: 'lad-foot' });
-    this.el.append(this.bar, this.banner, this.host, this.out, this.foot);
+    this.sfcHost = h('div', { class: 'sfc-host hidden' });
+    this.sfcView = new SfcView(this.sfcHost);
+    this.el.append(this.bar, this.banner, this.host, this.sfcHost, this.out, this.foot);
     this.svg.addEventListener('pointerdown', (e) => this.onDown(e));
     this.svg.addEventListener('pointermove', (e) => this.onMove(e));
     this.svg.addEventListener('pointerup', (e) => this.onUp(e));
@@ -359,8 +364,28 @@ export class LadderView {
     for (const e of this.compiled.errors) this.errAt.set(`${e.rung}:${e.row}:${e.col}`, e.msg);
     this.renderFoot();
     if (!this.out.classList.contains('hidden')) this.showOutput(true);
+    const hasSfc = !!sfcModel(this.prog);
+    this.sfcBtn.classList.toggle('hidden', !hasSfc);
+    if (!hasSfc && this.sfc) this.toggleSfc(false);
     this.render();
+    if (this.sfc) this.renderSfc();
     return this.compiled;
+  }
+
+  /** Ladder ↔ SFC chart of the step ladder. */
+  toggleSfc(on = !this.sfc) {
+    this.sfc = on;
+    this.sfcBtn.classList.toggle('on', on);
+    this.host.classList.toggle('hidden', on);
+    this.sfcHost.classList.toggle('hidden', !on);
+    if (on) this.renderSfc(); else this.render();
+    Native.vibrate(6);
+  }
+
+  renderSfc() {
+    const sys = this.lab.sys;
+    const cpu = sys && sys.plc && sys.plc.cpu.powered && this.inSync() ? sys.plc.cpu : null;
+    this.sfcView.render(this.prog, cpu, this.prog.comments || {});
   }
 
   inSync() {
@@ -491,6 +516,7 @@ export class LadderView {
     if (this.acc < 0.12) return;
     this.acc = 0;
     this.updateBanner();
+    if (this.sfc) { this.renderSfc(); return; }
     if (this.monitorActive()) this.render();
   }
 

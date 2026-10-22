@@ -346,3 +346,143 @@ export const hmiPanel = () => {
     T(X(40), Y(380), 'Every object is linked to a PLC device:', { size: 9.5, fill: K.line }) + T(X(40), Y(410), 'buttons write bits · lamps and numbers read the PLC', { size: 9.5, fill: K.line }),
     'The finished panel of the tutorial. In yellow: the PLC device each object is linked to.');
 };
+
+// ---------------------------------------------------------------- motors, machines and fault finding
+const term = (x, y, s, c = K.line) => `<circle cx="${x}" cy="${y}" r="10" fill="${K.box2}" stroke="${c}" stroke-width="1.4"/>` + T(x, y + 3.4, s, { size: 8.5, anchor: 'middle', weight: 700 });
+
+/** Terminal box of a 6-terminal motor: link bars for star and for delta. */
+export const motorBox = () => {
+  const panel = (x, star) => {
+    const xs = [x + 35, x + 80, x + 125];
+    const links = star ? L(xs[0], 115, xs[2], 115, { stroke: K.ok, sw: 6 }) : xs.map((v) => L(v, 70, v, 115, { stroke: K.ok, sw: 6 })).join('');
+    return T(x + 80, 14, star ? 'STAR (Y)' : 'DELTA (Δ)', { size: 12, anchor: 'middle', weight: 800, fill: K.warn }) +
+      R(x + 10, 46, 140, 92, { fill: K.box }) +
+      ['L1', 'L2', 'L3'].map((l, i) => AR(xs[i], 24, xs[i], 57) + T(xs[i] + 6, 32, l, { size: 9, fill: K.acc, weight: 700 })).join('') + links +
+      ['U1', 'V1', 'W1'].map((t, i) => term(xs[i], 70, t)).join('') + ['W2', 'U2', 'V2'].map((t, i) => term(xs[i], 115, t)).join('') +
+      T(x + 80, 156, star ? '230 V per winding · ⅓ of the current' : '400 V per winding · full power', { size: 9.5, anchor: 'middle', fill: K.line });
+  };
+  return fig(380, 166, panel(20, true) + panel(200, false),
+    'The terminal box of a 400 V Δ motor. Star: one bar ties W2 U2 V2 together. Delta: three bars join every winding end to the next winding\'s start. A star-delta starter leaves the bars out and does it with two contactors.');
+};
+
+/** Power circuit of a reversing starter: KM2 swaps L1 and L3. */
+export const reversingPower = () => {
+  const xs = [60, 90, 120], ks = [240, 270, 300];
+  const tap = [72, 80, 88];
+  const out2 = [152, 145, 138];
+  return fig(380, 240,
+    ['L1', 'L2', 'L3'].map((l, i) => T(xs[i], 12, l, { size: 9.5, anchor: 'middle', fill: K.acc, weight: 700 }) + L(xs[i], 16, xs[i], 100)).join('') +
+    R(46, 34, 88, 20, { fill: K.box2 }) + T(90, 48, 'Q1', { size: 10, anchor: 'middle', weight: 700 }) +
+    xs.map((x, i) => L(x, tap[i], ks[i], tap[i]) + DOT(x, tap[i]) + L(ks[i], tap[i], ks[i], 100)).join('') +
+    R(46, 100, 88, 30, { fill: K.box2, stroke: K.ok }) + T(90, 119, 'KM1 FWD', { size: 10, anchor: 'middle', weight: 800, fill: K.ok }) +
+    R(226, 100, 88, 30, { fill: K.box2, stroke: K.warn }) + T(270, 119, 'KM2 REV', { size: 10, anchor: 'middle', weight: 800, fill: K.warn }) +
+    xs.map((x) => L(x, 130, x, 162)).join('') +
+    ks.map((k, i) => P(`M${k} 130 V${out2[i]} H${xs[2 - i]} V162`, { stroke: i === 1 ? K.line : K.warn })).join('') +
+    xs.map((x) => DOT(x, 152 - (x === 60 ? 14 : x === 90 ? 7 : 0))).join('') +
+    R(46, 162, 88, 20, { fill: K.box2 }) + T(90, 176, 'F1 overload', { size: 9.5, anchor: 'middle', weight: 700 }) +
+    xs.map((x) => L(x, 182, x === 90 ? 90 : x, 198)).join('') + `<circle cx="90" cy="214" r="18" fill="${K.box}" stroke="${K.ink}" stroke-width="1.6"/>` + T(90, 212, 'M', { size: 11, anchor: 'middle', weight: 800 }) + T(90, 224, '3~', { size: 8.5, anchor: 'middle' }) +
+    L(60, 198, 78, 202) + L(120, 198, 102, 202) +
+    T(166, 186, 'KM1: L1 L2 L3 → U V W  (forward)', { size: 9.5, fill: K.ok }) +
+    T(166, 202, 'KM2: L3 L2 L1 → U V W  (reverse)', { size: 9.5, fill: K.warn }) +
+    T(166, 218, 'Both closed = L1–L3 short circuit:', { size: 9.5, fill: K.err }) + T(166, 232, 'interlock in the ladder AND with NC 21–22', { size: 9.5, fill: K.err }),
+    'Power circuit of the reversing starter: KM2 swaps two phases (L1 ↔ L3), so the rotating field — and the motor — turn the other way.');
+};
+
+/** Star-delta timing: contactors and the motor current. */
+export const starDeltaTiming = () => {
+  const X = (t) => 74 + t * 36;
+  const row = (y, label, on, c) => T(8, y + 4, label, { size: 10, weight: 700, fill: c }) + L(X(0), y + 6, X(8), y + 6, { stroke: K.dim, sw: 1 }) +
+    on.map(([a, b]) => R(X(a), y - 6, X(b) - X(a), 12, { fill: c, stroke: c, rx: 2 })).join('');
+  const I = (t) => (t < 0 ? 0 : t < 5 ? 0.45 + 1.75 * Math.exp(-t / 0.35) : t < 5.2 ? 0 : 0.55 + 1.9 * Math.exp(-(t - 5.2) / 0.25));
+  const y0 = 196, k = 9;
+  let d = `M${X(0)} ${y0}`;
+  for (let t = 0; t <= 8.001; t += 0.05) d += ` L${X(t).toFixed(1)} ${(y0 - I(t) * k).toFixed(1)}`;
+  return fig(380, 206,
+    row(18, 'START', [[0, 0.25]], K.acc) + row(42, 'KM1', [[0, 8]], K.ok) + row(66, 'KM3 Y', [[0, 5]], K.warn) + row(90, 'KM2 Δ', [[5.2, 8]], K.blue) +
+    L(X(5), 8, X(5), y0, { stroke: K.dim, dash: '3 3', sw: 1 }) + T(X(5) - 4, 116, 'T0 = 5 s', { size: 9, anchor: 'end', fill: K.line }) + T(X(5.2) + 4, 116, '0.2 s pause (T1)', { size: 9, fill: K.line }) +
+    T(8, 168, 'current', { size: 10, weight: 700 }) + L(X(0), y0 - 6 * k + 0.5, X(8), y0 - 6 * k + 0.5, { stroke: K.err, dash: '4 3', sw: 1 }) + T(X(8), y0 - 6 * k - 4, 'direct on line: 6 × In', { size: 9, anchor: 'end', fill: K.err }) +
+    P(d, { stroke: K.acc, sw: 2 }) + L(X(0), y0, X(8), y0, { stroke: K.line, sw: 1 }) +
+    T(X(0.6), y0 - 22, 'star: ≈ 2 × In', { size: 9, fill: K.acc }),
+    'Star-delta timing: KM1 and KM3 start the motor in star (a third of the current), T0 ends the star time, KM3 opens, and after a short pause KM2 closes the delta.');
+};
+
+/** A / B channels of an incremental encoder, forward and reverse. */
+export const quadrature = () => {
+  const wave = (x, y, shift) => {
+    let d = '';
+    for (let i = 0; i < 2; i++) { const a = x + shift + i * 64; d += `${i ? '' : `M${x} ${y + 18} H${a}`} V${y} H${a + 32} V${y + 18} H${Math.min(x + 150, a + 64)}`; }
+    return P(d, { stroke: K.acc, sw: 1.8 });
+  };
+  const panel = (x, title, fwd, text) =>
+    T(x + 80, 14, title, { size: 11, anchor: 'middle', weight: 800, fill: K.warn }) +
+    T(x, 46, 'A', { size: 10, weight: 800 }) + T(x, 92, 'B', { size: 10, weight: 800 }) +
+    wave(x + 12, 32, fwd ? 8 : 24) + wave(x + 12, 78, fwd ? 24 : 8) +
+    L(x + 20 + (fwd ? 8 : 24), 28, x + 20 + (fwd ? 8 : 24), 100, { stroke: K.dim, dash: '2 3', sw: 1 }) +
+    T(x + 80, 122, text, { size: 9.5, anchor: 'middle', fill: fwd ? K.ok : K.err });
+  return fig(380, 134, panel(14, 'FORWARD', true, 'A leads B by 90° → C251 counts up') + panel(204, 'REVERSE', false, 'B leads A → C251 counts down'),
+    'The two channels of an incremental encoder are a quarter of a pulse apart. Which one comes first tells the direction; the number of pulses tells how far it turned.');
+};
+
+/** The SFC of A+ B+ B− A− (step S21 active). */
+export const sfcChart = () => {
+  const steps = [['S0', 'READY', 'OUT Y2  READY lamp'], ['S20', 'A+', 'SET Y0  valve A'], ['S21', 'B+', 'SET Y1  valve B'], ['S22', 'B−', 'RST Y1'], ['S23', 'A−', 'RST Y0  · count C0']];
+  const conds = ['X0 · X1 · X3   START, A and B back', 'X2   A out', 'X4   B out', 'X3   B back', 'X1   A back'];
+  let s = '';
+  steps.forEach(([n, name, act], i) => {
+    const y = 10 + i * 58, on = n === 'S21';
+    s += R(60, y, 92, 28, { fill: on ? '#14532d' : K.box, stroke: on ? K.ok : K.line, sw: 1.6 }) + (i === 0 ? R(64, y + 4, 84, 20, { fill: 'none', stroke: K.line, rx: 4 }) : '') +
+      T(72, y + 18, n, { size: 11, weight: 800, fill: on ? '#bbf7d0' : K.ink, mono: true }) + T(144, y + 18, name, { size: 10, weight: 700, anchor: 'end', fill: on ? '#bbf7d0' : K.blue }) +
+      L(152, y + 14, 172, y + 14) + R(172, y + 4, 168, 20, { fill: on ? '#0f2a1c' : K.box, stroke: on ? K.ok : K.dim, rx: 4 }) + T(180, y + 18, act, { size: 9.5, mono: true, fill: on ? '#bbf7d0' : K.ink });
+    const ty = y + 44;
+    s += L(106, y + 28, 106, i < 4 ? y + 58 : ty + 8) + L(94, ty, 118, ty, { stroke: on ? K.warn : K.ink, sw: 3.5 }) + T(126, ty + 4, conds[i], { size: 9.5, fill: on ? K.warn : K.line, mono: true });
+  });
+  s += P('M106 286 V296 H34 V4 H106 V10', { stroke: K.line }) + `<path d="M101 3 L106 10 L111 3 Z" fill="${K.line}"/>`;
+  return fig(360, 304, s,
+    'The SFC of the pneumatic example: a step (box) does its action while it is active; the transition under it (bar) moves on to the next step when its condition is true. The active step is green — like the live SFC view in the Ladder tab.');
+};
+
+/** Fault finding with the voltmeter: measure along the circuit against 0 V. */
+export const voltageHunt = () => {
+  const red = (x, y, v) => `<circle cx="${x}" cy="${y}" r="4.5" fill="${K.err}"/>` + R(x - 24, y - 34, 48, 18, { fill: '#b7c8a4', stroke: '#3f4a35', rx: 3 }) + T(x, y - 21, v, { size: 10, anchor: 'middle', weight: 800, fill: '#111', mono: true });
+  return fig(380, 176,
+    R(12, 56, 54, 84, { fill: K.box2 }) + T(39, 76, 'PSU', { size: 10, anchor: 'middle', weight: 800 }) + T(39, 96, '+V1', { size: 9, anchor: 'middle', fill: K.err }) + T(39, 132, '−V1', { size: 9, anchor: 'middle', fill: K.blue }) +
+    L(66, 92, 128, 92, { stroke: K.err }) +
+    L(128, 92, 140, 92) + L(160, 92, 172, 92) + L(140, 80, 140, 104, { sw: 2 }) + L(160, 80, 160, 104, { sw: 2 }) + L(136, 106, 164, 78) + T(150, 122, 'STOP 11–12', { size: 9, anchor: 'middle', fill: K.line }) +
+    L(172, 92, 212, 92, { stroke: K.err }) + L(232, 92, 268, 92, { stroke: K.err }) + T(222, 96, '✕', { size: 13, anchor: 'middle', weight: 800, fill: K.err }) + T(222, 118, 'broken', { size: 8.5, anchor: 'middle', fill: K.err }) +
+    R(268, 60, 92, 84, { fill: K.box2 }) + T(314, 80, 'PLC', { size: 10, anchor: 'middle', weight: 800 }) + T(280, 96, 'X2', { size: 9.5, fill: K.acc, weight: 700 }) + T(280, 132, 'S/S', { size: 9.5, fill: K.acc, weight: 700 }) +
+    L(66, 128, 268, 128, { stroke: K.blue }) + `<circle cx="120" cy="128" r="4.5" fill="#111" stroke="${K.ink}"/>` + T(120, 146, 'COM (black) on −V1', { size: 9, anchor: 'middle', fill: K.line }) +
+    red(100, 92, '24.0') + red(186, 92, '24.0') + red(262, 92, '0.0') +
+    T(190, 168, '24 V → 24 V → 0 V: the break is between the last 24 V and the first 0 V.', { size: 9.5, anchor: 'middle', fill: K.warn }),
+    'Hunting a broken wire with the voltmeter: leave the black probe on 0 V and walk the red probe along the circuit, from the supply to the input.');
+};
+
+/** Two-float level control: the level swings between the floats. */
+export const tankHysteresis = () => {
+  const X = (t) => 50 + t * 3, LH = 44, LL = 112;
+  const d = `M${X(0)} 124 L${X(22)} ${LH} L${X(52)} ${LL} L${X(62)} ${LH} L${X(92)} ${LL} L${X(100)} ${LL - 22}`;
+  return fig(380, 170,
+    L(X(0), LH, X(100), LH, { stroke: K.warn, dash: '4 3', sw: 1 }) + T(X(100) + 4, LH + 4, 'LH', { size: 9.5, fill: K.warn, weight: 700 }) +
+    L(X(0), LL, X(100), LL, { stroke: K.warn, dash: '4 3', sw: 1 }) + T(X(100) + 4, LL + 4, 'LL', { size: 9.5, fill: K.warn, weight: 700 }) +
+    T(10, 30, 'level', { size: 10, weight: 700 }) + P(d, { stroke: K.acc, sw: 2.2 }) +
+    T(10, 154, 'pump', { size: 10, weight: 700 }) + L(X(0), 156, X(100), 156, { stroke: K.dim, sw: 1 }) +
+    [[0, 22], [52, 62], [92, 100]].map(([a, b]) => R(X(a), 144, X(b) - X(a), 12, { fill: K.ok, stroke: K.ok, rx: 2 })).join('') +
+    T(X(30), 104, 'water is used', { size: 9, anchor: 'middle', fill: K.line }) + T(X(3), 64, 'fill', { size: 9, fill: K.line }),
+    'Two floats give a hysteresis: the pump starts when the level falls below LL and runs until the level reaches LH — it does not switch on and off at one level all the time.');
+};
+
+/** The sorting conveyor seen from above: sensors, pusher and chute. */
+export const conveyorTop = () => {
+  const x = (f) => 30 + f * 320;
+  const eye = (f, n, xa, dx = 0) => L(x(f), 58, x(f), 102, { stroke: K.err, dash: '3 2', sw: 1.2 }) + `<path d="M${x(f) - 5} 50 h10 l-5 8z" fill="${K.err}"/>` + T(x(f) + dx, 120, n, { size: 9.5, anchor: 'middle', weight: 800 }) + T(x(f) + dx, 132, xa, { size: 8.5, anchor: 'middle', fill: K.acc, mono: true });
+  const box = (f, metal) => R(x(f) - 9, 70, 18, 20, { fill: metal ? '#94a3b8' : '#2563eb', stroke: metal ? '#e2e8f0' : '#93c5fd', rx: 2 });
+  return fig(380, 142,
+    R(20, 60, 340, 40, { fill: '#1e293b', stroke: K.line, rx: 6 }) + `<circle cx="28" cy="80" r="6" fill="${K.box2}" stroke="${K.line}"/><circle cx="352" cy="80" r="6" fill="${K.box2}" stroke="${K.line}"/>` +
+    AR(150, 112, 200, 112) +
+    box(0.18, false) + box(0.4, true) + box(0.63, false) +
+    eye(0.1, 'S1', 'X0') + eye(0.6, 'S3', 'X2', -8) + eye(0.94, 'S4', 'X3') +
+    `<circle cx="${x(0.4)}" cy="80" r="13" fill="none" stroke="${K.vio}" stroke-width="2"/>` + T(x(0.4), 52, 'S2 metal', { size: 9, anchor: 'middle', weight: 800, fill: K.vio }) + T(x(0.4), 132, 'X1', { size: 8.5, anchor: 'middle', fill: K.acc, mono: true }) +
+    R(x(0.64) - 4, 102, 20, 22, { fill: K.box2, stroke: K.warn }) + T(x(0.64) + 20, 118, 'pusher Y0', { size: 9, fill: K.warn, weight: 700 }) +
+    R(x(0.64) - 20, 22, 40, 36, { fill: '#0b1226', stroke: K.warn, dash: '3 3' }) + T(x(0.64), 18, 'reject chute', { size: 9, anchor: 'middle', fill: K.warn }) +
+    T(20, 40, 'feeder', { size: 9, fill: K.line }) + T(360, 40, 'end bin', { size: 9, anchor: 'end', fill: K.line }),
+    'The sorting conveyor from above. S2 (inductive) sees only metal; the PLC remembers the metal box until it reaches S3, then the pusher kicks it into the chute. Plastic boxes ride on to S4.');
+};

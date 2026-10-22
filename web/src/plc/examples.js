@@ -24,6 +24,20 @@ function base(b, plcType = 'dvp-16es2') {
   b.w('pc', 'USB', 'plc', 'USB');
 }
 
+/** 3-phase incomer: the control circuit (QF2 → 24 V supply, PLC) between L1 and N, PE from the supply. */
+function base3(b, plcType = 'dvp-16es2') {
+  b.dev('q1', 'mains3', {}, { on: true });
+  b.dev('qf2', 'breaker', { label: 'QF2', poles: '1P', rating: 'C6' }, { on: true });
+  b.dev('psu', 'drp024');
+  b.dev('plc', plcType, {}, { run: true });
+  b.dev('pc', 'laptop');
+  b.w('q1', 'L1', 'qf2', '1', '#7c4a1e');
+  b.w('qf2', '2', 'psu', 'L', '#7c4a1e'); b.w('q1', 'N', 'psu', 'N'); b.w('q1', 'PE', 'psu', 'PE');
+  b.w('qf2', '2', 'plc', 'L', '#7c4a1e'); b.w('psu', 'N', 'plc', 'N', '#2563eb'); b.w('psu', 'PE', 'plc', 'PE', 'pe');
+  b.w('plc', 'S/S', 'psu', '-V1');
+  b.w('pc', 'USB', 'plc', 'USB');
+}
+
 const E = (type, x, y, w, h, props = {}) => ({ id: hmiId(), type, x, y, w, h, ...props });
 
 function finish(meta, b, prog, extra = {}) {
@@ -855,6 +869,265 @@ export const LAB_EXAMPLES = [
         rung('Analog pass-through: AI CH0 (D1110, 0–2000) → AO CH0 (D1116, 0–2000 = 0–10 V)', ['M1000 => MOV D1110 D1116']),
         rung('Keep a copy in D100 for monitoring', ['M1000 => MOV D1110 D100']),
       ], { X0: 'START', X1: 'STOP (NC)', Y0: 'VFD MI1 (FWD)', D1110: 'AI CH0 (pot)', D1116: 'AO CH0 → VFD AVI' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'dol-reversing', name: '3-phase motor: direct-on-line forward / reverse', level: 'intermediate', tags: ['3-phase', 'Contactor', 'Interlock', 'Overload'], featured: true,
+    description: 'A 1.5 kW motor straight on the 400 V mains (Δ links fitted). KM1 runs it forward (L1 L2 L3), KM2 in reverse (L1 and L3 swapped). The two contactors are interlocked twice — in the ladder and with each other\'s NC auxiliary contact 21–22 in the coil wiring — because both closed at once would short L1 to L3. The thermal overload relay F1 (set to 3.4 A) stops the motor through 95–96. Press STOP before you change the direction.',
+    build() {
+      const b = builder();
+      base3(b);
+      b.dev('km1', 'contactor', { label: 'KM1', coil: '24DC' });
+      b.dev('km2', 'contactor', { label: 'KM2', coil: '24DC' });
+      b.dev('f1', 'olr', { label: 'F1', setting: 3.4 }, { tripped: false });
+      b.dev('m', 'motor6', { links: 'delta', load: 30 });
+      b.dev('fwd', 'pb', { label: 'FWD', color: 'green', contact: 'NO' });
+      b.dev('rev', 'pb', { label: 'REV', color: 'blue', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('lf', 'lamp', { label: 'FORWARD', color: 'green' });
+      b.dev('lr', 'lamp', { label: 'REVERSE', color: 'blue' });
+      b.dev('lt', 'lamp', { label: 'OVERLOAD', color: 'red' });
+      // power circuit: L1 L2 L3 → KM1 (and KM2 from the same breaker terminals) → F1 → U1 V1 W1; KM2 swaps L1 and L3
+      for (const k of [1, 2, 3]) b.w('q1', 'L' + k, 'km1', 'L' + k);
+      for (const k of [1, 2, 3]) b.w('q1', 'L' + k, 'km2', 'L' + k);
+      for (const k of [1, 2, 3]) b.w('km1', 'T' + k, 'f1', 'L' + k);
+      b.w('km2', 'T1', 'f1', 'L3'); b.w('km2', 'T2', 'f1', 'L2'); b.w('km2', 'T3', 'f1', 'L1');
+      b.w('f1', 'T1', 'm', 'U1'); b.w('f1', 'T2', 'm', 'V1'); b.w('f1', 'T3', 'm', 'W1'); b.w('q1', 'PE', 'm', 'PE');
+      // 24 V inputs: FWD, REV, STOP (NC), F1 95–96 (NC)
+      b.w('psu', '+V1', 'fwd', '13'); b.w('fwd', '13', 'rev', '13', '#dc2626'); b.w('rev', '13', 'stop', '11', '#dc2626'); b.w('psu', '+V1', 'f1', '95');
+      b.w('fwd', '14', 'plc', 'X0'); b.w('rev', '14', 'plc', 'X1'); b.w('stop', '12', 'plc', 'X2'); b.w('f1', '96', 'plc', 'X3');
+      // coils, each through the other contactor's NC 21–22 (electrical interlock)
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'km2', '21'); b.w('km2', '22', 'km1', 'A1');
+      b.w('plc', 'Y1', 'km1', '21'); b.w('km1', '22', 'km2', 'A1');
+      b.w('km1', 'A2', 'psu', '-V2'); b.w('km1', 'A2', 'km2', 'A2', '#1e3a8a');
+      // lamps
+      b.w('plc', 'C1', 'psu', '+V2');
+      b.w('plc', 'Y4', 'lf', 'X1'); b.w('plc', 'Y5', 'lr', 'X1'); b.w('plc', 'Y6', 'lt', 'X1');
+      b.w('lf', 'X2', 'psu', '-V2'); b.w('lf', 'X2', 'lr', 'X2', '#1e3a8a'); b.w('lr', 'X2', 'lt', 'X2', '#1e3a8a');
+      const prog = program([
+        rung('Forward latch M0: FWD (X0) sets it; STOP (X2, NC) and the overload contact 95–96 (X3, NC) break it; not while reverse runs (M1)', ['X0| X2 X3 /M1 => OUT M0', 'M0']),
+        rung('Reverse latch M1: REV (X1); the same stop chain; not while forward runs', ['X1| X2 X3 /M0 => OUT M1', 'M1']),
+        rung('KM1 forward (Y0) — software interlock: never with KM2 (Y1)', ['M0 /Y1 => OUT Y0']),
+        rung('KM2 reverse (Y1) — never with KM1 (Y0)', ['M1 /Y0 => OUT Y1']),
+        rung('FORWARD lamp', ['Y0 => OUT Y4']),
+        rung('REVERSE lamp', ['Y1 => OUT Y5']),
+        rung('OVERLOAD lamp: F1 95–96 open', ['/X3 => OUT Y6']),
+      ], { X0: 'FWD button', X1: 'REV button', X2: 'STOP button (NC)', X3: 'F1 overload 95–96 (NC)', Y0: 'KM1 forward', Y1: 'KM2 reverse', Y4: 'FORWARD lamp', Y5: 'REVERSE lamp', Y6: 'OVERLOAD lamp', M0: 'Forward run', M1: 'Reverse run' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'star-delta', name: 'Star-delta starter: KM1 · KM2 Δ · KM3 Y', level: 'advanced', tags: ['3-phase', 'Star-delta', 'Contactor', 'TMR'], featured: true,
+    description: 'The classic star-delta starter for the 1.5 kW 400 V Δ motor (no links in its terminal box: six wires). START closes KM1 (U1 V1 W1) and KM3, which ties W2 U2 V2 together: star — 230 V per winding, a third of the starting current. After 5 s (T0) KM3 drops out, and 0.2 s later (T1) KM2 joins W2 U2 V2 to L1 L2 L3: delta, full voltage. KM2 and KM3 must never be closed together (a short between the phases): they are interlocked in the ladder and with their NC contacts. F1 sits in the winding branch (KM2 is fed from its line side), so it is set to 0.58 × 3.4 A = 2.0 A.',
+    build() {
+      const b = builder();
+      base3(b);
+      b.dev('km1', 'contactor', { label: 'KM1', coil: '24DC' });
+      b.dev('km2', 'contactor', { label: 'KM2 Δ', coil: '24DC' });
+      b.dev('km3', 'contactor', { label: 'KM3 Y', coil: '24DC' });
+      b.dev('f1', 'olr', { label: 'F1', setting: 2 }, { tripped: false });
+      b.dev('m', 'motor6', { links: 'none', load: 25 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('ly', 'lamp', { label: 'STAR', color: 'yellow' });
+      b.dev('ld', 'lamp', { label: 'DELTA', color: 'green' });
+      b.dev('lt', 'lamp', { label: 'OVERLOAD', color: 'red' });
+      // main contactor → overload relay → U1 V1 W1
+      for (const k of [1, 2, 3]) b.w('q1', 'L' + k, 'km1', 'L' + k);
+      for (const k of [1, 2, 3]) b.w('km1', 'T' + k, 'f1', 'L' + k);
+      b.w('f1', 'T1', 'm', 'U1'); b.w('f1', 'T2', 'm', 'V1'); b.w('f1', 'T3', 'm', 'W1'); b.w('q1', 'PE', 'm', 'PE');
+      // delta contactor: L1 → W2, L2 → U2, L3 → V2 (fed after KM1, from the line side of F1)
+      for (const k of [1, 2, 3]) b.w('f1', 'L' + k, 'km2', 'L' + k);
+      b.w('km2', 'T1', 'm', 'W2'); b.w('km2', 'T2', 'm', 'U2'); b.w('km2', 'T3', 'm', 'V2');
+      // star contactor: W2 U2 V2 come up to its lower terminals, the upper ones are bridged = the star point
+      b.w('m', 'W2', 'km3', 'T1'); b.w('m', 'U2', 'km3', 'T2'); b.w('m', 'V2', 'km3', 'T3');
+      b.w('km3', 'L1', 'km3', 'L2', '#111827'); b.w('km3', 'L2', 'km3', 'L3', '#111827');
+      // inputs
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626'); b.w('psu', '+V1', 'f1', '95');
+      b.w('start', '14', 'plc', 'X0'); b.w('stop', '12', 'plc', 'X1'); b.w('f1', '96', 'plc', 'X2');
+      // coils: KM3 through KM2's NC, KM2 through KM3's NC
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'km1', 'A1');
+      b.w('plc', 'Y1', 'km2', '21'); b.w('km2', '22', 'km3', 'A1');
+      b.w('plc', 'Y2', 'km3', '21'); b.w('km3', '22', 'km2', 'A1');
+      b.w('km1', 'A2', 'psu', '-V2'); b.w('km1', 'A2', 'km2', 'A2', '#1e3a8a'); b.w('km2', 'A2', 'km3', 'A2', '#1e3a8a');
+      // lamps
+      b.w('plc', 'C1', 'psu', '+V2');
+      b.w('plc', 'Y4', 'ly', 'X1'); b.w('plc', 'Y5', 'ld', 'X1'); b.w('plc', 'Y6', 'lt', 'X1');
+      b.w('ly', 'X2', 'psu', '-V2'); b.w('ly', 'X2', 'ld', 'X2', '#1e3a8a'); b.w('ld', 'X2', 'lt', 'X2', '#1e3a8a');
+      const prog = program([
+        rung('Run latch M0: START (X0); STOP (X1, NC) and F1 95–96 (X2, NC) break it', ['X0| X1 X2 => OUT M0', 'M0']),
+        rung('KM1 main contactor (Y0)', ['M0 => OUT Y0']),
+        rung('T0: star time 5.0 s', ['M0 => TMR T0 K50']),
+        rung('KM3 star (Y1) until T0, never with KM2 (Y2)', ['M0 /T0 /Y2 => OUT Y1']),
+        rung('T1: 0.2 s pause after the star contactor has opened (no arc between the phases)', ['M0 T0 /Y1 => TMR T1 K2']),
+        rung('KM2 delta (Y2) after the pause, never with KM3 (Y1)', ['M0 T1 /Y1 => OUT Y2']),
+        rung('STAR lamp', ['Y1 => OUT Y4']),
+        rung('DELTA lamp', ['Y2 => OUT Y5']),
+        rung('OVERLOAD lamp', ['/X2 => OUT Y6']),
+      ], { X0: 'START', X1: 'STOP (NC)', X2: 'F1 overload 95–96 (NC)', Y0: 'KM1 main', Y1: 'KM3 star', Y2: 'KM2 delta', Y4: 'STAR lamp', Y5: 'DELTA lamp', Y6: 'OVERLOAD lamp', M0: 'Run', T0: 'Star time', T1: 'Change-over pause' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'conveyor-sort', name: 'Conveyor: sort metal from plastic', level: 'intermediate', tags: ['Conveyor', 'Sensor', 'VFD', 'Pusher'], featured: true,
+    description: 'The MS300 drives the conveyor at 40 Hz. A box arrives every 4 s. The inductive sensor S2 above the belt sees only metal: the PLC remembers it (M10) and fires the pusher (Y0) when the box reaches the photo-eye S3 in front of it — the metal box goes into the reject chute, plastic boxes ride on to the end bin (S4). C0 counts the plastic boxes, C1 the metal ones.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-21': 1, '00-20': 0, '02-00': 1, '01-12': 1, '01-13': 1, '04-00': 40 } });
+      b.dev('conv', 'conveyor', { label: 'CONVEYOR', conn: 'D230', feed: 'slow', mix: 'mixed', load: 30 }, { boxes: [], done: 0, rejected: 0, fed: 0 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('lrun', 'lamp', { label: 'RUN', color: 'green' });
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('vfd', 'U/T1', 'conv', 'U'); b.w('vfd', 'V/T2', 'conv', 'V'); b.w('vfd', 'W/T3', 'conv', 'W'); b.w('vfd', 'PE', 'conv', 'PE');
+      // sensors: 24 V from the supply, S1 … S4 → X0 … X3
+      b.w('psu', '+V1', 'conv', '+24'); b.w('conv', '0V', 'psu', '-V1');
+      b.w('conv', 'S1', 'plc', 'X0'); b.w('conv', 'S2', 'plc', 'X1'); b.w('conv', 'S3', 'plc', 'X2'); b.w('conv', 'S4', 'plc', 'X3');
+      b.w('psu', '+V1', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626');
+      b.w('start', '14', 'plc', 'X4'); b.w('stop', '12', 'plc', 'X5');
+      // 24 V outputs (C0): the pusher valve, the RUN lamp; drive inputs (C1 → DCM): FWD, speed step 1
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'conv', 'Y1'); b.w('plc', 'Y1', 'lrun', 'X1'); b.w('lrun', 'X2', 'psu', '-V2');
+      b.w('plc', 'C1', 'vfd', 'DCM');
+      b.w('plc', 'Y4', 'vfd', 'MI1'); b.w('plc', 'Y6', 'vfd', 'MI3');
+      const prog = program([
+        rung('Run latch M0: START (X4); STOP (X5, NC) breaks it', ['X4| X5 => OUT M0', 'M0']),
+        rung('Drive FWD (MI1) and speed step 1 (MI3 → Pr.04-00 = 40 Hz)', ['M0 =>| OUT Y4', '=> OUT Y6']),
+        rung('S2 (inductive, metal only) → remember: this box is metal', ['^X1 => SET M10']),
+        rung('A box at the pusher (S3) that was metal → push', ['^X2 M10 => SET M11']),
+        rung('Pusher stroke 0.4 s (T0)', ['M11 => TMR T0 K4']),
+        rung('Pusher valve Y0 while the stroke runs', ['M11 /T0 => OUT Y0']),
+        rung('Stroke done: forget the metal box, count it (C1)', ['T0 =>| RST M11', '=>| RST M10', '=> CNT C1 K9999']),
+        rung('A plastic box in the end bin (S4): count it (C0)', ['^X3 => CNT C0 K9999']),
+        rung('RUN lamp', ['M0 => OUT Y1']),
+      ], { X0: 'S1 entry photo-eye', X1: 'S2 inductive (metal)', X2: 'S3 photo-eye at the pusher', X3: 'S4 end photo-eye', X4: 'START', X5: 'STOP (NC)', Y0: 'Pusher valve', Y1: 'RUN lamp', Y4: 'VFD MI1 (FWD)', Y6: 'VFD MI3 (speed 1)', M0: 'Run', M10: 'Metal box on its way', M11: 'Push', T0: 'Pusher stroke', C0: 'Plastic boxes', C1: 'Metal boxes' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'tank-level', name: 'Water tank: level control + HMI', level: 'intermediate', tags: ['Tank', 'Level', 'Analog', 'HMI'], featured: true,
+    description: 'Automatic level control with the two floats: below LL the pump starts, at LH it stops (a hysteresis band). The level transmitter (0–10 V) goes to the DVP20EX2 analog input: D100 = level in %. The HMI shows the tank, the pump and the valve; HAND / AUTO, a pump jog (only below the high float) and the drain valve are on the touch screen. Open the hand valve on the tank (tap it) to draw water.',
+    build() {
+      const b = builder();
+      base(b, 'dvp-20ex2');
+      b.dev('hmi', 'dop-107bv', { port: 'COM1', station: 1 });
+      b.dev('tank', 'tank', { label: 'TANK' }, { level: 40, demand: 0 });
+      b.dev('sel', 'selector', { label: 'MODE', pos0: 'HAND', pos1: 'AUTO' }, { on: true });
+      b.dev('lhi', 'lamp', { label: 'HIGH', color: 'red' });
+      // the EX2 outputs are NPN transistors: the load sits between +24 V and Y (Y pulls it to ZP = 0 V)
+      b.w('plc', 'UP', 'psu', '+V2'); b.w('plc', 'ZP', 'psu', '-V2');
+      b.w('psu', '+V2', 'tank', 'P+'); b.w('tank', 'P-', 'plc', 'Y0');
+      b.w('tank', 'P+', 'tank', 'V+', '#dc2626'); b.w('tank', 'V-', 'plc', 'Y1');
+      b.w('tank', 'V+', 'lhi', 'X1', '#dc2626'); b.w('lhi', 'X2', 'plc', 'Y2');
+      // floats (dry contacts from FC = +24 V) and the level transmitter
+      b.w('psu', '+V1', 'tank', 'FC'); b.w('tank', 'LL', 'plc', 'X0'); b.w('tank', 'LH', 'plc', 'X1');
+      b.w('tank', 'FC', 'tank', '+24', '#dc2626'); b.w('tank', '0V', 'psu', '-V1');
+      b.w('tank', 'LT', 'plc', 'V0+'); b.w('plc', 'VI0-', 'tank', '0V', '#1e3a8a');
+      b.w('psu', '+V1', 'sel', '13'); b.w('sel', '14', 'plc', 'X2');
+      b.w('hmi', '+', 'psu', '+V2'); b.w('hmi', '-', 'psu', '-V2');
+      b.w('hmi', 'COM1', 'plc', 'COM1');
+      const prog = program([
+        rung('Level in %: D100 = D1110 (0 … 2000) / 20', ['M1000 => DIV D1110 K20 D100']),
+        rung('AUTO: the selector (X2) or the HMI switch (M12)', ['X2| => OUT M5', 'M12']),
+        rung('Pump demand in AUTO: start below the low float (LL open), stop at the high float (LH closed)', ['M5 /X0| /X1 => OUT M0', 'M5 M0']),
+        rung('Pump (Y0): AUTO demand, or the HMI jog (M10) in HAND below the high float', ['M0 - -| => OUT Y0', '/M5 M10 /X1']),
+        rung('Drain valve (Y1) from the HMI (M11)', ['M11 => OUT Y1']),
+        rung('HIGH lamp: level above 90 % (flashing)', ['D100>K90 M1013 => OUT Y2']),
+      ], { X0: 'LL low float (closed above 60 mm)', X1: 'LH high float (closed above 300 mm)', X2: 'MODE selector (AUTO)', Y0: 'Pump', Y1: 'Drain valve', Y2: 'HIGH lamp', M0: 'Pump demand (AUTO)', M5: 'AUTO mode', M10: 'HMI pump jog', M11: 'HMI drain', M12: 'HMI AUTO', D100: 'Level %', D1110: 'AI CH0 (level transmitter)' });
+      const hmi = {
+        start: 0,
+        screens: [{
+          id: 's1', name: 'Tank', bg: '#0b1630', elements: [
+            ...hmiHdr('WATER TANK · LEVEL CONTROL', null, 0),
+            E('rect', 12, 80, 400, 390, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'PROCESS' }),
+            E('tank', 150, 104, 150, 300, { label: 'TANK', word: 'D100', dec: 0, unit: '%', min: 0, max: 100, color: '#38bdf8' }),
+            E('pipe', 40, 130, 110, 18, { bit: 'Y0', color: '#38bdf8' }),
+            E('pipe', 40, 130, 18, 250, { bit: 'Y0', color: '#38bdf8' }),
+            E('motor', 26, 384, 70, 70, { bit: 'Y0', text: 'PUMP' }),
+            E('pipe', 300, 380, 100, 18, { bit: 'Y1', color: '#38bdf8' }),
+            E('valve', 320, 330, 70, 50, { bit: 'Y1', text: 'DRAIN' }),
+            E('lamp', 320, 110, 70, 40, { bit: 'X1', text: 'LH', onColor: '#f59e0b', offColor: '#334155', shape: 'rect' }),
+            E('lamp', 320, 280, 70, 40, { bit: 'X0', text: 'LL', onColor: '#22c55e', offColor: '#334155', shape: 'rect' }),
+            E('rect', 424, 80, 364, 200, { fill: '#0f1d3a', stroke: '#2b4470', radius: 16, title: 'OPERATION' }),
+            E('selsw', 440, 110, 160, 70, { bit: 'M12', off: 'HAND', on: 'AUTO' }),
+            E('lamp', 620, 112, 150, 66, { bit: 'M5', text: 'AUTO ON', onColor: '#22c55e', offColor: '#334155', shape: 'rect' }),
+            E('button', 440, 196, 160, 66, { text: 'PUMP (HAND)', bit: 'M10', mode: 'momentary', color: 'blue' }),
+            E('button', 616, 196, 154, 66, { text: 'DRAIN', bit: 'M11', mode: 'toggle', color: 'yellow' }),
+            E('trend', 424, 292, 364, 178, { word: 'D100', dec: 0, min: 0, max: 100, span: 120, label: 'LEVEL %' }),
+          ],
+        }],
+      };
+      return finish(this, b, prog, { hmi });
+    },
+  },
+  {
+    id: 'pneumatic-sequence', name: 'Pneumatics: A+ B+ B− A− with STL (SFC)', level: 'advanced', tags: ['Pneumatic', 'STL', 'SFC', 'Sequence'], featured: true,
+    description: 'Two cylinders (5/2 single-solenoid valves) run the sequence A+ B+ B− A− as a step ladder: S0 waits for START with both cylinders back, then S20 … S23 each move one cylinder and wait for its reed sensor before the next step. With the CYCLE selector ON the sequence repeats. Open the Ladder tab and switch to the SFC view to watch the steps.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('a', 'cylinder', { label: 'A', valve: 'single', speed: 'normal' }, { pos: 0 });
+      b.dev('bb', 'cylinder', { label: 'B', valve: 'single', speed: 'normal' }, { pos: 0 });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('cyc', 'selector', { label: 'CYCLE', pos0: 'SINGLE', pos1: 'AUTO' }, { on: false });
+      b.dev('lr', 'lamp', { label: 'READY', color: 'green' });
+      for (const c of ['a', 'bb']) { b.w('psu', '+V1', c, '+24'); b.w(c, '0V', 'psu', '-V1'); }
+      b.w('a', 'B1', 'plc', 'X1'); b.w('a', 'B2', 'plc', 'X2'); b.w('bb', 'B1', 'plc', 'X3'); b.w('bb', 'B2', 'plc', 'X4');
+      b.w('psu', '+V2', 'start', '13'); b.w('start', '13', 'cyc', '13', '#dc2626');
+      b.w('start', '14', 'plc', 'X0'); b.w('cyc', '14', 'plc', 'X5');
+      b.w('plc', 'C0', 'psu', '+V2');
+      b.w('plc', 'Y0', 'a', 'Y1'); b.w('plc', 'Y1', 'bb', 'Y1'); b.w('plc', 'Y2', 'lr', 'X1'); b.w('lr', 'X2', 'psu', '-V2');
+      const prog = program([
+        rung('First scan: the initial step S0', ['M1002 => SET S0']),
+        rung('S0 · READY: START (X0) with A and B back (X1, X3) → S20', ['$S0 => OUT Y2', 'X0 X1 X3 => SET S20']),
+        rung('S20 · A+: extend A; A out (X2) → S21', ['$S20 => SET Y0', 'X2 => SET S21']),
+        rung('S21 · B+: extend B; B out (X4) → S22', ['$S21 => SET Y1', 'X4 => SET S22']),
+        rung('S22 · B−: retract B; B back (X3) → S23', ['$S22 => RST Y1', 'X3 => SET S23']),
+        rung('S23 · A−: retract A; A back (X1): one more cycle (CYCLE ON, X5) or back to S0; count the cycle', ['$S23 => RST Y0', 'X1 => CNT C0 K9999', 'X1 X5 => SET S20', 'X1 /X5 => SET S0']),
+        rung('End of the step ladder', ['=> RET']),
+      ], { X0: 'START', X1: 'A back (B1)', X2: 'A out (B2)', X3: 'B back (B1)', X4: 'B out (B2)', X5: 'CYCLE selector', Y0: 'Valve A (Y1)', Y1: 'Valve B (Y1)', Y2: 'READY lamp', S0: 'Ready', S20: 'A+', S21: 'B+', S22: 'B−', S23: 'A−', C0: 'Cycles' });
+      return finish(this, b, prog);
+    },
+  },
+  {
+    id: 'encoder-speed', name: 'Encoder: speed (SPD) and position (C251)', level: 'advanced', tags: ['Encoder', 'High-speed counter', 'SPD', 'VFD'],
+    description: 'A 100 PPR encoder on the motor shaft (A → X0, B → X1). The A/B-phase high-speed counter C251 counts the position (up forwards, down backwards), SPD counts the pulses on X0 every second: D12 = D0 × 60 / 100 = the speed in rpm. The speed pot sets the drive (AVI); DIRECTION turns it the other way. RESET (X2) clears C251.',
+    build() {
+      const b = builder();
+      base(b);
+      b.dev('vfd', 'ms300', {}, { params: { _v: 2, '00-21': 1, '00-20': 2, '01-12': 2, '01-13': 2 } });
+      b.dev('motor', 'motor', { load: 30, encoder: '100' });
+      b.dev('start', 'pb', { label: 'START', color: 'green', contact: 'NO' });
+      b.dev('stop', 'pb', { label: 'STOP', color: 'red', contact: 'NC' });
+      b.dev('dir', 'selector', { label: 'DIRECTION', pos0: 'FWD', pos1: 'REV' }, { on: false });
+      b.dev('rst', 'pb', { label: 'RESET', color: 'blue', contact: 'NO' });
+      b.dev('pot', 'pot', { label: 'SPEED' }, { pos: 0.6 });
+      b.w('mcb', 'L', 'vfd', 'R/L1'); b.w('mcb', 'N', 'vfd', 'S/L2'); b.w('vfd', 'PE', 'psu', 'PE');
+      b.w('vfd', 'U/T1', 'motor', 'U'); b.w('vfd', 'V/T2', 'motor', 'V'); b.w('vfd', 'W/T3', 'motor', 'W'); b.w('vfd', 'PE', 'motor', 'PE');
+      b.w('vfd', '+10V', 'pot', '1'); b.w('pot', '2', 'vfd', 'AVI'); b.w('pot', '3', 'vfd', 'ACM');
+      // encoder: 24 V, A → X0, B → X1
+      b.w('psu', '+V1', 'motor', 'E+'); b.w('motor', 'E0', 'psu', '-V1');
+      b.w('motor', 'A', 'plc', 'X0'); b.w('motor', 'B', 'plc', 'X1');
+      b.w('psu', '+V2', 'start', '13'); b.w('start', '13', 'stop', '11', '#dc2626'); b.w('stop', '11', 'rst', '13', '#dc2626');
+      b.w('start', '14', 'plc', 'X3'); b.w('stop', '12', 'plc', 'X4'); b.w('rst', '14', 'plc', 'X2');
+      b.w('rst', '13', 'dir', '13', '#dc2626'); b.w('dir', '14', 'plc', 'X5');
+      b.w('plc', 'C1', 'vfd', 'DCM');
+      b.w('plc', 'Y4', 'vfd', 'MI1'); b.w('plc', 'Y5', 'vfd', 'MI2');
+      const prog = program([
+        rung('Run latch M0: START (X3); STOP (X4, NC)', ['X3| X4 => OUT M0', 'M0']),
+        rung('Forward (MI1) / reverse (MI2) from the DIRECTION selector (X5)', ['M0 /X5 => OUT Y4']),
+        rung('', ['M0 X5 => OUT Y5']),
+        rung('C251: A/B-phase high-speed counter on X0 (A) / X1 (B)', ['M1000 => DCNT C251 K2000000000']),
+        rung('RESET (X2) clears the position', ['X2 => RST C251']),
+        rung('SPD: pulses on X0 in 1000 ms → D0 (pulses per second)', ['M1000 => SPD X0 K1000 D0']),
+        rung('Speed in rpm: D12 = D0 × 60 / 100 PPR = D0 × 6 / 10', ['M1000 => MUL D0 K6 D10']),
+        rung('', ['M1000 => DIV D10 K10 D12']),
+        rung('Position in turns: D20 = C251 / 100', ['M1000 => DDIV C251 K100 D20']),
+      ], { X0: 'Encoder A', X1: 'Encoder B', X2: 'RESET position', X3: 'START', X4: 'STOP (NC)', X5: 'DIRECTION (REV)', Y4: 'VFD MI1 (FWD)', Y5: 'VFD MI2 (REV)', D0: 'Pulses / s', D12: 'Speed (rpm)', D20: 'Turns', C251: 'Position (pulses)' });
       return finish(this, b, prog);
     },
   },
