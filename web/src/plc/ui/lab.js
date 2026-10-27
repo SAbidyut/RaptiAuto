@@ -518,9 +518,11 @@ export class LabScreen {
 
   sounds(sys) {
     const on = this.settings.sound !== false;
-    for (const m of sys.byKind('motor')) {
-      const r = Math.abs(m.rpm);
+    for (const m of [...sys.byKind('motor'), ...sys.byKind('motor6'), ...sys.byKind('conveyor')]) {
+      const r = Math.abs(m.rpm || 0);
       this.audio.set('mot' + m.dev.id, on && r > 8 ? 55 + (r / 1420) * 420 : 0, Math.min(1, r / 260) * 0.16, 'sawtooth');
+      // single phasing: a stalled motor with current in it hums at twice the mains frequency
+      this.audio.set('hum' + m.dev.id, on && m.hum ? 100 : 0, 0.07, 'square');
     }
     const plc = sys.plc;
     let mask = 0;

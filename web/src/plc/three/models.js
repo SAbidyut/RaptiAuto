@@ -5,9 +5,10 @@ import {
   THREE, MAT, FLIP, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
   glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M,
 } from './kit.js';
-import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps } from '../devices/defs.js';
+import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps, encoderPpr } from '../devices/defs.js';
 import { drawSegDisplay } from './sevenseg.js';
 import { MODBUS_BUILDERS } from './models-modbus.js';
+import { MACHINE_BUILDERS } from './models-machines.js';
 
 const LAMP_COLORS = { green: '#22e06a', red: '#ff3434', yellow: '#ffb020', blue: '#3b8bff', white: '#f4f7ff' };
 const CAP_COLORS = { green: '#1fa34a', red: '#d62828', yellow: '#f2b705', blue: '#1f5fd6', black: '#1b1d22', white: '#e9ecef' };
@@ -468,9 +469,10 @@ function breakerModel(dev, o) {
     B.add(cyl(6.6, 6.6, 2.4, 24), mat('glandNut', { color: 0x2b2f36, roughness: 0.55 }), M4(o.gland[0], 90.8, o.gland[1]));
     B.add(cyl(5, 5, 4, 24), MAT.rubber, M4(o.gland[0], 92, o.gland[1]));
   }
+  const peX = o.peX ?? 17;
   if (o.pe) {
-    B.add(rbox(10, 42, 50, 1.5), mat('peBlock', { color: 0x2f9e44, roughness: 0.5 }), M4(17, 45, 25));
-    B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(17, 38, 25));
+    B.add(rbox(10, 42, 50, 1.5), mat('peBlock', { color: 0x2f9e44, roughness: 0.5 }), M4(peX, 45, 25));
+    B.add(box(10.2, 6, 50.2), mat('peStripe', { color: 0xf5d90a, roughness: 0.5 }), M4(peX, 38, 25));
   }
   // the wires go straight into the terminal openings of the breaker — no screw heads show
   for (const p of devicePorts(dev)) {
@@ -494,7 +496,7 @@ function breakerModel(dev, o) {
   group.add(front);
   if (o.pe) {
     const pel = labelStrip(12, 5, [{ x: 0, label: 'PE', size: 3 }], { color: '#111' });
-    pel.position.set(17, 50, 50.2); group.add(pel);
+    pel.position.set(peX, 50, 50.2); group.add(pel);
   }
   // ON / OFF window (red = ON, green = OFF) and the toggle
   const ind = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(8, W - 8), 3.4), offsetMat(new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.4 })));
@@ -534,6 +536,15 @@ function buildMcb(dev) {
   return breakerModel(dev, {
     W: 36, cx: -6, rating: 'C10', volt: '230/400 V~', cap: '6000', pe: true, label: 'MCB', gland: [-9, 60],
     poleLabels: [[-10, 'L'], [6, 'N']],
+    isOn: (rt) => rt.dev.state.on,
+  });
+}
+
+/** 3-phase incomer: a 4-pole MCCB (L1 L2 L3 N) with the PE block beside it. */
+function buildMains3(dev) {
+  return breakerModel(dev, {
+    W: 72, cx: -9, rating: 'C16', tag: '4P', volt: '400 / 230 V~', cap: '10 kA', pe: true, peX: 36, label: 'Main breaker (3-phase)', gland: [-9, 50],
+    poleLabels: [[-27, 'L1'], [-9, 'L2'], [9, 'L3'], [27, 'N']],
     isOn: (rt) => rt.dev.state.on,
   });
 }
@@ -1062,6 +1073,9 @@ function buildTb(dev) {
 
 // ====================================================================== motor
 function buildMotor(dev) {
+  const pr = deviceProps(dev);
+  const six = dev.type === 'motor6';
+  const ppr = encoderPpr(pr);
   const group = new THREE.Group();
   const B = new Builder();
   const paint = MAT.paintBlue;
@@ -1087,6 +1101,17 @@ function buildMotor(dev) {
   B.add(box(60, 4, 22), MAT.blackPlastic, M4(0, 184, 0));
   B.add(cyl(7, 7, 16, 14), MAT.blackPlastic, M4(0, 168, 42, Math.PI / 2));
   for (const p of devicePorts(dev)) addScrew(B, p.pos, p.dir, 2.6);
+  // link bars in the terminal box of the 6-terminal motor: Δ = U1–W2, V1–U2, W1–V2 · Y = W2–U2–V2
+  if (six && pr.links === 'delta') for (const x of [-24, 0, 24]) B.add(box(7, 2, 34), MAT.brass, M4(x, 187.6, 0));
+  if (six && pr.links === 'star') B.add(box(56, 2, 7), MAT.brass, M4(0, 187.6, -13));
+  // encoder behind the shaft coupling, on a bracket, with its terminal block on top
+  if (ppr) {
+    B.add(box(10, 74, 54), MAT.alu, M4(206, 58, 0));
+    B.add(cyl(22, 22, 30, 28), mat('encBody', { color: 0x1f2937, roughness: 0.4, metalness: 0.3 }), M4(186, 95, 0, 0, 0, Math.PI / 2));
+    B.add(cyl(23, 23, 4, 28), MAT.alu, M4(172, 95, 0, 0, 0, Math.PI / 2));
+    B.add(cyl(7, 7, 10, 16), MAT.steel, M4(167, 95, 0, 0, 0, Math.PI / 2));
+    B.add(rbox(26, 18, 62, 2), MAT.termBlock, M4(186, 126, 0));
+  }
   // eye bolt
   const tor = new THREE.TorusGeometry(9, 2.4, 10, 24);
   B.add(tor, MAT.steel, M4(-60, 178, 0, 0, Math.PI / 2, 0));
@@ -1105,7 +1130,7 @@ function buildMotor(dev) {
     g.fillStyle = '#d7dce3'; rrect(g, 0, 0, W, H, 2); g.fill();
     g.strokeStyle = '#7b8494'; g.lineWidth = 0.4; rrect(g, 1, 1, W - 2, H - 2, 1.5); g.stroke();
     txt(g, '3~ INDUCTION MOTOR', W / 2, 5.5, { size: 3.2, weight: 800, color: '#111827' });
-    const rows = [['0.75 kW', '4 P'], ['220 V Δ', '3.2 A'], ['50 Hz', '1420 rpm'], ['IP55', 'Ins. F']];
+    const rows = six ? [['1.5 kW', '4 P'], ['400 V Δ', '3.4 A'], ['50 Hz', '1440 rpm'], ['IP55', 'Ins. F']] : [['0.75 kW', '4 P'], ['220 V Δ', '3.2 A'], ['50 Hz', '1420 rpm'], ['IP55', 'Ins. F']];
     rows.forEach(([a, b], i) => { txt(g, a, 6, 13 + i * 7, { size: 3, weight: 700, align: 'left', color: '#1f2937', font: FONT_M }); txt(g, b, W - 6, 13 + i * 7, { size: 3, weight: 700, align: 'right', color: '#1f2937', font: FONT_M }); });
   }, { ppm: 8, transparent: false });
   // the cooling fins stand 9 mm proud of the housing: the plate sits on a flat pad in front of them, so no fin cuts through it
@@ -1114,9 +1139,28 @@ function buildMotor(dev) {
   group.add(pad);
   plateD.position.set(-20, 100, 82.5);
   group.add(plateD);
-  const tlbl = labelStrip(60, 5, devicePorts(dev).map((p) => ({ x: p.pos[0], label: p.label, size: 3 })), { color: '#f8fafc' });
-  tlbl.rotation.x = -Math.PI / 2; tlbl.position.set(0, 186.1, 7.5);
-  group.add(tlbl);
+  const boxPorts = devicePorts(dev).filter((p) => !/^(E\+|E0|A|B|Z)$/.test(p.id));
+  if (six) {
+    // two rows: W2 U2 V2 at the back, U1 V1 W1 at the front
+    for (const [zz, zl] of [[-13, -21], [13, 21]]) {
+      const t = labelStrip(66, 5, boxPorts.filter((p) => p.pos[2] === zz || (zz > 0 && p.id === 'PE')).map((p) => ({ x: p.pos[0], label: p.label, size: 3 })), { color: '#f8fafc' });
+      t.rotation.x = -Math.PI / 2; t.position.set(0, 186.1, zl);
+      group.add(t);
+    }
+  } else {
+    const tlbl = labelStrip(60, 5, boxPorts.map((p) => ({ x: p.pos[0], label: p.label, size: 3 })), { color: '#f8fafc' });
+    tlbl.rotation.x = -Math.PI / 2; tlbl.position.set(0, 186.1, 7.5);
+    group.add(tlbl);
+  }
+  if (ppr) {
+    const ep = devicePorts(dev).filter((p) => /^(E\+|E0|A|B|Z)$/.test(p.id));
+    const t = labelStrip(66, 6, ep.map((p) => ({ x: -p.pos[2], label: p.label, size: 3.2 })), { color: '#f8fafc' });
+    t.rotation.set(-Math.PI / 2, Math.PI / 2, 0, 'YXZ'); // lying on the block, reading along z
+    t.position.set(176, 136.2, 0);
+    group.add(t);
+    const tag = decal(30, 9, (g, W, H) => txt(g, `${ppr} PPR`, W / 2, H / 2, { size: 5, weight: 800, color: '#e5e7eb' }), { ppm: 10 });
+    tag.position.set(186, 95, 22.4); group.add(tag);
+  }
   // rotating shaft + coupling disk
   const rot = new THREE.Group();
   rot.position.set(0, 95, 0);
@@ -1145,9 +1189,12 @@ function buildMotor(dev) {
       vis += (rt.rpm / 1420) * 4 * Math.PI * 2 * ctx.dt;
       const changed = rt.rpm !== 0 || rot.rotation.x !== vis;
       rot.rotation.x = vis % (Math.PI * 2);
-      const show = ctx.running && (Math.abs(rt.rpm) > 0.5 || rt.driverConnected);
+      const show = ctx.running && (Math.abs(rt.rpm) > 0.5 || rt.driverConnected || rt.fed === 'mains');
       label.visible = show;
-      const t = `${Math.round(Math.abs(rt.rpm))} rpm${rt.rpm < -0.5 ? ' ⟲' : rt.rpm > 0.5 ? ' ⟳' : ''}`;
+      // on the mains: the connection it runs in (Y / Δ) and the current; humming = a lost phase
+      const conn = rt.fed === 'mains' && six ? (rt.p > 0.4 && rt.p < 0.75 ? 'Y  ' : rt.p >= 0.75 ? 'Δ  ' : '') : '';
+      const amps = rt.fed ? `  ·  ${(rt.amps || 0).toFixed(1)} A` : '';
+      const t = rt.hum ? `HUMMING · 0 rpm${amps} ⚠` : `${conn}${Math.round(Math.abs(rt.rpm))} rpm${rt.rpm < -0.5 ? ' ⟲' : rt.rpm > 0.5 ? ' ⟳' : ''}${amps}`;
       if (show && t !== lastTxt) { lastTxt = t; label.userData.set(t); }
       return changed || show;
     },
@@ -1288,7 +1335,7 @@ function buildLaptop(dev, ctx) {
   return { group, controls: [screen], update() { return false; } };
 }
 
-const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop, ...MODBUS_BUILDERS };
+const BUILDERS = { plc: buildPlc, hmi: buildHmi, vfd: buildVfd, psu: buildPsu, mcb: buildMcb, mains3: buildMains3, motor6: buildMotor, ...MACHINE_BUILDERS, pb: buildPushButton, estop: buildEstop, selector: buildSelector, selector3: buildSelector, relay: buildRelay, cb: buildCb, tb: buildTb, lamp: buildLamp, buzzer: buildBuzzer, prox: buildProx, limit: buildLimit, atx: buildAtx, contactor: buildContactor, olr: buildOlr, pot: buildPot, motor: buildMotor, laptop: buildLaptop, ...MODBUS_BUILDERS };
 
 export function buildModel(dev, ctx) {
   const def = DEVICE_DEFS[dev.type];

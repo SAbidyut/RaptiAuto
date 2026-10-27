@@ -7,10 +7,16 @@ import { HmiRuntime } from './hmi.js';
 import { requestBytes, responseBytes, encodeFrame, frameMs, formatsMatch, fmtName, EXCEPTIONS } from './modbus.js';
 import { SLAVE_CLASSES } from './mbdevices.js';
 import { modbusAddr, fmtAddr } from './address.js';
-import { DEVICE_DEFS, PLC_MODELS, deviceProps } from '../devices/defs.js';
+import { DEVICE_DEFS, PLC_MODELS, deviceProps, encoderPpr } from '../devices/defs.js';
+import { motorSpec, motorLinks, windingVoltages, stepMotor, driveCurrents, polar, cabs, cadd } from './motors.js';
+import { TANK, feedBox, conveyorSensors, stepConveyor, stepTank, stepCylinder } from './machines.js';
 import { activePlcId, plcStore, plcName } from '../store.js';
 
 export const SUBSTEP_MS = 5;
+/** Device kinds that are induction motors (on a drive or on the mains). */
+const MOTOR_KINDS = new Set(['motor', 'motor6', 'conveyor']);
+/** |a − b| of two AC sources (rms phasors v∠ph °). */
+const acDiff = (a, b) => cabs([a.v * Math.cos(a.ph * Math.PI / 180) - b.v * Math.cos(b.ph * Math.PI / 180), a.v * Math.sin(a.ph * Math.PI / 180) - b.v * Math.sin(b.ph * Math.PI / 180)]);
 const COM1_FMT = { baud: 9600, bits: 7, parity: 'E', stop: 1, mode: 'ASCII' };
 
 export class LabSystem {
@@ -55,8 +61,8 @@ export class LabSystem {
         rt.vfd.knob = dev.state.knob ?? 0;
       } else if (rt.kind === 'hmi') {
         rt.hmi = new HmiRuntime(this.project.hmi, this.hmiLink(rt));
-      } else if (rt.kind === 'motor') {
-        rt.rpm = 0; rt.angle = 0;
+      } else if (MOTOR_KINDS.has(rt.kind)) {
+        rt.rpm = 0; rt.angle = 0; rt.w = 0;
       } else if (SLAVE_CLASSES[rt.kind]) {
         // Modbus slave on the RS-485 bus (temperature controller, sensor, energy meter)
         rt.mb = new SLAVE_CLASSES[rt.kind](dev, () => deviceProps(rt.dev));
@@ -113,8 +119,13 @@ export class LabSystem {
         else if (rt.kind === 'cb') s.on = !(s.on !== false);
         else if (rt.kind === 'prox') s.target = !s.target;
         else if (rt.kind === 'limit') s.on = !s.on;
-        else if (rt.kind === 'olr') s.tripped = !s.tripped;
-        else if (rt.kind === 'mcb') { s.on = !s.on; if (s.on) rt.tripped = false; }
+        else if (rt.kind === 'olr') {
+          // a bimetal that tripped on an overload has to cool down before it can be reset
+          if (s.tripped && (rt.heat || 0) > 1) return `${deviceProps(rt.dev).label || 'The overload relay'} is still hot — wait a few seconds, then reset it`;
+          s.tripped = !s.tripped;
+          if (!s.tripped) rt.thermal = false;
+        }
+        else if (rt.kind === 'mcb' || rt.kind === 'mains3') { s.on = !s.on; if (s.on) rt.tripped = false; }
         else if (rt.kind === 'plc') { s.run = !(s.run !== false); rt.cpu.setSwitch(s.run); }
         else if (rt.kind === 'meter') { rt.mb.page = (rt.mb.page + 1) % 4; rt.mb.pageT = 0; }
         break;
@@ -126,6 +137,9 @@ export class LabSystem {
         break;
       case 'tcSet': if (rt.kind === 'tc') { const { at, ...rest } = value; Object.assign(s, rest); if (at && rt.mb) rt.mb.startAT(); } break;
       case 'thSet': if (rt.kind === 'mbth') Object.assign(s, value); break;
+      // machines: put a box on the belt, open the tank's hand valve
+      case 'feed': if (rt.kind === 'conveyor') return feedBox(rt.dev, deviceProps(rt.dev)) ? null : 'No room at the feeder — wait until the belt has moved the last box on'; break;
+      case 'demand': if (rt.kind === 'tank') s.demand = Math.max(0, Math.min(1, value)); break;
       case 'vfdKey': if (rt.vfd) { const hint = rt.vfd.key(value); this.persistVfd(rt); return hint; } break;
       case 'vfdKnob': s.knob = Math.max(0, Math.min(1, value)); if (rt.vfd) return rt.vfd.setKnob(s.knob); break;
       default: break;
@@ -148,19 +162,190 @@ export class LabSystem {
   }
 
   substep(ms) {
-    this.time += ms / 1000;
+    const dt = ms / 1000;
+    this.time += dt;
     this.solve();
     for (const rt of this.rts.values()) if (rt.kind === 'plc') rt.cpu.step(ms);
-    this.stepComm(ms / 1000);
-    for (const rt of this.rts.values()) if (rt.kind === 'vfd') rt.vfd.stepSim(ms / 1000);
-    for (const rt of this.rts.values()) if (rt.mb) rt.mb.step(ms / 1000, rt.kind === 'meter' ? this.panelLoad() : 0);
+    this.stepComm(dt);
+    for (const rt of this.rts.values()) if (rt.kind === 'vfd') rt.vfd.stepSim(dt);
+    for (const rt of this.rts.values()) if (rt.mb) rt.mb.step(dt, rt.kind === 'meter' ? this.panelLoad() : 0);
+    this.stepMotors(dt);
+    this.stepMachines(dt);
+    this.stepOlr(dt);
+    this.feedEncoders();
+  }
+
+  // ------------------------------------------------------------------ motors, machines, overload relays
+  /** Motors that a drive can run: U / V / W terminals (the 0.75 kW motor, the conveyor's gear motor). */
+  driveMotors() { const out = []; for (const rt of this.rts.values()) if (rt.kind === 'motor' || rt.kind === 'conveyor') out.push(rt); return out; }
+
+  /** The AC phasor on a net (null when no supply reaches it). */
+  phasorAt(root) {
+    const l = this.src && this.src.get(root);
+    const e = l && l.find((x) => x.ac);
+    return e ? polar(e.v, e.ph || 0) : null;
+  }
+
+  /** Every motor: from its drive, or from the mains through contactors (direct-on-line, reversing, star-delta). */
+  stepMotors(dt) {
+    const F = this.faultMap();
     for (const rt of this.rts.values()) {
-      if (rt.kind !== 'motor') continue;
+      if (!MOTOR_KINDS.has(rt.kind)) continue;
+      const props = deviceProps(rt.dev);
+      const key = JSON.stringify(props);
+      if (rt.specKey !== key) { rt.spec = motorSpec(rt.kind, props); rt.specKey = key; }
+      const spec = rt.spec;
+      const load = Math.max(0, Math.min(2, (props.load ?? 40) / 100));
       const v = rt.driver && this.rts.get(rt.driver);
-      if (v && v.vfd && rt.driverConnected) rt.rpm = v.vfd.rpm;
-      else { rt.rpm *= Math.exp(-(ms / 1000) / 1.6); if (Math.abs(rt.rpm) < 1) rt.rpm = 0; }
-      rt.angle = (rt.angle + rt.rpm / 60 * 2 * Math.PI * ms / 1000) % (Math.PI * 2);
+      if (v && v.vfd && rt.driverConnected) {
+        rt.rpm = v.vfd.rpm; rt.w = rt.rpm / 1500; rt.amps = Math.abs(v.vfd.I);
+        rt.termI = driveCurrents(['U', 'V', 'W'], rt.amps); rt.fed = 'vfd'; rt.hum = false; rt.p = rt.n = 0;
+      } else {
+        const id = rt.dev.id, fw = F.dev.get(id)?.winding;
+        const vw = windingVoltages(spec, (port) => this.find(this.node(id, port)), (root) => this.phasorAt(root), fw ?? -1);
+        stepMotor(rt, spec, vw, load, dt);
+        rt.fed = rt.p + rt.n > 0.05 ? 'mains' : null;
+        // line current: the terminals joined by links / wires carry the sum of their windings' currents
+        const byNet = new Map();
+        for (const [port, I] of rt.termI) { const r = this.find(this.node(id, port)); byNet.set(r, cadd(byNet.get(r) || [0, 0], I)); }
+        rt.amps = 0;
+        for (const I of byNet.values()) rt.amps = Math.max(rt.amps, cabs(I));
+      }
+      if (Math.abs(rt.rpm) < 0.5 && !rt.fed) rt.rpm = 0;
+      rt.angle = (rt.angle + rt.rpm / 60 * 2 * Math.PI * dt) % (Math.PI * 2);
+      // encoder on the shaft (the conveyor's sits on the head pulley: see stepMachines)
+      const ppr = encoderPpr(props);
+      if (!ppr) rt.enc = null;
+      else {
+        if (!rt.enc || rt.enc.ppr !== ppr) rt.enc = { ppr, x: 0, d: 0, powered: false };
+        if (rt.kind !== 'conveyor') { rt.enc.d = rt.rpm / 60 * dt * ppr; rt.enc.x += rt.enc.d; }
+      }
     }
+  }
+
+  /** Conveyor belt and boxes, tank level, pneumatic cylinders. */
+  stepMachines(dt) {
+    for (const rt of this.rts.values()) {
+      if (rt.kind === 'conveyor') {
+        const props = deviceProps(rt.dev);
+        rt.belt = (rt.rpm / 1380) * 250; // mm/s at the rated speed of the gear motor
+        if (rt.enc) { rt.enc.d = rt.belt * dt * rt.enc.ppr / 100; rt.enc.x += rt.enc.d; } // 100 mm of belt per pulley turn
+        stepConveyor(rt, props, dt);
+      } else if (rt.kind === 'tank') {
+        const over = stepTank(rt, dt);
+        if (over && !rt.overflowed) { rt.overflowed = true; this.event('overflow', rt.dev.id, `${deviceProps(rt.dev).label || 'TANK'} overflows — the pump is still filling above the high level`); }
+        if ((rt.dev.state.level ?? 0) < TANK.over - 8) rt.overflowed = false;
+      } else if (rt.kind === 'cyl') {
+        if (rt.pressed) rt.y1 = true; // manual override on the valve
+        stepCylinder(rt, deviceProps(rt.dev), dt);
+      }
+    }
+  }
+
+  /** Union of every conductor but the poles of one overload relay (its "load side"). */
+  altUnion(tag) {
+    const L = this.links || [];
+    let n = 0;
+    for (let i = 0; i < L.length; i += 3) n = Math.max(n, L[i], L[i + 1]);
+    const par = new Int32Array(n + 1);
+    for (let i = 0; i <= n; i++) par[i] = i;
+    const f = (x) => { if (x > n) return x; while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+    for (let i = 0; i < L.length; i += 3) if (L[i + 2] !== tag) { const a = f(L[i]), b = f(L[i + 1]); if (a !== b) par[b] = a; }
+    return f;
+  }
+
+  /**
+   * Thermal overload relays: the current through each pole is the sum of the motor terminal
+   * currents behind it; the bimetals heat with (I / setting)² and trip at 1.2 × the setting (class 10).
+   */
+  stepOlr(dt) {
+    const olrs = this.byKind('olr');
+    if (!olrs.length) return;
+    const motors = [];
+    for (const rt of this.rts.values()) if (rt.termI && rt.amps > 0.005) motors.push(rt);
+    for (const o of olrs) {
+      let amps = 0;
+      if (motors.length) {
+        const uf = this.altUnion(o.dev.id);
+        const roots = [1, 2, 3].map((k) => uf(this.node(o.dev.id, 'T' + k)));
+        const sums = [[0, 0], [0, 0], [0, 0]];
+        for (const m of motors) for (const [port, I] of m.termI) {
+          const k = roots.indexOf(uf(this.node(m.dev.id, port)));
+          if (k >= 0) sums[k] = cadd(sums[k], I);
+        }
+        amps = Math.max(...sums.map(cabs));
+      }
+      o.amps = amps;
+      const props = deviceProps(o.dev);
+      const set = Math.max(0.1, +props.setting || 3.6);
+      const x2 = (amps / set) ** 2;
+      o.heat = o.heat || 0;
+      const tau = x2 > o.heat ? 150 : o.dev.state.tripped ? 20 : 150;
+      o.heat = Math.max(0, o.heat + (dt * (x2 - o.heat)) / tau);
+      if (o.heat >= 1.44 && !o.dev.state.tripped) {
+        o.dev.state.tripped = true; o.thermal = true;
+        this.event('trip', o.dev.id, `${props.label || 'Overload relay'} tripped: ${amps.toFixed(1)} A for a setting of ${set} A`);
+      }
+    }
+  }
+
+  /** Encoder pulses straight into the PLC high-speed inputs they are wired to (too fast for the scan). */
+  feedEncoders() {
+    const F = this.faultMap();
+    for (const rt of this.rts.values()) {
+      const e = rt.enc;
+      if (!e || !e.powered || !e.d) continue;
+      const ports = rt.kind === 'conveyor' ? ['A', 'B'] : ['A', 'B', 'Z'];
+      const zero = rt.kind === 'conveyor' ? '0V' : 'E0';
+      const roots = ports.map((p) => this.find(this.node(rt.dev.id, p)));
+      for (const p of this.byKind('plc')) {
+        if (!p.cpu.powered) continue;
+        // PNP signals: the input common S/S must sit at the encoder's 0 V
+        const ss = this.diff(p.dev.id, 'S/S', rt.dev.id, zero);
+        if (!ss || ss.ac || Math.abs(ss.d) > 2) continue;
+        for (let k = 0; k < Math.min(8, p.model.inputs); k++) {
+          const i = roots.indexOf(this.find(this.node(p.dev.id, 'X' + k.toString(8))));
+          if (i < 0 || F.dev.get(p.dev.id)?.xin === k) continue;
+          p.cpu.hsFeed(k, ports[i], ports[i] === 'Z' ? e.d / e.ppr : e.d);
+        }
+      }
+    }
+  }
+
+  /** Push-pull encoder outputs as levels (for the input LEDs): A, B 90° apart, Z once a turn. */
+  encoderLevels(rt, add, sup, ...ports) {
+    const e = rt.enc;
+    if (!e) return;
+    const fr = (v) => v - Math.floor(v);
+    const hi = { A: fr(e.x) < 0.5, B: fr(e.x - 0.25) < 0.5, Z: fr(e.x / e.ppr) < 1 / e.ppr };
+    for (const p of ports) if (p) add(rt.dev.id, p, sup.sys, hi[p] ? sup.hi : sup.lo);
+  }
+
+  // ------------------------------------------------------------------ fault finding
+  /** The hidden faults of the fault-finding challenge: {wire: Set(connId), dev: Map(devId → {…})}. */
+  faultMap() {
+    const fl = this.project.fault;
+    const items = fl && fl.active ? fl.items : null;
+    if (this._fm && this._fmItems === items) return this._fm;
+    const m = { wire: new Set(), dev: new Map() };
+    for (const it of items || []) {
+      if (it.kind === 'wire') { m.wire.add(it.conn); continue; }
+      const o = m.dev.get(it.dev) || {};
+      if (it.kind === 'lamp') o.lamp = true;
+      else if (it.kind === 'contact') o.contact = true;
+      else if (it.kind === 'sensor') o.sensor = it.port || true;
+      else if (it.kind === 'coil') o.coil = it.port || true;
+      else if (it.kind === 'pole') o.pole = it.k;
+      else if (it.kind === 'xin') o.xin = it.k;
+      else if (it.kind === 'yout') o.yout = it.k;
+      else if (it.kind === 'psu') o.psu = true;
+      else if (it.kind === 'olr') o.olr = true;
+      else if (it.kind === 'winding') o.winding = it.k;
+      else if (it.kind === 'cb') o.cb = true;
+      m.dev.set(it.dev, o);
+    }
+    this._fm = m; this._fmItems = items;
+    return m;
   }
 
   // ------------------------------------------------------------------ electrical solve
@@ -169,88 +354,130 @@ export class LabSystem {
     const node = (dev, port) => { const k = dev + ':' + port; let i = idx.get(k); if (i === undefined) { i = parent.length; idx.set(k, i); parent.push(i); } return i; };
     const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
     const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[b] = a; };
-    this.node = node; this.find = find;
+    // every conductor (wire, closed contact, bridge) is kept as a link: the overload relays need the
+    // circuit without their own bimetals to find the current through them
+    const links = [];
+    const link = (a, b, tag = null) => { links.push(a, b, tag); unite(a, b); };
+    this.node = node; this.find = find; this.links = links;
+    const F = this.faultMap();
     for (const c of this.project.conns) {
-      if (c.comm) continue;
-      unite(node(c.a.dev, c.a.port), node(c.b.dev, c.b.port));
+      if (c.comm || F.wire.has(c.id)) continue; // a broken conductor inside its insulation
+      link(node(c.a.dev, c.a.port), node(c.b.dev, c.b.port));
     }
     // internal contacts and bridges
     for (const rt of this.rts.values()) {
-      const id = rt.dev.id, s = rt.dev.state;
+      const id = rt.dev.id, s = rt.dev.state, f = F.dev.get(id);
+      const L = (a, b, tag) => link(node(id, a), node(id, b), tag);
       switch (rt.kind) {
-        case 'psu': unite(node(id, '+V1'), node(id, '+V2')); unite(node(id, '-V1'), node(id, '-V2')); break;
+        case 'psu': L('+V1', '+V2'); L('-V1', '-V2'); break;
         case 'plc':
           // relay outputs close Yn to their common Cn; NPN transistor outputs (EX2 "T") pull Yn to ZP
-          if (rt.cpu.powered) for (let y = 0; y < rt.model.outputs; y++) if (rt.cpu.Y[y]) unite(node(id, rt.model.out === 'npn' ? 'ZP' : 'C' + rt.yGroup[y]), node(id, 'Y' + y.toString(8)));
+          if (rt.cpu.powered) for (let y = 0; y < rt.model.outputs; y++) if (rt.cpu.Y[y] && !(f && f.yout === y)) L(rt.model.out === 'npn' ? 'ZP' : 'C' + rt.yGroup[y], 'Y' + y.toString(8));
           // the analog commons of the EX2 are one circuit inside the PLC
-          for (let k = 1; k < rt.model.ai; k++) unite(node(id, 'VI0-'), node(id, `VI${k}-`));
-          if (rt.model.ao) unite(node(id, 'AG0'), node(id, 'AG1'));
+          for (let k = 1; k < rt.model.ai; k++) L('VI0-', `VI${k}-`);
+          if (rt.model.ao) L('AG0', 'AG1');
           break;
         case 'vfd':
-          if (rt.vfd.relay()) unite(node(id, 'RA'), node(id, 'RC')); else unite(node(id, 'RB'), node(id, 'RC'));
+          if (rt.vfd.relay()) L('RA', 'RC'); else L('RB', 'RC');
           // MO1 / MO2 open-collector outputs conduct to MCM when ON
-          if (rt.vfd.mo(1)) unite(node(id, 'MO1'), node(id, 'MCM'));
-          if (rt.vfd.mo(2)) unite(node(id, 'MO2'), node(id, 'MCM'));
+          if (rt.vfd.mo(1)) L('MO1', 'MCM');
+          if (rt.vfd.mo(2)) L('MO2', 'MCM');
           break;
         case 'pb': {
           const nc = deviceProps(rt.dev).contact === 'NC';
-          if (nc && !rt.pressed) unite(node(id, '11'), node(id, '12'));
-          if (!nc && rt.pressed) unite(node(id, '13'), node(id, '14'));
+          if (f && f.contact) break; // worn contact: never closes
+          if (nc && !rt.pressed) L('11', '12');
+          if (!nc && rt.pressed) L('13', '14');
           break;
         }
-        case 'estop': if (!s.pressed) unite(node(id, '11'), node(id, '12')); break;
-        case 'selector': if (s.on) unite(node(id, '13'), node(id, '14')); break;
-        case 'selector3': if (s.pos === -1) unite(node(id, '13'), node(id, '14')); else if (s.pos === 1) unite(node(id, '23'), node(id, '24')); break;
-        case 'relay': if (rt.closed) unite(node(id, '11'), node(id, '14')); else unite(node(id, '11'), node(id, '12')); break;
+        case 'estop': if (!s.pressed && !(f && f.contact)) L('11', '12'); break;
+        case 'selector': if (s.on && !(f && f.contact)) L('13', '14'); break;
+        case 'selector3': if (f && f.contact) break; if (s.pos === -1) L('13', '14'); else if (s.pos === 1) L('23', '24'); break;
+        case 'relay': if (rt.closed) L('11', '14'); else L('11', '12'); break;
         case 'cb':
-          if (s.on !== false) {
-            if (deviceProps(rt.dev).poles === '3P') for (const k of ['1', '2', '3']) unite(node(id, 'L' + k), node(id, 'T' + k));
-            else unite(node(id, '1'), node(id, '2'));
+          if (s.on !== false && !(f && f.cb)) {
+            if (deviceProps(rt.dev).poles === '3P') for (const k of ['1', '2', '3']) L('L' + k, 'T' + k);
+            else L('1', '2');
           }
           break;
-        case 'tb': for (let k = 1; k <= 6; k++) unite(node(id, String(k)), node(id, k + 'b')); break;
-        case 'limit': if (s.on) unite(node(id, '13'), node(id, '14')); else unite(node(id, '21'), node(id, '22')); break;
+        case 'tb': for (let k = 1; k <= 6; k++) L(String(k), k + 'b'); break;
+        case 'limit': if (s.on) { if (!(f && f.contact)) L('13', '14'); } else L('21', '22'); break;
         case 'contactor':
           // the armature follows the coil of the previous step (a contactor needs a few ms to pull in)
-          if (rt.closed) { for (const k of ['1', '2', '3']) unite(node(id, 'L' + k), node(id, 'T' + k)); unite(node(id, '13'), node(id, '14')); } else unite(node(id, '21'), node(id, '22'));
+          if (rt.closed) { for (const k of ['1', '2', '3']) if (!(f && f.pole === +k)) L('L' + k, 'T' + k); L('13', '14'); } else L('21', '22');
           break;
         case 'olr':
-          for (const k of ['1', '2', '3']) unite(node(id, 'L' + k), node(id, 'T' + k));
-          if (s.tripped) unite(node(id, '97'), node(id, '98')); else unite(node(id, '95'), node(id, '96'));
+          for (const k of ['1', '2', '3']) L('L' + k, 'T' + k, id);
+          if (s.tripped) L('97', '98'); else if (!(f && f.olr)) L('95', '96');
           break;
+        case 'motor6':
+          // link bars in the terminal box
+          for (const [a, b] of motorLinks(motorSpec('motor6', deviceProps(rt.dev)))) L(a, b);
+          break;
+        case 'tank': {
+          // float switches: FC–LL closes above the low mark, FC–LH above the high mark
+          const h = s.level ?? 0;
+          if (h >= TANK.low && !(f && f.sensor === 'LL')) L('FC', 'LL');
+          if (h >= TANK.high && !(f && f.sensor === 'LH')) L('FC', 'LH');
+          break;
+        }
         default: break;
       }
     }
-    // ---- sources
+    // ---- sources (AC: a phasor, v = rms against N at angle ph °)
     let src = new Map();
-    const add = (dev, port, sys, v, ac = false) => { const r = find(node(dev, port)); if (!src.has(r)) src.set(r, []); src.get(r).push({ sys, v, ac }); };
+    const add = (dev, port, sys, v, ac = false, ph = 0, nm = null, own = null) => { const r = find(node(dev, port)); if (!src.has(r)) src.set(r, []); src.get(r).push({ sys, v, ac, ph, nm, own }); };
     const diff = (da, pa, db, pb) => {
       const ra = find(node(da, pa)), rb = find(node(db, pb));
       if (ra === rb) return { d: 0, same: true };
       const a = src.get(ra), b = src.get(rb);
       if (!a || !b) return null;
-      for (const x of a) for (const y of b) if (x.sys === y.sys) return { d: x.v - y.v, ac: x.ac };
+      for (const x of a) for (const y of b) if (x.sys === y.sys) return x.ac ? { d: acDiff(x, y), ac: true } : { d: x.v - y.v, ac: x.ac };
       return null;
     };
     this.diff = diff;
-    const mcbs = this.byKind('mcb');
-    const addMains = () => { for (const m of mcbs) if (m.dev.state.on) { add(m.dev.id, 'L', 'mains', 230, true); add(m.dev.id, 'N', 'mains', 0, true); } };
-    addMains();
-    // AC short → trip
-    for (const list of src.values()) {
-      if (list.some((x) => x.v === 230) && list.some((x) => x.v === 0 && x.ac)) {
-        for (const m of mcbs) if (m.dev.state.on) { m.dev.state.on = false; m.tripped = 'short'; this.event('trip', m.dev.id, 'MCB tripped — short circuit between L and N'); }
-        src = new Map();
-        break;
+    const supplies = [...this.byKind('mcb'), ...this.byKind('mains3')];
+    const addMains = () => {
+      if (this.hooks.dead) return; // the multimeter's Ω range: the lab with the power off
+      for (const m of supplies) {
+        if (!m.dev.state.on || F.dev.get(m.dev.id)?.cb) continue;
+        const id = m.dev.id;
+        if (m.kind === 'mcb') { add(id, 'L', 'mains', 230, true, 0, 'L', id); add(id, 'N', 'mains', 0, true, 0, 'N', id); }
+        else { add(id, 'L1', 'mains', 230, true, 0, 'L1', id); add(id, 'L2', 'mains', 230, true, -120, 'L2', id); add(id, 'L3', 'mains', 230, true, 120, 'L3', id); add(id, 'N', 'mains', 0, true, 0, 'N', id); }
       }
+    };
+    addMains();
+    // AC short (phase to phase, phase to N) → the supplies feeding it trip
+    for (let pass = 0; pass < 3; pass++) {
+      let hit = null;
+      for (const list of src.values()) {
+        const acs = list.filter((x) => x.ac);
+        for (let i = 1; i < acs.length && !hit; i++) if (acDiff(acs[0], acs[i]) > 5) hit = [acs[0], acs[i]];
+        if (hit) { hit.push(...acs); break; }
+      }
+      if (!hit) break;
+      const what = hit[0].nm && hit[1].nm ? `${[hit[0].nm, hit[1].nm].sort().join(' and ')}` : 'L and N';
+      const owners = new Set(hit.slice(2).map((x) => x.own));
+      for (const m of supplies) if (owners.has(m.dev.id) && m.dev.state.on) {
+        m.dev.state.on = false; m.tripped = 'short';
+        this.event('trip', m.dev.id, `${m.kind === 'mcb' ? 'MCB' : 'Main breaker (MCCB 4P)'} tripped — short circuit between ${what}`);
+        m.shortWhat = what;
+      }
+      src = new Map();
+      addMains();
     }
-    const acOn = (rt, l = 'L', n = 'N') => { const r = diff(rt.dev.id, l, rt.dev.id, n); return !!(r && r.ac && Math.abs(r.d) > 150); };
+    // a 230 V device between two phases gets 400 V: it stays off (and the lab check says why)
+    const acOn = (rt, l = 'L', n = 'N') => {
+      const r = diff(rt.dev.id, l, rt.dev.id, n);
+      rt.overV = !!(r && r.ac && Math.abs(r.d) > 300);
+      return !!(r && r.ac && Math.abs(r.d) > 150 && Math.abs(r.d) < 300);
+    };
     // AC powered devices
     for (const rt of this.rts.values()) {
       const id = rt.dev.id;
       if (rt.kind === 'psu') {
         rt.powered = acOn(rt);
-        if (rt.powered && !rt.short) { add(id, '+V1', id, 24); add(id, '-V1', id, 0); }
+        if (rt.powered && !rt.short && !F.dev.get(id)?.psu) { add(id, '+V1', id, 24); add(id, '-V1', id, 0); }
       } else if (rt.kind === 'plc') {
         const on = acOn(rt);
         if (on && !rt.cpu.powered) { const st = plcStore(this.project, rt.dev.id); rt.cpu.powerOn(st.plc && st.plc.latched); rt.cpu.switchRun = rt.dev.state.run !== false; if (rt.cpu.switchRun) rt.cpu.setRun(true); }
@@ -276,7 +503,8 @@ export class LabSystem {
     for (const list of src.values()) {
       const ac = list.some((x) => x.ac), dc = list.some((x) => !x.ac);
       if (ac && dc) {
-        for (const m of mcbs) if (m.dev.state.on) { m.dev.state.on = false; m.tripped = 'acdc'; this.event('trip', m.dev.id, '230 V AC touched the 24 V DC circuit — MCB tripped'); }
+        const owners = new Set(list.filter((x) => x.ac).map((x) => x.own));
+        for (const m of supplies) if (m.dev.state.on && owners.has(m.dev.id)) { m.dev.state.on = false; m.tripped = 'acdc'; this.event('trip', m.dev.id, `230 V AC touched the 24 V DC circuit — ${m.kind === 'mcb' ? 'MCB' : 'main breaker'} tripped`); }
       }
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
         const a = list[i], b = list[j];
@@ -292,13 +520,21 @@ export class LabSystem {
       const [p, n] = rt.kind === 'psu' ? ['+V1', '-V1'] : rt.kind === 'plc' ? ['+24V', '0V'] : ['+24V', 'DCM'];
       if (find(node(rt.dev.id, p)) !== find(node(rt.dev.id, n))) rt.short = false;
     }
-    // active sensors (PNP) and potentiometers
+    // 24 V DC between two terminals of a device (≥ 18 V)
+    const dc24 = (id, a, b) => { const r = this.diff(id, a, id, b); return !!(r && !r.ac && r.d >= 18); };
+    // the +24 V of a 3-wire device's supply (to switch onto a PNP output) and its 0 V
+    const supplyOf = (id, plus = '+24', minus = '0V') => {
+      const a = src.get(find(node(id, plus))), b = src.get(find(node(id, minus)));
+      const x = a && a.find((q) => !q.ac && q.v >= 18), y = x && b && b.find((q) => q.sys === x.sys && !q.ac);
+      return x && y ? { sys: x.sys, hi: x.v, lo: y.v } : null;
+    };
+    // active sensors (PNP), potentiometers, encoders and the machines' sensors
     for (const rt of this.rts.values()) {
-      const id = rt.dev.id;
+      const id = rt.dev.id, f = F.dev.get(id);
       if (rt.kind === 'prox') {
         const r = this.diff(id, 'BN', id, 'BU');
         rt.powered = !!(r && !r.ac && r.d >= 18);
-        if (rt.powered && rt.dev.state.target) {
+        if (rt.powered && rt.dev.state.target && !(f && f.sensor)) {
           // PNP: the output switches +24 V (BN); NPN: it switches 0 V (BU)
           const npn = deviceProps(rt.dev).output === 'NPN';
           const ra = src.get(find(node(id, npn ? 'BU' : 'BN')));
@@ -309,7 +545,7 @@ export class LabSystem {
         // transmitter: BK = 0 V (BU) + 10 V × the measured value within its range (or 4–20 mA)
         const r = this.diff(id, 'BN', id, 'BU');
         rt.powered = !!(r && !r.ac && r.d >= 18);
-        if (rt.powered) {
+        if (rt.powered && !(f && f.sensor)) {
           const a = src.get(find(node(id, 'BN'))), b = src.get(find(node(id, 'BU')));
           const x = a && a.find((q) => !q.ac && q.v >= 18), y = x && b && b.find((q) => q.sys === x.sys && !q.ac);
           const k = Math.max(0, Math.min(1, rt.dev.state.pos ?? 0.5));
@@ -321,18 +557,40 @@ export class LabSystem {
         if (a && b) {
           for (const x of a) { const y = b.find((q) => q.sys === x.sys && !q.ac); if (y && !x.ac) { add(id, '2', x.sys, y.v + (rt.dev.state.pos ?? 0.5) * (x.v - y.v)); break; } }
         }
+      } else if (rt.kind === 'conveyor') {
+        const sup = supplyOf(id);
+        rt.powered = !!sup;
+        rt.sens = conveyorSensors(rt.dev);
+        if (sup) for (const k of ['S1', 'S2', 'S3', 'S4']) if (rt.sens[k] && !(f && f.sensor === k)) add(id, k, sup.sys, sup.hi);
+        if (rt.enc) rt.enc.powered = !!sup;
+        if (sup && rt.enc) this.encoderLevels(rt, add, sup, 'A', 'B', null);
+      } else if (rt.kind === 'cyl') {
+        const sup = supplyOf(id);
+        rt.powered = !!sup;
+        const pos = rt.dev.state.pos ?? 0;
+        if (sup && pos <= 0.03 && !(f && f.sensor === 'B1')) add(id, 'B1', sup.sys, sup.hi);
+        if (sup && pos >= 0.97 && !(f && f.sensor === 'B2')) add(id, 'B2', sup.sys, sup.hi);
+      } else if (rt.kind === 'tank') {
+        const sup = supplyOf(id);
+        rt.powered = !!sup;
+        if (sup && !(f && f.sensor === 'LT')) add(id, 'LT', sup.sys, sup.lo + 10 * Math.max(0, Math.min(1, (rt.dev.state.level ?? 0) / TANK.H)));
+      }
+      if (rt.enc && (rt.kind === 'motor' || rt.kind === 'motor6')) {
+        const sup = supplyOf(id, 'E+', 'E0');
+        rt.enc.powered = !!sup;
+        if (sup) this.encoderLevels(rt, add, sup, 'A', 'B', 'Z');
       }
     }
     this.src = src;
     // ---- loads
     for (const rt of this.rts.values()) {
-      const id = rt.dev.id;
+      const id = rt.dev.id, f = F.dev.get(id);
       switch (rt.kind) {
         case 'plc': {
           const cpu = rt.cpu;
           for (let k = 0; k < rt.model.inputs; k++) {
             const r = diff(id, 'X' + k.toString(8), id, 'S/S');
-            cpu.Xphys[k] = r && !r.same && !r.ac && Math.abs(r.d) >= 15 ? 1 : 0;
+            cpu.Xphys[k] = r && !r.same && !r.ac && Math.abs(r.d) >= 15 && !(f && f.xin === k) ? 1 : 0;
           }
           for (let ch = 0; ch < rt.model.ai; ch++) {
             // current mode when In+ is bridged to Vn+ (as in the EX2 manual): ±20 mA → ±2000, else ±10 V → ±2000
@@ -360,8 +618,9 @@ export class LabSystem {
         case 'contactor': {
           const r = diff(id, 'A1', id, 'A2');
           const ac = deviceProps(rt.dev).coil === '230AC';
-          const on = !!(r && !r.same && (ac ? r.ac && Math.abs(r.d) > 150 : !r.ac && Math.abs(r.d) >= 18));
+          const on = !!(r && !r.same && (ac ? r.ac && Math.abs(r.d) > 150 && Math.abs(r.d) < 300 : !r.ac && Math.abs(r.d) >= 18)) && !(f && f.coil);
           rt.wrongCoil = !!(r && !r.same && (ac ? !r.ac && Math.abs(r.d) >= 18 : r.ac));
+          rt.overCoil = !!(r && !r.same && ac && r.ac && Math.abs(r.d) >= 300);
           const was = rt.closed;
           rt.coil = on;
           rt.closed = on || !!rt.pressed;
@@ -370,7 +629,7 @@ export class LabSystem {
         }
         case 'relay': {
           const r = diff(id, 'A1', id, 'A2');
-          rt.coil = !!(r && !r.same && !r.ac && r.d >= 18);
+          rt.coil = !!(r && !r.same && !r.ac && r.d >= 18) && !(f && f.coil);
           rt.wrongCoil = !!(r && !r.same && r.ac);
           rt.reversed = !!(r && !r.same && !r.ac && r.d <= -18);
           rt.closed = rt.coil || !!rt.pressed;
@@ -379,7 +638,7 @@ export class LabSystem {
         case 'lamp': case 'buzzer': {
           const [a, b] = rt.kind === 'lamp' ? ['X1', 'X2'] : ['+', '-'];
           const r = diff(id, a, id, b);
-          rt.on = !!(r && !r.ac && Math.abs(r.d) >= 18 && (rt.kind === 'lamp' || r.d > 0));
+          rt.on = !!(r && !r.ac && Math.abs(r.d) >= 18 && (rt.kind === 'lamp' || r.d > 0)) && !(f && f.lamp);
           rt.overvolt = !!(r && r.ac);
           break;
         }
@@ -394,6 +653,19 @@ export class LabSystem {
           v.avi = r && !r.ac ? Math.max(0, Math.min(10, r.d)) : 0;
           const rc = diff(id, 'ACI', id, 'ACM');
           v.aci = rc && !rc.ac ? Math.max(0, Math.min(10, rc.d)) : 0;
+          break;
+        }
+        case 'conveyor': rt.coil = dc24(id, 'Y1', '0V') && !(f && f.coil); break;
+        case 'cyl': rt.y1 = dc24(id, 'Y1', '0V') && !(f && f.coil === 'Y1'); rt.y2 = dc24(id, 'Y2', '0V') && !(f && f.coil === 'Y2'); break;
+        case 'tank': {
+          const r = diff(id, 'P+', id, 'P-');
+          rt.pumpOn = !!(r && !r.ac && r.d >= 18) && !(f && f.coil === 'P');
+          rt.pumpRev = !!(r && !r.ac && r.d <= -18);
+          rt.pumpAc = !!(r && r.ac);
+          const sp = diff(id, 'SPD', id, 'P-');
+          rt.spd = sp && !sp.ac && !sp.same ? Math.max(0, Math.min(1, sp.d / 10)) : sp && sp.same ? 0 : 1;
+          rt.pump = rt.pumpOn ? rt.spd : 0;
+          rt.valve = dc24(id, 'V+', 'V-') && !(f && f.coil === 'V');
           break;
         }
         default: break;
@@ -420,8 +692,9 @@ export class LabSystem {
       }
       return { r, by };
     };
-    for (const m of this.byKind('motor')) {
+    for (const m of this.driveMotors()) {
       m.driver = null; m.driverConnected = false; m.offBy = null;
+      if (F.dev.get(m.dev.id)?.winding !== undefined) { m.partial = true; continue; }
       if (open.length) {
         const via = ['U', 'V', 'W'].map((p) => through(find(node(m.dev.id, p))));
         const by = via.find((x) => x.by);
@@ -470,7 +743,8 @@ export class LabSystem {
 
   /** Is a conductor carrying a supply voltage? (for the 3D wire glow) */
   connLive(c) {
-    if (!this.src || c.comm) return false;
+    // during a fault-finding challenge the wires do not glow: the meter has to find the break
+    if (!this.src || c.comm || (this.project.fault && this.project.fault.active)) return false;
     const r = this.find(this.node(c.a.dev, c.a.port));
     const s = this.src.get(r);
     return !!(s && s.some((x) => x.v > 0));
@@ -757,13 +1031,15 @@ export class LabSystem {
     const add = (level, text, devId = null, fix = null) => out.push({ level, text, devId, fix });
     const devs = this.project.devices;
     if (!devs.length) return out;
-    for (const m of this.byKind('mcb')) {
-      if (!m.dev.state.on) add('error', m.tripped === 'short' ? 'MCB tripped: L and N are short-circuited. Remove the short, then switch the MCB ON.' : m.tripped === 'acdc' ? 'MCB tripped: 230 V AC was connected to the 24 V DC circuit. Fix the wiring, then switch the MCB ON.' : 'The MCB is OFF — tap it in Operate mode to switch the power on.', m.dev.id);
+    for (const m of [...this.byKind('mcb'), ...this.byKind('mains3')]) {
+      const nm = m.kind === 'mcb' ? 'MCB' : 'Main breaker (3-phase)';
+      if (!m.dev.state.on) add('error', m.tripped === 'short' ? `${nm} tripped: ${m.shortWhat || 'L and N'} are short-circuited. Remove the short, then switch it ON.` : m.tripped === 'acdc' ? `${nm} tripped: 230 V AC was connected to the 24 V DC circuit. Fix the wiring, then switch it ON.` : `The ${nm} is OFF — tap it in Operate mode to switch the power on.`, m.dev.id);
     }
-    if (!this.byKind('mcb').length) add('warn', 'There is no mains supply (MCB) in the lab.');
+    if (!this.byKind('mcb').length && !this.byKind('mains3').length) add('warn', 'There is no mains supply (MCB or 3-phase supply) in the lab.');
     for (const rt of this.rts.values()) {
       const name = rt.def.short;
       if (rt.short) add('error', `${name}: short circuit on the 24 V output.`, rt.dev.id);
+      if (rt.overV) add('error', `${this.busName(rt)}: 400 V on its 230 V input — a 230 V device goes between ONE phase and N, not between two phases. It stays off.`, rt.dev.id);
       switch (rt.kind) {
         case 'psu': if (!rt.powered) add('warn', `${name} has no 230 V input — wire L and N from the MCB.`, rt.dev.id); break;
         case 'plc': {
@@ -790,9 +1066,25 @@ export class LabSystem {
           }
           break;
         }
-        case 'motor': if (!rt.driverConnected && !rt.offBy) add('info', rt.partial ? `${name}: only some phases are connected.` : `${name} is not connected to a drive.`, rt.dev.id); break;
+        case 'motor': case 'motor6': case 'conveyor': {
+          const nm = rt.kind === 'conveyor' ? `${deviceProps(rt.dev).label || 'Conveyor'} gear motor` : name;
+          if (rt.fed === 'mains') {
+            if (rt.hum) add('error', `${nm} hums but does not turn: a phase is missing (single phasing). The current is 5–6 × too high — the overload relay will trip.`, rt.dev.id);
+            else if (rt.p > 1.2) add('error', `${nm}: its windings get ${Math.round(rt.p * rt.spec.vr)} V but are made for ${rt.spec.vr} V — ${rt.kind === 'motor' ? 'this motor is for the 220 V output of the MS300, not for the 400 V mains' : 'check the star / delta connection'}.`, rt.dev.id);
+            else if (rt.p > 0.3 && rt.p < 0.75 && rt.kind === 'motor6') add('info', `${nm} runs in star: ${Math.round(rt.p * rt.spec.vr)} V per winding — about a third of the torque and of the current.`, rt.dev.id);
+          } else if (rt.kind !== 'motor6' && !rt.driverConnected && !rt.offBy) add('info', rt.partial ? `${nm}: only some phases are connected.` : `${nm} is not connected to a drive or the mains.`, rt.dev.id);
+          else if (rt.kind === 'motor6' && !this.project.conns.some((c) => !c.comm && (c.a.dev === rt.dev.id || c.b.dev === rt.dev.id))) add('info', `${nm} is not connected — wire U1 V1 W1 (and W2 U2 V2 for star-delta) from the contactors.`, rt.dev.id);
+          if (rt.kind === 'conveyor' && !rt.powered && (deviceProps(rt.dev).feed !== 'manual' || (rt.dev.state.boxes || []).length)) add('info', `${nm.replace(' gear motor', '')}: the sensors have no 24 V — wire +24 and 0V.`, rt.dev.id);
+          break;
+        }
+        case 'tank':
+          if (rt.overflowed) add('error', `${deviceProps(rt.dev).label || 'TANK'} overflows — stop the pump at the high level (LH).`, rt.dev.id);
+          if (rt.pumpRev) add('warn', `${deviceProps(rt.dev).label || 'TANK'}: pump polarity reversed — P+ is +24 V, P− is 0 V.`, rt.dev.id);
+          if (rt.pumpAc) add('error', `${deviceProps(rt.dev).label || 'TANK'}: 230 V AC on the 24 V DC pump!`, rt.dev.id);
+          break;
         case 'lamp': if (rt.overvolt) add('error', `${deviceProps(rt.dev).label} lamp: 230 V AC on a 24 V lamp!`, rt.dev.id); break;
         case 'contactor':
+          if (rt.overCoil) add('error', `${name} ${deviceProps(rt.dev).label || ''}: 400 V on a 230 V AC coil — wire A1 to one phase and A2 to N.`, rt.dev.id);
           if (rt.wrongCoil) add('error', deviceProps(rt.dev).coil === '230AC' ? `${name} ${deviceProps(rt.dev).label || ''}: 24 V DC on a 230 V AC coil — it cannot pull in. Change the coil voltage in its settings or wire it to 230 V AC.` : `${name} ${deviceProps(rt.dev).label || ''}: 230 V AC on a 24 V DC coil! Wire A1 / A2 to 24 V DC (A2 to 0 V) or choose a 230 V AC coil.`, rt.dev.id);
           break;
         case 'relay':
@@ -800,7 +1092,10 @@ export class LabSystem {
           else if (rt.reversed) add('warn', `${name} ${deviceProps(rt.dev).label || ''}: coil polarity reversed — A1 is +24 V, A2 is 0 V (the LED and the free-wheel diode need it).`, rt.dev.id);
           break;
         case 'cb': if (rt.dev.state.on === false) add('info', `${name} ${deviceProps(rt.dev).label || ''} is OFF — tap the lever to switch it on.`, rt.dev.id); break;
-        case 'olr': if (rt.dev.state.tripped) add('warn', `${name} ${deviceProps(rt.dev).label || ''} tripped (95–96 open). Tap its button to reset it.`, rt.dev.id); break;
+        case 'olr':
+          if (rt.dev.state.tripped) add('warn', rt.thermal ? `${name} ${deviceProps(rt.dev).label || ''} tripped on overload (95–96 open): ${rt.amps > 0.05 ? `${rt.amps.toFixed(1)} A flow` : 'the motor took too much current'}, the setting is ${deviceProps(rt.dev).setting} A. Find the cause, let it cool, then tap RESET.` : `${name} ${deviceProps(rt.dev).label || ''} tripped (95–96 open). Tap its button to reset it.`, rt.dev.id);
+          else if ((rt.heat || 0) > 1.05 && rt.amps > 0.05) add('warn', `${name} ${deviceProps(rt.dev).label || ''} is heating up: ${rt.amps.toFixed(1)} A for a setting of ${deviceProps(rt.dev).setting} A — it will trip.`, rt.dev.id);
+          break;
         case 'tc': case 'meter':
           if (!rt.mb.powered) add('warn', `${this.slaveName(rt)} has no power — wire L and N from the MCB.`, rt.dev.id);
           else if (!this.commNet()(rt.dev.id, 'RS485')) add('info', `${this.slaveName(rt)}: its RS-485 terminals are not connected to the bus.`, rt.dev.id);

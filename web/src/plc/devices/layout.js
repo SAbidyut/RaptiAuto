@@ -17,10 +17,13 @@ export const SCENE = {
   console: { cx: 10, zBack: 250, zFront: 445, hBack: 150, hFront: 58, pitch: 74, perRow: 7 },
   hmi: { x: -420, z: 330, tilt: 0.32 },
   motor: { x: 470, z: 320, dz: 250 },
+  // machines (conveyor, tank, cylinders) right of the motors, back to front; a full column wraps right
+  machine: { x: 1180, z0: 40, z1: 1280, gap: 120, dx: 660 },
   laptop: { x: -760, z: 300, rotY: 0.62 },
 };
 
-const RAIL1_ORDER = { mcb: 0, power: 1, plc: 2 };
+const RAIL1_ORDER = { mcb: 0, power: 1, plc: 2, mains3: 3 };
+const MACHINE_ORDER = { conveyor: 0, tank: 1, cylinder: 2 };
 
 /**
  * Returns Map(deviceId → {pos:[x,y,z], rot:[rx,ry,rz], zone}) plus `console` geometry.
@@ -28,7 +31,7 @@ const RAIL1_ORDER = { mcb: 0, power: 1, plc: 2 };
 export function layoutDevices(devices) {
   const out = new Map();
   const S = SCENE;
-  const rail1 = [], rail2 = [], consoleDevs = [], motors = [];
+  const rail1 = [], rail2 = [], consoleDevs = [], motors = [], machines = [];
   for (const d of devices) {
     const def = DEVICE_DEFS[d.type];
     if (!def) continue;
@@ -36,6 +39,7 @@ export function layoutDevices(devices) {
     else if (def.zone === 'rail2') rail2.push(d);
     else if (def.zone === 'console') consoleDevs.push(d);
     else if (def.zone === 'motor') motors.push(d);
+    else if (def.zone === 'machine') machines.push(d);
     else if (def.zone === 'hmi') out.set(d.id, { pos: [S.hmi.x, 70, S.hmi.z], rot: [-S.hmi.tilt, 0.18, 0], zone: 'hmi' });
     else if (def.zone === 'desk') out.set(d.id, { pos: [S.laptop.x, 0, S.laptop.z], rot: [0, S.laptop.rotY, 0], zone: 'desk' });
   }
@@ -77,12 +81,22 @@ export function layoutDevices(devices) {
     out.set(d.id, { pos: [px, cy - upDir[1] * half + 1, cz - upDir[2] * half], rot: [rotX, 0, 0], zone: 'console', row: r });
   });
   motors.forEach((d, i) => out.set(d.id, { pos: [S.motor.x, 14, S.motor.z + i * S.motor.dz], rot: [0, 0, 0], zone: 'motor' }));
+  // machines: each one's footprint (def.box) centred on the column, back edge at the cursor
+  const M = S.machine;
+  let mx = M.x, mz = M.z0;
+  machines.sort((a, b) => (MACHINE_ORDER[a.type] ?? 9) - (MACHINE_ORDER[b.type] ?? 9));
+  for (const d of machines) {
+    const [[x0, , z0], [x1, , z1]] = DEVICE_DEFS[d.type].box;
+    if (mz > M.z0 && mz + (z1 - z0) > M.z1) { mx += M.dx; mz = M.z0; }
+    out.set(d.id, { pos: [mx - (x0 + x1) / 2, 0, mz - z0], rot: [0, 0, 0], zone: 'machine' });
+    mz += z1 - z0 + M.gap;
+  }
   return { places: out, console: { cx: C.cx, width, zBack: C.zBack, zFront: C.zFront, hBack: C.hBack, hFront: C.hFront, slope: L, theta, show: consoleDevs.length > 0 } };
 }
 
 function cat(d) {
   const def = DEVICE_DEFS[d.type];
-  if (d.type === 'mcb') return 'mcb';
+  if (d.type === 'mcb' || d.type === 'mains3') return d.type;
   return def.category;
 }
 

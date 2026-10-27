@@ -60,7 +60,7 @@ export const INSTR = {
   CNT: { kind: 'box', cat: 'timer', name: '16-bit counter', ops: ['counter', 'word'], labels: ['Counter', 'Set value'], steps: 4, def: ['C0', 'K10'] },
   TON: { kind: 'box', cat: 'timer', name: 'On-delay timer (IEC TON, works like TMR)', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T1', 'K30'] },
   TOF: { kind: 'box', cat: 'timer', name: 'Off-delay timer (IEC TOF): T stays ON for the set time after the input goes OFF', ops: ['timer', 'word'], labels: ['Timer', 'Set value'], steps: 4, def: ['T2', 'K30'] },
-  DCNT: { kind: 'box', cat: 'timer', name: '32-bit up/down counter C200–C234 (M1200+ ON = down); C235–C242 = high-speed counter on X0–X7', ops: ['hcounter', 'word'], labels: ['Counter', 'Set value'], steps: 9, def: ['C235', 'K1000'] },
+  DCNT: { kind: 'box', cat: 'timer', name: '32-bit up/down counter C200–C234 (M1200+ ON = down); C235–C242 = high-speed counter on X0–X7; C251–C254 = A/B-phase counter on X0/X1 … X6/X7', ops: ['hcounter', 'word'], labels: ['Counter', 'Set value'], steps: 9, def: ['C235', 'K1000'] },
   // program flow
   MC: { kind: 'box', cat: 'flow', name: 'Master control start: OFF → the networks up to MCR run with no power', ops: ['nest'], labels: ['Nesting level'], steps: 3, def: ['N0'], flow: true },
   MCR: { kind: 'box', cat: 'flow', name: 'Master control reset (end of the MC block)', ops: ['nest'], labels: ['Nesting level'], steps: 3, def: ['N0'], flow: true, rail: true },
@@ -701,7 +701,7 @@ function checkInstr(el, ops) {
       if (n !== undefined && (!fits(ops[1], el.t === 'MEAN' ? 1 : n) || (el.t !== 'FMOV' && !fits(ops[0], n)))) return `${el.t}: the block runs past the last device`;
       break;
     }
-    case 'DCNT': if (ops[0] && (ops[0].idx < 200 || ops[0].idx > 242)) return 'DCNT: use a 32-bit counter C200 … C234, or C235 … C242 for the high-speed input X0 … X7'; break;
+    case 'DCNT': if (ops[0] && (ops[0].idx < 200 || (ops[0].idx > 242 && (ops[0].idx < 251 || ops[0].idx > 254)))) return 'DCNT: use a 32-bit counter C200 … C234, C235 … C242 for the high-speed input X0 … X7, or C251 … C254 for an A/B encoder (X0/X1 … X6/X7)'; break;
     case 'CNT': if (ops[0] && ops[0].idx >= 200) return 'CNT: C200 and up are 32-bit counters — use DCNT'; break;
     case 'WSFR': case 'WSFL': {
       const n1 = v(2), n2 = v(3);

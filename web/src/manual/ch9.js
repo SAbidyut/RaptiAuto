@@ -41,7 +41,7 @@ const GLOSSARY = [
 ];
 
 export default {
-  id: 'ref', no: 9, title: 'Quick reference, FAQ and glossary', icon: 'list',
+  id: 'ref', no: 10, title: 'Quick reference, FAQ and glossary', icon: 'list',
   blurb: 'Gestures, shortcuts, the most-used instructions, frequent questions and the glossary.',
   sections: [
     {

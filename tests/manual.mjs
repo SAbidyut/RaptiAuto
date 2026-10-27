@@ -15,10 +15,10 @@ function check(name, cond, detail = '') { if (!cond) failures++; console.log(`${
 // ---------------------------------------------------------------- structure
 const PLC = partChapters('plc');
 check('three parts, every chapter belongs to one', PARTS.length === 3 && MANUAL.every((c) => PARTS.some((p) => p.id === c.part)));
-check('nine PLC chapters', PLC.length === 9);
-check('chapter ids are unique, PLC chapters are numbered 1…9', new Set(MANUAL.map((c) => c.id)).size === MANUAL.length && PLC.every((c, i) => c.no === i + 1));
+check('ten PLC chapters', PLC.length === 10);
+check('chapter ids are unique, PLC chapters are numbered 1…10', new Set(MANUAL.map((c) => c.id)).size === MANUAL.length && PLC.every((c, i) => c.no === i + 1));
 check('the Arduino and Raspberry Pi parts have at least 6 chapters each', partChapters('arduino').length >= 6 && partChapters('pi').length >= 6);
-const wanted = ['PLC programming', 'Variable frequency drive (VFD)', 'Designing an HMI', 'Modbus: talking to devices'];
+const wanted = ['PLC programming', 'Variable frequency drive (VFD)', 'Designing an HMI', 'Modbus: talking to devices', 'Motors, machines and fault finding'];
 for (const w of wanted) check(`chapter "${w}"`, PLC.some((c) => c.title === w));
 check('every chapter has at least 5 sections with unique ids', MANUAL.every((c) => c.sections.length >= 5 && new Set(c.sections.map((s) => s.id)).size === c.sections.length));
 const all = MANUAL.flatMap((c) => c.sections.map((s) => s.html)).join('\n');
@@ -30,7 +30,7 @@ const ardIds = new Set(EXAMPLES.map((e) => e.id)), piFiles = new Set([...PI_EXAM
 const ardLinks = [...all.matchAll(/data-ard="([^"]+)"/g)].map((m) => m[1]), piLinks = [...all.matchAll(/data-pi="([^"]+)"/g)].map((m) => m[1]);
 check('Arduino example buttons point to real examples', ardLinks.length >= 10 && ardLinks.every((l) => ardIds.has(l)), ardLinks.filter((l) => !ardIds.has(l)).join());
 check('Raspberry Pi example buttons point to real examples', piLinks.length >= 8 && piLinks.every((l) => piFiles.has(l)), piLinks.filter((l) => !piFiles.has(l)).join());
-for (const id of ['modbus-th-fan', 'modbus-energy-vfd', 'modbus-function-codes', 'pid-oven-recipes', 'pid-tuning-lab']) check(`example ${id} is linked from the manual`, links.includes(id));
+for (const id of ['modbus-th-fan', 'modbus-energy-vfd', 'modbus-function-codes', 'pid-oven-recipes', 'pid-tuning-lab', 'dol-reversing', 'star-delta', 'conveyor-sort', 'tank-level', 'pneumatic-sequence', 'encoder-speed']) check(`example ${id} is linked from the manual`, links.includes(id));
 check('figures are balanced (every <svg> closes)', (all.match(/<svg /g) || []).length === (all.match(/<\/svg>/g) || []).length && (all.match(/<svg /g) || []).length > 40);
 check('at least 40 PLC diagrams', (PLC.flatMap((c) => c.sections.map((x) => x.html)).join('').match(/<figure class="mf"/g) || []).length >= 40);
 for (const part of ['arduino', 'pi']) {

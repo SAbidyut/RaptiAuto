@@ -114,7 +114,7 @@ export class LabScene {
     this.net = new NetOverlay(this);
     this.scene.add(this.net.group);
     this.ducts = null;
-    this.mains = null;
+    this.mainsGroup = null;
     this.env = null;
     this.envKey = '';
     this.raycaster = new THREE.Raycaster();
@@ -232,7 +232,7 @@ export class LabScene {
       disposeModel(entry.model);
       this.models.delete(id);
     }
-    const envKey = JSON.stringify(this.layout.console) + '|' + devs.filter((d) => ['hmi', 'motor'].includes(DEVICE_DEFS[d.type].zone)).map((d) => d.id).join(',');
+    const envKey = JSON.stringify(this.layout.console) + '|' + devs.filter((d) => ['hmi', 'motor', 'machine'].includes(DEVICE_DEFS[d.type].zone)).map((d) => d.id).join(',');
     if (force || envKey !== this.envKey) {
       if (this.env) this.scene.remove(this.env);
       this.env = buildEnvironment(this.layout, devs);
@@ -248,7 +248,7 @@ export class LabScene {
     for (const c of this.cables.values()) { this.cableGroup.remove(c); disposeCable(c); }
     this.cables.clear();
     // every wire through the ducts / around the bench, each on a track of its own (devices/routing.js)
-    let routed = { routes: new Map(), gaps: [], mains: null };
+    let routed = { routes: new Map(), gaps: [], mains: [] };
     try { routed = routeLab(this.project, this.layout); } catch (e) { console.warn('cable routing failed', e); }
     for (const conn of this.project.conns) {
       const rt = routed.routes.get(conn.id);
@@ -268,7 +268,7 @@ export class LabScene {
 
   /** Slotted ducts (slots where the wires pass) and the MCB's mains cable. */
   setDucts(routed) {
-    for (const k of ['ducts', 'mains']) {
+    for (const k of ['ducts', 'mainsGroup']) {
       const o = this[k];
       if (!o) continue;
       this.scene.remove(o);
@@ -278,7 +278,11 @@ export class LabScene {
     if (!routed) return;
     this.ducts = buildDucts(routed.gaps);
     this.scene.add(this.ducts);
-    if (routed.mains) { this.mains = buildPlainCable(routed.mains.pts, routed.mains.r); this.scene.add(this.mains); }
+    if (routed.mains && routed.mains.length) {
+      this.mainsGroup = new THREE.Group();
+      for (const m of routed.mains) this.mainsGroup.add(buildPlainCable(m.pts, m.r));
+      this.scene.add(this.mainsGroup);
+    }
   }
 
   portWorld(devId, portId) {
@@ -453,6 +457,7 @@ export class LabScene {
       const zone = e.place && e.place.zone;
       const n = new THREE.Vector3(0, 0, 1).applyQuaternion(e.model.group.quaternion);
       if (zone === 'motor') dir = new THREE.Vector3(0.55, 0.55, 1);
+      else if (zone === 'machine') dir = new THREE.Vector3(0.25, 0.75, 1);
       else if (zone === 'desk') dir = new THREE.Vector3(0.35, 0.8, 1);
       else dir = n.add(new THREE.Vector3(0, 0.18, 0));
       margin = 1.22;

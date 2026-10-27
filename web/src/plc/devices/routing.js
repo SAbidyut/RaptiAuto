@@ -29,9 +29,11 @@ export const fitLength = (port) => (port.kind === 'comm' ? CONN_LEN[port.conn] |
 const fitHalfWidth = (port, r) => (port.kind === 'comm' ? CONN_HALF[port.conn] || 6 : port.kind === 'sock' ? 3.7 : r + 0.6);
 
 /** Kind and radius of the cable for a connection. */
-export function cableStyle(conn, pa, pb) {
+export function cableStyle(conn, pa, pb, bench = true) {
   if (conn.comm) return { kind: 'comm', r: 2.8 };
-  if (pa.sig === 'mot' && pb.sig === 'mot') return { kind: 'motor', r: 2.3 };
+  // a motor cable (to a motor or machine on the bench) is a thick sheathed cable; power wiring
+  // between devices inside the panel is single cores, a little thicker than the control wires
+  if (pa.sig === 'mot' && pb.sig === 'mot') return bench ? { kind: 'motor', r: 2.3 } : { kind: 'wire', r: 1.35 };
   if (pa.kind === 'sock' || pb.kind === 'sock') return { kind: 'patch', r: 1.9 };
   return { kind: 'wire', r: 1.35 };
 }
@@ -47,7 +49,8 @@ const EXIT_RUN = 82; // where cables leaving the panel bottom start across the b
 /** Device-local bounding box (a little larger than the model). */
 function localBox(def) {
   const [w, h, d] = def.size;
-  if (def.sim === 'motor') return [[-158, 0, -88], [202, 206, 88]];
+  if (def.box) return def.box;
+  if (def.sim === 'motor' || def.sim === 'motor6') return [[-158, 0, -88], [202, 206, 88]];
   if (def.sim === 'hmi') return [[-101, -9, -3], [101, 147, 48]];
   if (def.sim === 'laptop') return [[-162, 0, -54], [162, 228, 222]];
   if (def.zone === 'console') return [[-33, 0, -1], [33, 87, 30]];
@@ -196,6 +199,8 @@ function clash(A, B) {
   for (const s of A.segs) {
     if (!boxNear(s, B.box, need)) continue;
     for (const t of B.segs) {
+      // two fittings on neighbouring terminals (twin ferrules) sit as close as the terminals do
+      if (s.lead && t.lead) continue;
       if (!boxNear(s, t, need)) continue;
       if (segSeg(s.a, s.b, t.a, t.b) >= need) continue;
       if (shared.some((p) => Math.min(dist(s.a, p.pos), dist(s.b, p.pos)) < 34 && Math.min(dist(t.a, p.pos), dist(t.b, p.pos)) < 34)) continue;
@@ -204,7 +209,12 @@ function clash(A, B) {
   }
   return false;
 }
-function shape(pts, r, ports) { const segs = segsOf(pts); return { pts, r, ports, segs, box: bounds(segs) }; }
+function shape(pts, r, ports) {
+  const segs = segsOf(pts);
+  // the first and last bit of a cable that ends on a terminal is its fitting + lead
+  if (ports && ports.length && segs.length > 2) { segs[0].lead = true; segs[segs.length - 1].lead = true; }
+  return { pts, r, ports, segs, box: bounds(segs) };
+}
 
 function dedupe(pts) {
   const out = [];
@@ -225,8 +235,8 @@ const DUCT_LEVELS = [0, 6.5, -6.5, 13, -13];
  * Route every connection of the project.
  * Returns { routes: Map(connId → {pts, r, kind, ends: [fitting, fitting]}), gaps, mains } where pts run
  * from one fitting to the other and gaps lists where wires pass the duct walls:
- * gaps[duct] = { lo: [{x, r}], hi: [{x, r}] } (lo = bottom wall, hi = top wall); mains is the
- * route of the MCB's supply cable ({pts, r}) or null.
+ * gaps[duct] = { lo: [{x, r}], hi: [{x, r}] } (lo = bottom wall, hi = top wall); mains lists the
+ * routes of the supply cables of the MCB and the 3-phase incomer ({pts, r, duct}).
  */
 export function routeLab(project, layout) {
   const devs = new Map();
@@ -250,7 +260,8 @@ export function routeLab(project, layout) {
   const styles = new Map();
   for (const c of conns) {
     const pa = devicePorts(devs.get(c.a.dev).dev).find((p) => p.id === c.a.port), pb = devicePorts(devs.get(c.b.dev).dev).find((p) => p.id === c.b.port);
-    if (pa && pb) styles.set(c.id, { pa, pb, ...cableStyle(c, pa, pb) });
+    const onBench = (id) => !['rail1', 'rail2'].includes(devs.get(id).zone);
+    if (pa && pb) styles.set(c.id, { pa, pb, ...cableStyle(c, pa, pb, onBench(c.a.dev) || onBench(c.b.dev)) });
   }
   const cables = [];
   for (const c of conns) {
@@ -309,6 +320,32 @@ export function routeLab(project, layout) {
     };
   }
 
+  // ---- jumpers: a wire between two neighbouring terminals of one device (a star point, a common)
+  // is a short bridge over the terminals, not a loop through the ducts
+  for (const cab of cables) {
+    const [a, b] = cab.ends;
+    if (cab.conn.comm || a.dev !== b.dev || a.port.kind !== 'term' || b.port.kind !== 'term') continue;
+    const pitch = Math.max(a.port.pitch || 0, b.port.pitch || 0, 12);
+    if (dot(a.dir, b.dir) < 0.95 || Math.abs(a.P0[1] - b.P0[1]) > 2 || dist(a.P0, b.P0) > pitch * 1.6) continue;
+    cab.type = 'jj';
+    const h = 7 + cab.r;
+    cab.jump = dedupe([a.E, add(a.E, mul(a.dir, h)), add(b.E, mul(b.dir, h)), b.E]);
+  }
+
+  // ---- bridges: a wire between two terminals of one machine or motor goes over its terminal strip,
+  // above the lanes of the cables that come up to that strip
+  const bridgeN = new Map();
+  for (const cab of cables) {
+    const [a, b] = cab.ends;
+    if (cab.type === 'jj' || cab.conn.comm || a.dev !== b.dev || !['machine', 'motor'].includes(a.zone)) continue;
+    cab.type = 'bridge';
+    const id = a.dev.dev.id, n = bridgeN.get(id) || 0;
+    bridgeN.set(id, n + 1);
+    const kmax = Math.max(...devicePorts(a.dev.dev).map((q) => laneOf({ dev: a.dev, port: q })));
+    const H = Math.max(a.L[1], b.L[1]) + 6 + cab.r + (kmax + 1) * LANE * 1.6 + 8 + n * (2 * cab.r + 3);
+    cab.jump = dedupe([a.E, a.L, [a.L[0], H, a.L[2]], [b.L[0], H, b.L[2]], b.L, b.E]);
+  }
+
   // ---- ducts: which one an end goes to, and the cost of a duct path
   const ductAbove = (box) => { let best = -1; HD.forEach((d, i) => { if (d.y > box.max[1] && (best < 0 || d.y < HD[best].y)) best = i; }); return best; };
   const ductBelow = (box) => { let best = -1; HD.forEach((d, i) => { if (d.y < box.min[1] && (best < 0 || d.y > HD[best].y)) best = i; }); return best; };
@@ -339,6 +376,7 @@ export function routeLab(project, layout) {
   // ---- 1. decide up / down for every panel end
   for (const cab of cables) {
     const [a, b] = cab.ends;
+    if (cab.type === 'jj' || cab.type === 'bridge') continue;
     cab.type = a.zone === 'panel' && b.zone === 'panel' ? 'pp' : a.zone === 'panel' || b.zone === 'panel' ? 'po' : 'oo';
     if (cab.type === 'pp') {
       let best = null;
@@ -372,7 +410,17 @@ export function routeLab(project, layout) {
     p.x = p.L[0];
     if (p.cls !== 'front') {
       p.dropZ = p.L[2];
-      p.turnY = s > 0 ? Math.max(p.L[1], Math.min(base, lim)) : Math.min(p.L[1], Math.max(base, lim));
+      // twin ferrules on neighbouring terminals sit closer than two wires: turn at another height
+      let y = s > 0 ? Math.max(p.L[1], Math.min(base, lim)) : Math.min(p.L[1], Math.max(base, lim));
+      for (let again = true, n = 0; again && n < 8; n++) {
+        again = false;
+        for (const q of done) {
+          if (q.cls === 'front' || Math.abs(p.x - q.x) >= p.r + q.r + 2 || Math.abs(y - q.turnY) >= p.r + q.r + 1.5) continue;
+          y = s > 0 ? q.turnY + p.r + q.r + 1.5 : q.turnY - p.r - q.r - 1.5;
+          again = true;
+        }
+      }
+      p.turnY = s > 0 ? Math.min(y, lim) : Math.max(y, lim);
       return;
     }
     // a lane of its own: jog sideways (in front of the device) to an x no other wire of this device
@@ -405,6 +453,7 @@ export function routeLab(project, layout) {
   for (const d of devs.values()) {
     if (d.zone === 'hmi') obstacles.push(rect(d.place.pos[0] - 75, d.place.pos[2] - 65, d.place.pos[0] + 75, d.place.pos[2] + 85));
     else if (d.zone === 'motor') obstacles.push(rect(d.place.pos[0] - 180, d.place.pos[2] - 100, d.place.pos[0] + 200, d.place.pos[2] + 100));
+    else if (d.zone === 'machine') obstacles.push(rect(d.box.min[0] - 12, d.box.min[2] - 12, d.box.max[0] + 12, d.box.max[2] + 12));
     else if (d.zone === 'desk') obstacles.push(hull(corners(localBox(d.def)).map((c) => { const w = toWorld(d.place, c); return [w[0], w[2]]; })));
   }
   // cords over the back edge of the console: keep them apart along the edge
@@ -417,6 +466,21 @@ export function routeLab(project, layout) {
   const ex = spread(overEdge.map((e) => e.L[0]), overEdge.slice(1).map((e, i) => e.r + overEdge[i].r + 1.6));
   overEdge.forEach((e, i) => { e.edgeX = ex[i]; });
 
+  /** Lane of a bench end: its place among the device's terminals that share its x, back to front. */
+  function laneOf(e) {
+    const ps = devicePorts(e.dev.dev).filter((q) => Math.abs(q.pos[0] - e.port.pos[0]) < 3 && q.kind === e.port.kind);
+    const zs = [...new Set(ps.map((q) => q.pos[2]))].sort((u, v) => u - v);
+    return Math.max(0, zs.indexOf(e.port.pos[2]));
+  }
+  /** x of an end's lane: lanes step to the left, at most halfway to the next terminal on that side. */
+  function laneX(e) {
+    const k = laneOf(e);
+    if (!k) return e.L[0];
+    const x = e.port.pos[0];
+    const lower = devicePorts(e.dev.dev).map((q) => q.pos[0]).filter((v) => v < x - 3);
+    const room = lower.length ? (x - Math.max(...lower)) / 2 : Infinity;
+    return e.L[0] - k * Math.min(LANE * 1.6, room);
+  }
   /** Points from the bench up to the fitting (bench point first). */
   function approach(e) {
     const { L, E, r } = e;
@@ -435,16 +499,37 @@ export function routeLab(project, layout) {
       const zEdge = back ? z0 - 1 : z1 + 1, zFoot = back ? z0 - 8 - r : z1 + 8 + r, zRun = back ? z0 - APPROACH - r : z1 + APPROACH + r;
       return [[L[0], r, zRun], [L[0], r, zFoot], [L[0], top, zEdge], [L[0], top, L[2]], L, E];
     }
+    // terminals one behind the other (the rows of a machine's terminal strip, an encoder's terminals)
+    // get lanes of their own: a little to the side and higher the further forward they sit
+    // the cables come from the panel side (left): the further right a terminal, the further back its
+    // cable reaches the device, so no cable runs over the start of another one's way up
+    const k = laneOf(e), lx = laneX(e), ly = k * LANE * 1.6, back = (e.stagger || 0) * LANE;
     if (e.zone === 'motor') {
-      const yTop = d.box.max[1] + 10 + r, z0 = d.place.pos[2] - 100;
-      return [[L[0], r, z0 - APPROACH - r], [L[0], r, z0 - 8 - r], [L[0], yTop, z0 - 8 - r], [L[0], yTop, L[2]], L, E];
+      const yTop = d.box.max[1] + 10 + r + ly, z0 = d.place.pos[2] - 100;
+      return [[lx, r, z0 - APPROACH - r - back], [lx, r, z0 - 8 - r], [lx, yTop, z0 - 8 - r], [lx, yTop, L[2]], L, E];
+    }
+    if (e.zone === 'machine') {
+      // from behind the machine: up to just above the terminal strip, then forward to the terminal
+      const z0 = d.box.min[2] - 12, yRun = L[1] + 6 + r + ly;
+      return [[lx, r, z0 - APPROACH - r - back], [lx, r, z0 - 8 - r], [lx, yRun, z0 - 8 - r], [lx, yRun, L[2]], L, E];
     }
     // laptop and anything else on the bench: down onto the bench, then a short way out along the port
     const out = norm([e.dir[0], 0, e.dir[2]]);
     const foot = [L[0], r, L[2]];
     return [add(foot, mul(out, 24)), foot, L, E];
   }
-  for (const cab of cables) for (const e of cab.ends) if (e.zone !== 'panel') e.appr = approach(e);
+  // order of the bench ends of each motor / machine, left to right (see approach)
+  const benchEnds = new Map();
+  for (const cab of cables) if (!cab.jump) for (const e of cab.ends) if (e.zone === 'motor' || e.zone === 'machine') {
+    const id = e.dev.dev.id;
+    if (!benchEnds.has(id)) benchEnds.set(id, []);
+    benchEnds.get(id).push(e);
+  }
+  for (const list of benchEnds.values()) {
+    list.sort((p, q) => laneX(p) - laneX(q));
+    list.forEach((e, i) => { e.stagger = i; });
+  }
+  for (const cab of cables) if (!cab.jump) for (const e of cab.ends) if (e.zone !== 'panel') e.appr = approach(e);
 
   // ---- 4. where cables leave the panel (bottom duct): sorted by where they go, kept apart
   const exits = cables.filter((c) => c.type === 'po');
@@ -498,15 +583,21 @@ export function routeLab(project, layout) {
   // ---- 6. duct tracks: first free depth (then level) that clashes with no wire placed so far
   const placed = [];
   const portsOf = (cab) => cab.ends.map((e) => ({ key: e.key, pos: e.P0 }));
-  // the mains cable of the MCB goes up into the top duct, to the left side duct and out at the top
-  let mains = null;
-  const mcb = [...devs.values()].find((d) => d.def.sim === 'mcb');
-  if (mcb) {
-    const m0 = toWorld(mcb.place, [-9, 84, 60]), zM = 22, vx = SCENE.vducts[0].x, y0 = wallLo(0) - 14;
-    mains = { r: 4.2, pts: [m0, [m0[0], y0, m0[2]], [m0[0], y0, zM], [m0[0], ductY[0], zM], [vx, ductY[0], zM], [vx, P.y1 + 30, zM]] };
-    placed.push(shape(mains.pts, mains.r, []));
+  // the mains cables go up into the top duct and out at the top: the MCB's along to the left side
+  // duct, the 3-phase incomer's (right of the PLC) along to the right one
+  const mains = [];
+  for (const d of devs.values()) {
+    if (d.def.sim !== 'mcb' && d.def.sim !== 'mains3') continue;
+    const three = d.def.sim === 'mains3';
+    const duct = 0, zM = three ? 64 : 22, vx = SCENE.vducts[three ? 1 : 0].x;
+    const m0 = toWorld(d.place, three ? [-9, 84, 50] : [-9, 84, 60]), y0 = wallLo(duct) - 14;
+    const pts = [m0, [m0[0], y0, m0[2]], [m0[0], y0, zM], [m0[0], ductY[duct], zM], [vx, ductY[duct], zM], [vx, P.y1 + 30, zM]];
+    const m = { r: three ? 5.2 : 4.2, pts: dedupe(pts), duct };
+    mains.push(m);
+    placed.push(shape(m.pts, m.r, []));
   }
-  const inner = cables.filter((c) => c.type !== 'oo');
+  for (const cab of cables) if (cab.jump) placed.push(shape(cab.jump, cab.r, portsOf(cab)));
+  const inner = cables.filter((c) => c.type !== 'oo' && !c.jump);
   const keyZ = (c) => { const pe = c.ends.filter((e) => e.zone === 'panel'); return pe.reduce((s, e) => s + e.dropZ, 0) / pe.length; };
   inner.sort((p, q) => keyZ(p) - keyZ(q) || q.r - p.r);
   for (const cab of inner) {
@@ -582,8 +673,9 @@ export function routeLab(project, layout) {
       for (let k = 0; k < n; k++) pts.push([a[0] + ((b[0] - a[0]) * k) / n, cab.r, a[1] + ((b[1] - a[1]) * k) / n]);
     }
     pts.push([g[0], cab.r, g[2]]);
-    // lie over the cables already on the bench
-    const h = pts.map(() => cab.r);
+    // the cables already on the bench near each sample: {oy: their height there, dy: the height
+    // difference that keeps the two apart}
+    const near = pts.map(() => []);
     for (const o of benchDone) {
       if (o.owner === cab) continue;
       if (!boxNear({ min: [Math.min(s[0], g[0]) - 400, -1, Math.min(s[2], g[2]) - 400], max: [Math.max(s[0], g[0]) + 400, 99, Math.max(s[2], g[2]) + 400] }, o.box, 0)) continue;
@@ -596,16 +688,47 @@ export function routeLab(project, layout) {
           // samples are 5 mm apart: count a crossing between two samples as under both
           const d2 = Math.max(0, Math.hypot(p[0] - sg.a[0] - dx * t, p[2] - sg.a[2] - dz * t) - 2.6);
           if (d2 >= need) continue;
-          const oy = sg.a[1] + (sg.b[1] - sg.a[1]) * t, dy = Math.sqrt(need * need - d2 * d2);
-          if (oy - cab.r >= dy - 0.25) continue; // that cable already lies over this spot: pass under it
-          h[i] = Math.max(h[i], oy + dy);
+          near[i].push({ oy: sg.a[1] + (sg.b[1] - sg.a[1]) * t, dy: Math.sqrt(need * need - d2 * d2) + 0.1 });
         }
       });
     }
-    // gentle ramps up and over
-    for (let i = 1; i < h.length; i++) h[i] = Math.max(h[i], h[i - 1] - 0.55 * dist(pts[i], pts[i - 1]));
-    for (let i = h.length - 2; i >= 0; i--) h[i] = Math.max(h[i], h[i + 1] - 0.55 * dist(pts[i], pts[i + 1]));
+    // lie on the bench where nothing is in the way, pass under a cable that lies high enough, and over
+    // the others; the ramps up and over can lift a point into a cable it passed under: repeat
+    const h = pts.map(() => cab.r);
+    for (let pass = 0; pass < 24; pass++) {
+      let moved = false;
+      pts.forEach((p, i) => {
+        for (const c of near[i]) {
+          if (Math.abs(h[i] - c.oy) >= c.dy - 1e-6) continue;
+          const under = c.oy - c.dy;
+          const v = h[i] <= c.oy && under >= cab.r - 0.35 && pass < 4 ? Math.max(cab.r, Math.min(h[i], under)) : c.oy + c.dy;
+          if (v > h[i] + 1e-6) { h[i] = v; moved = true; }
+          else if (v < h[i] - 1e-6 && v >= cab.r) { h[i] = v; moved = true; }
+        }
+      });
+      // gentle ramps up and over
+      for (let i = 1; i < h.length; i++) { const v = h[i - 1] - 0.55 * dist(pts[i], pts[i - 1]); if (v > h[i] + 1e-6) { h[i] = v; moved = true; } }
+      for (let i = h.length - 2; i >= 0; i--) { const v = h[i + 1] - 0.55 * dist(pts[i], pts[i + 1]); if (v > h[i] + 1e-6) { h[i] = v; moved = true; } }
+      if (!moved) break;
+    }
     pts = dedupe(pts.map((p, i) => [p[0], h[i], p[2]]));
+    // a cable that has to start on top of the others (they pass its exit) comes down from the
+    // enclosure sill onto them instead of dropping to the bench under them
+    if (cab.type === 'po' && h[0] > cab.r + 0.3) {
+      const n = cab.panel.length, end = cab.panel[n - 1];
+      cab.panel = [...cab.panel.slice(0, n - 2), [end[0], h[0], end[2]]];
+      const d = shape(cab.panel.slice(-2), cab.r, []); d.owner = cab; benchDone.push(d);
+    }
+    // the same at the far end: arriving on top of other cables, it stays up until it rises to the port
+    const lift = (e, y) => {
+      if (!e || !e.appr || y <= cab.r + 0.3) return;
+      e.appr[0] = [e.appr[0][0], y, e.appr[0][2]];
+      if (e.zone === 'motor' || e.zone === 'machine' || e.zone === 'console') e.appr[1] = [e.appr[1][0], y, e.appr[1][2]];
+      const d = shape(e.appr.slice(0, 3), cab.r, []); d.owner = cab; benchDone.push(d);
+    };
+    const [ea, eb] = cab.ends;
+    if (cab.type === 'po') lift(ea.zone === 'panel' ? eb : ea, h[h.length - 1]);
+    else { lift(ea, h[0]); lift(eb, h[h.length - 1]); }
     cab.bench = pts;
     benchDone.push(shape(pts, cab.r, []));
   });
@@ -635,6 +758,7 @@ export function routeLab(project, layout) {
 
   function assemble(cab) {
     const [a, b] = cab.ends;
+    if (cab.jump) return cab.jump;
     if (cab.arc) return cab.arc;
     if (cab.type === 'pp') return cab.panel;
     if (cab.type === 'po') {
@@ -649,7 +773,7 @@ export function routeLab(project, layout) {
   const routes = new Map();
   for (const cab of cables) routes.set(cab.conn.id, { pts: dedupe(assemble(cab)), r: cab.r, kind: cab.kind, ends: cab.ends.map((e) => e.fit) });
   const gaps = HD.map(() => ({ lo: [], hi: [] }));
-  if (mains) gaps[0].lo.push({ x: mains.pts[0][0], r: mains.r });
+  for (const m of mains) gaps[m.duct].lo.push({ x: m.pts[0][0], r: m.r });
   for (const cab of cables) {
     for (const e of cab.ends) if (e.zone === 'panel' && e.s) gaps[e.duct][e.s > 0 ? 'lo' : 'hi'].push({ x: e.x, r: e.r });
     if (cab.type === 'po') gaps[bottom].lo.push({ x: cab.exitX, r: cab.r });

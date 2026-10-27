@@ -40,6 +40,13 @@ const samples = (pts, step = 2) => {
   return out;
 };
 
+// the solid parts of the machines (their footprints include the air above the terminal strips)
+const MACHINE_SOLIDS = {
+  conveyor: [[[-360, 4, -72], [360, 160, 72]], [[-368, 100, -156], [-180, 168, -100]], [[290, 70, -240], [400, 190, -80]], [[310, 4, -58], [470, 76, 58]]],
+  tank: [[[-20, 4, -90], [225, 125, -5]], [[0, 255, -73], [200, 600, 73]], [[-236, 4, -48], [-144, 142, 48]], [[-130, 10, -26], [-30, 66, 26]]],
+  cyl: [[[-200, 0, -95], [320, 9, 95]], [[-150, 34, 4], [70, 74, 44]], [[-128, 12, -52], [-52, 40, -24]]],
+};
+
 for (const ex of LAB_EXAMPLES) {
   const p = buildExample(ex.id);
   const layout = layoutDevices(p.devices);
@@ -54,6 +61,9 @@ for (const ex of LAB_EXAMPLES) {
     const [w, h, dd] = def.size;
     const lbs = def.sim === 'motor' ? [[[-150, 4, -72], [140, 196, 72]]] : def.sim === 'hmi' ? [[[-96, 4, 2], [96, 142, 44]]] : def.sim === 'laptop' ? [[[-156, 2, 4], [156, 12, 216]]]
       : def.sim === 'mcb' ? [[[-22, 3, 3], [10, 87, 62]], [[13, 26, 2], [21, 64, 48]]] // body + PE block
+        : def.sim === 'mains3' ? [[[-43, 3, 3], [25, 87, 62]], [[32, 26, 2], [40, 64, 48]]]
+          : def.sim === 'motor6' ? [[[-150, 4, -72], [140, 196, 72]]]
+            : MACHINE_SOLIDS[def.sim] ? MACHINE_SOLIDS[def.sim]
         : def.zone === 'console' ? [[[-30, 0, 0], [30, 84, 4]]] : [[[-w / 2 + 2, 3, 3], [w / 2 - 2, h - 3, Math.min(dd, def.sim === 'vfd' ? 126 : dd) - 3]]];
     for (const lb of lbs) {
       const c = [];
@@ -96,7 +106,7 @@ for (const ex of LAB_EXAMPLES) {
 
   // cable against cable
   const list = p.conns.map((c) => ({ c, rt: routes.get(c.id) })).filter((x) => x.rt);
-  if (mains) list.push({ c: { a: { dev: 'mains', port: '' }, b: { dev: 'mains', port: '' } }, rt: mains });
+  for (const m of mains) list.push({ c: { a: { dev: 'mains', port: '' }, b: { dev: 'mains', port: '' } }, rt: m });
   const clashes = [];
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
     const A = list[i], B = list[j];

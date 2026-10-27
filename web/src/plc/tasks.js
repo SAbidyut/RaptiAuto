@@ -1,9 +1,11 @@
 // Lab exercises: self-checking task lists for each example. Every check(ctx) runs a few times a
 // second; ctx = { sys, lab, P, rt(id), dev(id), cpu, vfd, motor, dl (downloaded program JSON), memo }.
+import { deviceProps } from './devices/defs.js';
 
 const hz = (c) => (c.vfd && c.vfd.powered ? c.vfd.f : 0);
 const near = (a, b, tol = 0.15) => Math.abs(a - b) <= tol;
 const has = (c, s) => c.dl.includes(s);
+const deviceFeed = (d) => (d.props && d.props.feed) || 'manual';
 
 export const LAB_TASKS = {
   'start-stop': [
@@ -106,6 +108,47 @@ export const LAB_TASKS = {
     { text: 'Press START and turn the SPEED pot to 80 % — the drive runs at 40 Hz', check: (c) => near(hz(c), 40, 0.6) },
     { text: 'Watch D1110 (AI CH0) in Monitor → Devices', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },
     { text: 'Limit the speed to half: replace MOV with DIV D1110 K2 D1116 and Download', check: (c) => has(c, '"DIV"') && has(c, '"D1116"') },
+  ],
+  'dol-reversing': [
+    { text: 'Simulate and press FWD — KM1 pulls in and the motor runs at about 1470 rpm', check: (c) => !!(c.rt('km1') && c.rt('km1').closed && c.rt('m') && c.rt('m').rpm > 1300) },
+    { text: 'Press REV while it runs forward — nothing happens: KM2 is interlocked', check: (c) => { const ok = !!(c.rt('rev') && c.rt('rev').pressed && c.rt('km1') && c.rt('km1').closed && c.rt('km2') && !c.rt('km2').closed); if (ok) c.memo.lock = true; return ok; } },
+    { text: 'Press STOP, then REV — the motor turns the other way (L1 and L3 swapped)', check: (c) => !!(c.rt('m') && c.rt('m').rpm < -1300) },
+    { text: 'Hold KM2 in by hand while KM1 is closed: L1 and L3 are short-circuited — the main breaker trips', hint: 'This is what the interlock prevents. Switch the main breaker back ON afterwards', check: (c) => { const ok = !!(c.rt('q1') && c.rt('q1').tripped === 'short'); if (ok) c.memo.short = true; return ok; } },
+    { text: 'Set F1 to 0.5 A (tap it → Settings) and start the motor: F1 trips after a while — the OVERLOAD lamp lights', hint: 'Put it back to 3.4 A, wait until it has cooled, then tap RESET on F1', check: (c) => !!(c.rt('f1') && c.rt('f1').thermal && c.rt('lt') && c.rt('lt').on) },
+  ],
+  'star-delta': [
+    { text: 'Press START — KM1 and KM3 close: the motor starts in STAR (230 V per winding)', check: (c) => { const m = c.rt('m'); const ok = !!(c.rt('km1') && c.rt('km1').closed && c.rt('km3') && c.rt('km3').closed && m && m.p > 0.5 && m.p < 0.65 && Math.abs(m.rpm) > 50); if (ok) c.memo.star = true; return ok; } },
+    { text: 'After 5 s KM3 drops out and KM2 closes: DELTA, 400 V per winding, full speed', check: (c) => { const m = c.rt('m'); return !!(c.memo.star && c.rt('km2') && c.rt('km2').closed && c.rt('km3') && !c.rt('km3').closed && m && m.p > 0.95 && Math.abs(m.rpm) > 1400); } },
+    { text: 'Make the star time 3 s (TMR T0 K30) and Download', hint: 'F1 sits in the winding branch: it carries 0.58 × the line current, so it is set to 2.0 A', check: (c) => has(c, '"K30"') },
+    { text: 'While the motor runs in delta, hold KM3 in by hand — the phases short through the star point and the main breaker trips', hint: 'KM2 and KM3 must never close together. Switch the main breaker ON again afterwards', check: (c) => !!(c.rt('q1') && c.rt('q1').tripped === 'short') },
+    { text: 'Remove the wire F1 6/T3 → motor W1 (a lost phase) and start: the motor hums in star and F1 trips', hint: 'Single phasing: several times the current and no starting torque. Undo the change afterwards', check: (c) => !!(c.rt('f1') && c.rt('f1').thermal) },
+  ],
+  'conveyor-sort': [
+    { text: 'Simulate and press START — the belt runs and the feeder puts a box on it every 4 s', check: (c) => !!(c.rt('conv') && c.rt('conv').belt > 50 && (c.dev('conv').state.fed || 0) >= 1) },
+    { text: 'Watch S2 (X1) see a metal box and the pusher kick it into the chute', check: (c) => (c.dev('conv') && (c.dev('conv').state.rejected || 0) >= 1) },
+    { text: 'Five plastic boxes in the end bin (C0 ≥ 5)', check: (c) => !!(c.cpu && c.cpu.CV[0] >= 5) },
+    { text: 'Speed the belt up to 50 Hz (Pr.04-00 = 50) — the sorting still works', check: (c) => !!(c.vfd && c.vfd.params['04-00'] === 50) },
+    { text: 'Set the feeder to "every 2 s": two boxes can be between S2 and S3 — find out when the wrong box is pushed', hint: 'A real machine tracks every box with a shift register (SFTL) or the encoder', check: (c) => !!(c.dev('conv') && deviceFeed(c.dev('conv')) === 'fast' && c.cpu && c.cpu.CV[1] >= 3) },
+  ],
+  'tank-level': [
+    { text: 'Simulate — in AUTO the pump fills the tank until the high float LH closes', check: (c) => { const ok = !!(c.cpu && c.cpu.X[1] && !c.cpu.Y[0]); if (ok) c.memo.full = true; return ok; } },
+    { text: 'Tap the tank and open the hand valve to 60 % — the level drops, the pump starts again below LL', check: (c) => !!(c.memo.full && c.dev('tank') && c.dev('tank').state.demand >= 0.5 && c.cpu && c.cpu.Y[0] && !c.cpu.X[0]) },
+    { text: 'Open the HMI and watch the level (D100 %) on the tank and the trend', check: (c) => c.lab.tab === 'hmi' && !!(c.cpu && c.cpu.running) },
+    { text: 'Switch to HAND on the HMI and hold PUMP — it stops by itself at the high float', check: (c) => !!(c.cpu && !c.cpu.M[5] && c.cpu.M[10] && c.cpu.X[1] && !c.cpu.Y[0]) },
+    { text: 'Open the drain valve from the HMI (DRAIN)', check: (c) => !!(c.cpu && c.cpu.Y[1] && c.rt('tank') && c.rt('tank').valve) },
+  ],
+  'pneumatic-sequence': [
+    { text: 'Simulate and press START — A+ B+ B− A− runs once and stops in S0', check: (c) => !!(c.cpu && c.cpu.CV[0] >= 1 && c.cpu.S[0]) },
+    { text: 'Open the Ladder tab and switch to the SFC view: watch the active step while it runs', check: (c) => c.lab.tab === 'ladder' && !!(c.lab.views.ladder && c.lab.views.ladder.sfc) && !!(c.cpu && c.cpu.running) },
+    { text: 'Turn CYCLE to AUTO and press START — it repeats: 5 cycles (C0 ≥ 5)', check: (c) => !!(c.cpu && c.cpu.CV[0] >= 5) },
+    { text: 'Make cylinder B slow (tap it → Settings → Speed) — the steps wait for the sensors, so the sequence still works', check: (c) => !!(c.dev('bb') && deviceProps(c.dev('bb')).speed === 'slow' && c.cpu && c.cpu.S[21]) },
+  ],
+  'encoder-speed': [
+    { text: 'Simulate and press START — D12 shows the speed in rpm, the same as the motor', check: (c) => !!(c.cpu && c.motor && Math.abs(c.motor.rpm) > 300 && Math.abs(c.cpu.D[12] - Math.abs(c.motor.rpm)) < 30) },
+    { text: 'Turn the SPEED pot — watch D0 (pulses per second) and D12 change in Monitor', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.D[0] > 0) },
+    { text: 'Let C251 count past 20 000 pulses (200 turns)', check: (c) => { const ok = !!(c.cpu && c.cpu.CV[251] > 20000); if (ok) c.memo.far = true; return ok; } },
+    { text: 'Turn DIRECTION to REV — C251 counts down (A now lags B)', check: (c) => { const cv = c.cpu ? c.cpu.CV[251] : 0; const ok = !!(c.memo.far && c.motor && c.motor.rpm < -100 && c.memo.last !== undefined && cv < c.memo.last); c.memo.last = cv; return ok; } },
+    { text: 'Press RESET (X2) — the position starts again from 0', check: (c) => !!(c.cpu && c.cpu.X[2] && Math.abs(c.cpu.CV[251]) < 50) },
   ],
   'blank': [
     { text: 'Add a push button and a pilot lamp with ＋ in the 3D lab', check: (c) => c.P.devices.some((d) => d.type === 'pb') && c.P.devices.some((d) => d.type === 'lamp') },
