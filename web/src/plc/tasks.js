@@ -1,6 +1,6 @@
 // Lab exercises: self-checking task lists for each example. Every check(ctx) runs a few times a
 // second; ctx = { sys, lab, P, rt(id), dev(id), cpu, vfd, motor, dl (downloaded program JSON), memo }.
-import { deviceProps } from './devices/defs.js';
+import { DEVICE_DEFS, deviceProps } from './devices/defs.js';
 
 const hz = (c) => (c.vfd && c.vfd.powered ? c.vfd.f : 0);
 const near = (a, b, tol = 0.15) => Math.abs(a - b) <= tol;
@@ -150,6 +150,90 @@ export const LAB_TASKS = {
     { text: 'Turn DIRECTION to REV — C251 counts down (A now lags B)', check: (c) => { const cv = c.cpu ? c.cpu.CV[251] : 0; const ok = !!(c.memo.far && c.motor && c.motor.rpm < -100 && c.memo.last !== undefined && cv < c.memo.last); c.memo.last = cv; return ok; } },
     { text: 'Press RESET (X2) — the position starts again from 0', check: (c) => !!(c.cpu && c.cpu.X[2] && Math.abs(c.cpu.CV[251]) < 50) },
   ],
+  // ---------------------------------------------------------------- Step by step
+  'step-01-button-lamp': [
+    { text: 'Press Simulate — the PLC goes to RUN', check: (c) => !!(c.cpu && c.cpu.running) },
+    { text: 'In Operate mode hold the PUSH button — the lamp lights', check: (c) => { const ok = !!(c.rt('l1') && c.rt('l1').on); if (ok) c.memo.on = true; return ok; } },
+    { text: 'Let go of the button — the lamp goes out', check: (c) => !!(c.memo.on && c.rt('l1') && !c.rt('l1').on) },
+    { text: 'In the Ladder tab make X0 an NC contact (/X0) and Download — now it works the other way round', check: (c) => has(c, '"NC"') },
+  ],
+  'step-02-no-nc': [
+    { text: 'Press Simulate — only the red (NC) lamp is on', check: (c) => !!(c.rt('lr') && c.rt('lr').on && c.rt('lg') && !c.rt('lg').on) },
+    { text: 'Hold the button — green on, red off', check: (c) => !!(c.rt('lg') && c.rt('lg').on && c.rt('lr') && !c.rt('lr').on) },
+    { text: 'Watch X0, Y0 and Y1 in the Monitor tab', check: (c) => c.lab.tab === 'monitor' },
+  ],
+  'step-03-latch': [
+    { text: 'Press START once — the RUN lamp stays on after you let go', check: (c) => { const ok = !!(c.rt('lrun') && c.rt('lrun').on && !c.rt('start').pressed); if (ok) c.memo.l = true; return ok; } },
+    { text: 'Press STOP — the latch breaks', check: (c) => !!(c.memo.l && c.rt('lrun') && !c.rt('lrun').on) },
+    { text: 'With the lamp on, watch the green power flow in the Ladder tab (through the Y0 contact)', check: (c) => c.lab.tab === 'ladder' && !!(c.cpu && c.cpu.Y[0]) },
+  ],
+  'step-04-set-rst': [
+    { text: 'Press ON — the lamp stays on', check: (c) => { const ok = !!(c.rt('l1') && c.rt('l1').on && !c.rt('on').pressed); if (ok) c.memo.s = true; return ok; } },
+    { text: 'Press OFF — the lamp goes out', check: (c) => !!(c.memo.s && c.rt('l1') && !c.rt('l1').on) },
+    { text: 'Hold both buttons — the lower RST rung wins (the last rung has the last word)', check: (c) => !!(c.rt('on').pressed && c.rt('off').pressed && c.cpu && !c.cpu.Y[0]) },
+  ],
+  'step-05-timer': [
+    { text: 'Press START — the yellow WAIT lamp lights', check: (c) => { const ok = !!(c.rt('lwait') && c.rt('lwait').on); if (ok) c.memo.w = true; return ok; } },
+    { text: 'Wait 5 seconds — the green DONE lamp', check: (c) => !!(c.memo.w && c.rt('ldone') && c.rt('ldone').on) },
+    { text: 'Make the timer 10 seconds (TMR T0 K100) and Download', check: (c) => has(c, '"K100"') },
+  ],
+  'step-06-blink': [
+    { text: 'Turn the selector ON — the lamp flashes', check: (c) => !!(c.dev('sel') && c.dev('sel').state.on && c.cpu && c.cpu.running) },
+    { text: 'Type M1013 in the Monitor tab — it switches on and off by itself', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },
+    { text: 'Replace M1013 with M1012 (0.1 s clock) and Download — it flashes faster', check: (c) => has(c, '"M1012"') },
+  ],
+  'step-07-counter': [
+    { text: 'Press COUNT 3 times — C0 = 3 in Monitor', check: (c) => !!(c.cpu && c.cpu.CV[0] >= 3) },
+    { text: 'At 5 the FULL lamp lights', check: (c) => { const ok = !!(c.rt('lfull') && c.rt('lfull').on); if (ok) c.memo.f = true; return ok; } },
+    { text: 'Press RESET — C0 = 0', check: (c) => !!(c.memo.f && c.cpu && c.cpu.CV[0] === 0) },
+  ],
+  'step-08-vfd-run': [
+    { text: 'Press START — the motor turns (the Hz rise on the VFD keypad)', check: (c) => hz(c) > 5 },
+    { text: 'In the VFD tab set Pr.01-12 (acceleration) to 1 s — the speed rises faster', check: (c) => !!(c.vfd && c.vfd.params['01-12'] === 1) },
+    { text: 'Press STOP — the motor stops', check: (c) => !!(c.vfd && c.vfd.powered && hz(c) === 0 && c.cpu && !c.cpu.Y[4]) },
+  ],
+  'step-09-vfd-fwd-rev': [
+    { text: 'Press FWD — the motor turns forward', check: (c) => { const ok = hz(c) > 5; if (ok) c.memo.f = true; return ok; } },
+    { text: 'Press REV while it runs — nothing happens (interlock)', check: (c) => !!(c.memo.f && c.rt('rev').pressed && c.cpu && !c.cpu.M[1]) },
+    { text: 'STOP, then REV — the motor turns backwards', check: (c) => hz(c) < -5 },
+  ],
+  'step-10-modbus-run': [
+    { text: 'Press START — H12 goes over RS-485 and the motor runs at 30 Hz', check: (c) => near(hz(c), 30) },
+    { text: 'Tap the Network chip — watch the data packets on the COM2 cable', check: (c) => !!(c.cpu && c.cpu.running && c.lab.views.panel.netView) },
+    { text: 'Make it 45 Hz: MOV K4500 D11, then Download', check: (c) => near(hz(c), 45) },
+  ],
+  'step-11-modbus-fwd-rev': [
+    { text: 'FORWARD — D10 = H12, the motor runs forward', check: (c) => { const ok = near(hz(c), 30); if (ok) c.memo.f = true; return ok; } },
+    { text: 'STOP — D10 = H1', check: (c) => !!(c.memo.f && c.cpu && c.cpu.D[10] === 1) },
+    { text: 'REVERSE — D10 = H22, the motor runs backwards', check: (c) => near(hz(c), -30) },
+    { text: 'Look at the TX / RX frames in the COM2 log of the Monitor tab', check: (c) => c.lab.tab === 'monitor' },
+  ],
+  'step-12-modbus-speed': [
+    { text: 'START — 20 Hz', check: (c) => near(hz(c), 20) },
+    { text: '+5 Hz twice — 30 Hz, and D20 reads 3000', check: (c) => near(hz(c), 30) && !!(c.cpu && Math.abs(c.cpu.D[20] - 3000) < 20) },
+    { text: 'Keep pressing +5 Hz — it stops at 50 Hz (the limit)', check: (c) => !!(c.cpu && c.cpu.D[11] === 5000) },
+  ],
+  'step-13-analog-read': [
+    { text: 'Simulate — watch D0 (0–32000) and D10 (0.1 °C) in Monitor', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.D[0] > 0) },
+    { text: 'Tap the TEMP transmitter and set it above 70 °C — the HOT lamp lights', check: (c) => !!(c.rt('lhot') && c.rt('lhot').on) },
+    { text: 'Change the limit to 40.0 °C (D10>K400) and Download', check: (c) => has(c, '"K400"') },
+  ],
+  'step-14-analog-4-20ma': [
+    { text: 'Simulate — D11 ≈ 50 (5.0 bar)', check: (c) => !!(c.cpu && Math.abs(c.cpu.D[11] - 50) <= 2) },
+    { text: 'Set the pressure to 2 bar — the pump starts', check: (c) => { const ok = !!(c.rt('lpump') && c.rt('lpump').on); if (ok) c.memo.p = true; return ok; } },
+    { text: 'Set the pressure to 7 bar — the pump stops', check: (c) => !!(c.memo.p && c.rt('lpump') && !c.rt('lpump').on) },
+  ],
+  'step-15-analog-average': [
+    { text: 'Watch D0 (average) and D4 (present value) in Monitor', check: (c) => c.lab.tab === 'monitor' && !!(c.cpu && c.cpu.running) },
+    { text: 'Change TEMP suddenly — D4 jumps at once, D0 follows slowly', check: (c) => !!(c.cpu && Math.abs(c.cpu.D[0] - c.cpu.D[4]) > 1500) },
+    { text: 'Average 50 readings (TO K0 K2 K50 K1) and Download', check: (c) => has(c, '"K50"') },
+  ],
+  'step-16-analog-modbus-speed': [
+    { text: 'Press FORWARD — the motor runs at the pot\'s speed (60 % = 30 Hz)', check: (c) => hz(c) > 5 },
+    { text: 'Turn the pot to 100 % — 50 Hz', check: (c) => near(hz(c), 50, 0.5) },
+    { text: 'STOP, then REVERSE', check: (c) => hz(c) < -5 },
+    { text: 'Limit the top speed to 40 Hz (MUL D12 K4 D14) and Download', check: (c) => has(c, '"MUL"') && has(c, '"K4"') },
+  ],
   'blank': [
     { text: 'Add a push button and a pilot lamp with ＋ in the 3D lab', check: (c) => c.P.devices.some((d) => d.type === 'pb') && c.P.devices.some((d) => d.type === 'lamp') },
     { text: 'Wire the button: PSU +V → button 13, button 14 → PLC X0', check: (c) => wired(c, 'pb', ['13', '14'], 'X0') },
@@ -160,7 +244,7 @@ export const LAB_TASKS = {
 };
 
 function wired(c, type, ports, plcPort) {
-  const plc = c.P.devices.find((d) => /^dvp-/.test(d.type));
+  const plc = c.P.devices.find((d) => DEVICE_DEFS[d.type] && DEVICE_DEFS[d.type].category === 'plc');
   if (!plc) return false;
   for (const d of c.P.devices.filter((x) => x.type === type)) {
     for (const cn of c.P.conns) {

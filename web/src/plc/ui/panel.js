@@ -13,6 +13,7 @@ import { defaultParams } from '../sim/vfd.js';
 import { fmtName } from '../sim/modbus.js';
 import { openCommSheet } from './comm-sheet.js';
 import { FaultTools } from './faults.js';
+import { STEP_GUIDES } from '../guides.js';
 
 const WIRE_COLORS = [['auto', 'Auto'], ['#dc2626', 'Red'], ['#1e3a8a', 'Dark blue'], ['#2563eb', 'Blue'], ['#7c4a1e', 'Brown'], ['#f97316', 'Orange'], ['#e5e7eb', 'White'], ['#111827', 'Black'], ['#a855f7', 'Violet'], ['#eab308', 'Yellow'], ['pe', 'Earth']];
 const thumbs = new Map();
@@ -81,6 +82,8 @@ export class PanelView {
         : 'Drag to orbit · pinch to zoom · tap a chip below to jump to a device. Press Simulate to power the lab.', 6500), 600);
     }
     if (this.scene.mode === '3d' && !this.lab.settings.labView) this.watchSpeed();
+    // a Step-by-step lab opens its guide the first time
+    if (STEP_GUIDES[this.lab.project.fromExample] && !this.lab.project.guideSeen) setTimeout(() => { if (this.el.isConnected && !this.lab.project.guideSeen) this.lab.showGuide(); }, 1200);
   }
 
   destroy() { clearTimeout(this.speedT); this.chipsRo.disconnect(); this.scene.onLost = null; this.scene.dispose(); }
@@ -238,7 +241,10 @@ export class PanelView {
       h('p', {}, 'Nothing is placed or wired for you. Add what your project needs — for example the main switch (MCB), a 24 V supply, a PLC, a VFD and a motor — then wire them.'),
       h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>Add a device</span>`, onclick: () => this.openLibrary() }));
     this.chooser = h('div', { class: 'port-chooser hidden' });
-    this.taskPill = h('button', { class: 'task-pill hidden', onclick: () => this.lab.showTasks() });
+    // Guide | Tasks: the step-by-step guide of the lab and its self-checking tasks
+    this.guideBtn = h('button', { class: 'tp-btn tp-guide', html: `${icon('book', 15)}<span>Guide</span>`, onclick: () => this.lab.showGuide() });
+    this.tasksBtn = h('button', { class: 'tp-btn tp-tasks', onclick: () => this.lab.showTasks() });
+    this.taskPill = h('div', { class: 'task-pill hidden' }, this.guideBtn, this.tasksBtn);
     // Network view legend: what the packets mean and the live state of the bus
     this.netCard = h('div', { class: 'net-legend hidden' });
     this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.emptyEl, this.chooser, this.taskPill, this.netCard);
@@ -300,15 +306,17 @@ export class PanelView {
     this.updateEmpty();
   }
 
-  updateEmpty() { this.emptyEl.classList.toggle('hidden', this.lab.project.devices.length > 0); }
+  updateEmpty() { this.emptyEl.classList.toggle('hidden', this.lab.project.devices.length > 0); if (this.tasksBtn) this.updateTaskPill(); }
 
   updateTaskPill() {
     const t = this.lab.tasks;
-    if (!t) { this.taskPill.classList.add('hidden'); return; }
+    // the guide is there for every lab with something on the bench
+    this.taskPill.classList.toggle('hidden', !t && !this.lab.project.devices.length);
+    this.tasksBtn.classList.toggle('hidden', !t);
+    if (!t) return;
     const n = (this.lab.project.tasksDone || []).length;
     const html = `${icon(n >= t.length ? 'award' : 'target', 15)}<span>Tasks <b>${n}/${t.length}</b></span>`;
-    if (html !== this.lastPill) { this.lastPill = html; this.taskPill.innerHTML = html; this.taskPill.classList.toggle('all', n >= t.length); }
-    this.taskPill.classList.remove('hidden');
+    if (html !== this.lastPill) { this.lastPill = html; this.tasksBtn.innerHTML = html; this.taskPill.classList.toggle('all', n >= t.length); }
   }
 
   setMode(m) {
@@ -890,7 +898,8 @@ export class PanelView {
     else if (def.category === 'modbus') {
       const pr = deviceProps(dev);
       tip = `${def.short} added as station ${pr.station} (${pr.baud} bps ${pr.format} ${pr.protocol}). ${def.sim === 'mbth' ? 'Power: V+ → +24 V, V− → 0 V.' : 'Power: L / N from the MCB (or another device\'s L / N).'} RS-485: tap its RS-485 terminals, then PLC COM2 or the last device of the line (daisy chain). The PLC COM2 and every slave need the same format — see Settings, then the Network chip.`;
-    } else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
+    } else if (def.sim === 'ad') tip = 'DVP04AD-E2 clipped onto the PLC. Power: 24V → +24 V, 24G → 0 V. Signal: sensor OUT → V1+, VI1− → the sensor\'s 0 V (4–20 mA: bridge I1+ to V1+). Read it with FROM K0 K12 D0 K4 (CH1–CH4 → D0–D3, 0–10 V = 0–32000).';
+    else if (def.sim === 'atx') tip = `${def.short} added. BN → +24 V, BU → 0 V, OUT → an analog input (DVP20EX2: V0+, with VI0− to 0 V; for 4–20 mA use I0+ bridged to V0+) or the MS300 AVI / ACI. Tap it to set the value.`;
     this.lab.commitHardware('Add ' + def.short);
     this.select({ kind: 'dev', id: dev.id });
     setTimeout(() => this.scene.focus(dev.id), 60);

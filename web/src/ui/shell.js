@@ -14,6 +14,7 @@ import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
 import { LAB_EXAMPLES, buildExample, emptyLab } from '../plc/examples.js';
+import { STEP_EXAMPLES } from '../plc/examples-steps.js';
 import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from '../pi/examples.js';
 import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } from '../pi/boards.js';
@@ -42,6 +43,8 @@ const TABS = [['home', 'Home', 'home'], ['examples', 'Examples', 'sparkles'], ['
 const HIDDEN = { arduino: ['plclab', 'pilab'], plc: ['plclab', 'pilab', 'projects', 'boards', 'components', 'guide'], pi: ['plclab', 'pilab', 'projects', 'boards', 'components', 'guide'] }[SECTION] || [];
 const EX_KINDS = { arduino: ['arduino'], plc: ['plc'], pi: ['pi', 'pico'] }[SECTION] || null;
 const shows = (page) => !HIDDEN.includes(page);
+/** Parts of the manual on show: all in the app; the PLC website has the Step-by-step course and the PLC Lab. */
+const sectionParts = () => ({ arduino: ['arduino'], plc: ['steps', 'plc'], pi: ['pi'] }[SECTION] || PARTS.map((P) => P.id));
 
 export class Shell {
   constructor(app) {
@@ -460,8 +463,8 @@ export class Shell {
   }
 
   manualIndex(el) {
-    if (SECTION) this.manualPart = SECTION;
-    else if (!this.manualPart) this.manualPart = 'plc';
+    if (SECTION && !sectionParts().includes(this.manualPart)) this.manualPart = sectionParts()[0];
+    else if (!this.manualPart) this.manualPart = 'steps';
     const hero = h('section', { class: 'mx-hero' });
     const parts = h('div', { class: 'mx-parts', role: 'tablist' });
     const body = h('div');
@@ -471,12 +474,12 @@ export class Shell {
       hero.append(h('div', { class: 'hero-kicker', html: `${icon('book', 15)}<span>RaptiAuto manual</span>` }), h('h2', {}, P.title), h('p', {}, P.lead));
       for (const b of parts.children) b.classList.toggle('on', b.dataset.part === this.manualPart);
     };
-    for (const P of PARTS) parts.appendChild(h('button', { 'data-part': P.id, role: 'tab', onclick: () => { this.manualPart = P.id; fillHero(); draw(search.querySelector('input').value); search.querySelector('input').placeholder = P.search; } }, P.name, h('small', {}, `${partChapters(P.id).length} chapters`)));
+    for (const P of PARTS.filter((x) => sectionParts().includes(x.id))) parts.appendChild(h('button', { 'data-part': P.id, role: 'tab', onclick: () => { this.manualPart = P.id; fillHero(); draw(search.querySelector('input').value); search.querySelector('input').placeholder = P.search; } }, P.name, h('small', {}, `${partChapters(P.id).length} chapters`)));
     let search;
     const draw = (q) => {
       body.innerHTML = '';
       if (q.trim()) {
-        const hits = searchManual(q).filter((r) => !SECTION || r.ch.part === SECTION);
+        const hits = searchManual(q).filter((r) => sectionParts().includes(r.ch.part));
         if (!hits.length) { body.appendChild(h('p', { class: 'mx-empty' }, `Nothing found for “${q.trim()}”`)); return; }
         const list = h('div', { class: 'mx-hits' });
         for (const r of hits) {
@@ -493,7 +496,7 @@ export class Shell {
       body.appendChild(grid);
     };
     el.append(hero);
-    if (!SECTION) el.append(parts); // a section website has only its own part of the manual
+    if (sectionParts().length > 1) el.append(parts); // a section website has only its own part(s) of the manual
     search = searchBox(PARTS.find((x) => x.id === this.manualPart).search, draw);
     el.append(search, body);
     fillHero();
@@ -583,11 +586,21 @@ export class Shell {
     const body = h('div', { class: 'seg-body' });
     const draw = (scroll) => {
       seg.innerHTML = '';
-      for (const [id, label, n] of [['examples', 'Examples', LAB_EXAMPLES.length], ['mine', 'My projects', labs.length]]) {
+      for (const [id, label, n] of [['steps', 'Step by step', STEP_EXAMPLES.length], ['examples', 'Examples', LAB_EXAMPLES.length], ['mine', 'My projects', labs.length]]) {
         seg.appendChild(h('button', { class: 'seg' + (this.labSeg === id ? ' active' : ''), onclick: () => { this.labSeg = id; draw(); } }, label, h('span', { class: 'chip-n' }, String(n))));
       }
       body.innerHTML = '';
-      if (this.labSeg === 'mine') {
+      if (this.labSeg === 'steps') {
+        // the small labs of the Step-by-step course, in order, with a link to the course
+        const bookCh = MANUAL.findIndex((c) => c.part === 'steps');
+        body.appendChild(h('button', { class: 'steps-book', onclick: () => { this.manualPart = 'steps'; this.go('manual'); if (bookCh >= 0) this.openManual(bookCh); } },
+          h('span', { class: 'sb-ic', html: icon('book', 22) }),
+          h('div', {}, h('b', {}, 'Read the Step-by-step course'), h('small', {}, 'Every step explained: ladder, VFD, Modbus, analog input. Each lab also has its own Guide button.')),
+          h('span', { html: icon('forward', 18) })));
+        const grid = h('div', { class: 'ex-grid lab-ex-grid' });
+        for (const ex of STEP_EXAMPLES) grid.appendChild(this.labExampleCard(ex));
+        body.appendChild(grid);
+      } else if (this.labSeg === 'mine') {
         if (!labs.length) {
           body.appendChild(h('div', { class: 'empty-state small-empty' },
             h('div', { class: 'empty-ic', html: icon('folder', 30) }),

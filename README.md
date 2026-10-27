@@ -4,7 +4,14 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
-## New in 2.26 — motor starters, process machines, fault finding, encoders, live SFC
+## New in 2.30 — everything together, section websites, HC-SR04 fix, mouse dragging on a PC
+
+- **One version again:** the PLC motor starters / machines / fault finding (2.26 on the main line) and the Bangla book, DVP04AD-E2 module, Step-by-step course and lab Guides (2.26–2.29 on the other line) are in one app.
+- **Section websites:** `npm run site` builds three PHP websites — Arduino, PLC Lab, Raspberry Pi (see *Website packages* below).
+- **PC with a mouse:** in the Arduino editor and the Pi Lab circuit a left-button drag on empty space moves the view (like a finger on a phone); **Shift + drag** draws the selection box; the right or middle button drags the view too, and a **right click** on a part or wire opens its menu. Rows that scroll sideways (example chips, tab bars, tool bars) can be dragged with the mouse or turned with the wheel.
+- **Raspberry Pi Lab:** the classic RPi.GPIO HC-SR04 loop (`while GPIO.input(echo) == 0: start = time.time()`) no longer fails with `NameError: start`, and the measured distance is steady.
+
+## New in 2.26 (main line) — motor starters, process machines, fault finding, encoders, live SFC
 
 - **3-phase supply and real motor starters (PLC Lab):** a **Main supply 3~ 400 V** (L1 L2 L3 N PE through a 4-pole breaker) and a **1.5 kW 6-terminal motor** (U1 V1 W1 / W2 U2 V2) with Δ links, Y links or none. Every winding gets the voltage of its terminals, so star (230 V, ⅓ current), delta (400 V), reversing (two phases swapped) and a **lost phase** (the motor hums, the current climbs) behave like the real thing. A phase-to-phase short trips the main breaker and says which phases touched. The **thermal overload relay** now has a current setting and a class-10 curve (1.5 × in a minute or two, 6 × in seconds), and must cool before it resets.
 - **Process models on the bench** (＋ → *Machines & process models*): a **sorting conveyor** (feeder, metal / plastic boxes, photo-eyes S1 S3 S4, an inductive S2 that sees only metal, a pneumatic pusher and reject chute), a **water tank** (24 V pump, drain valve, hand valve, LL / LH floats, 0–10 V level transmitter) and a **pneumatic cylinder** with a 5/2 valve (single or double solenoid) and reed sensors — all in 3D and in the 2D schematic.
@@ -13,6 +20,23 @@ An Android app for designing and simulating Arduino and microcontroller projects
 - **Live SFC view:** the Ladder tab gets an **SFC** button for step-ladder (STL) programs — steps, transitions with their conditions and the actions of every step as a chart; online the active step lights green, its transition turns yellow when it is true, and the chart follows the active step.
 - **Six new examples with tasks:** *3-phase motor: direct-on-line forward / reverse*, *Star-delta starter: KM1 · KM2 Δ · KM3 Y*, *Conveyor: sort metal from plastic*, *Water tank: level control + HMI*, *Pneumatics: A+ B+ B− A− with STL (SFC)*, *Encoder: speed (SPD) and position (C251)*.
 - **Manual:** a new chapter **Motors, machines and fault finding** (3-phase supply, DOL / reversing / star-delta, the overload relay, the conveyor and the tank, STL and SFC, encoders and high-speed counters, the fault-finding method) with eight new diagrams.
+
+## New in 2.29 — keyboard instruction box removed
+
+- The typed instruction box of 2.28 (second tap on a ladder cell) is removed again. The Ladder tab works as in 2.27: tap a cell to select it, tap a filled cell again to change it with the keypad, and add instructions with the toolbar buttons or the instruction picker.
+
+## New in 2.27 — a Guide inside every lab, the Step-by-step course in English
+
+- **Guide button in every PLC lab** (next to Tasks at the top of the Lab screen, and in the ⋮ menu): a step-by-step walk-through of the open lab in collapsible sections — *What this lab does*, *Run it, step by step*, *Parts in this lab*, *Wiring list, wire by wire* (grouped: 230 V, 24 V inputs, outputs, drive terminals, analog, motor, communication; with wire colours and the drive parameters that differ from the factory setting), *The program, network by network* (the instruction list of every network with its comment), *Try it yourself*, *If it does not work* and *Build it yourself from an empty bench*.
+- The 16 **Step by step** labs have hand-written guides: the goal, what you learn, every network explained in plain words, detailed run / test steps, what to watch in Monitor, exercises and fault finding (Modbus time-out, wrong drive parameters, analog module without 24 V …). A Step-by-step lab opens its guide the first time. The other examples and your own labs get the generated guide.
+- **All in English**: the course (Manual → *Step by step*, 7 chapters), the 16 labs, their rung comments and tasks.
+
+## New in 2.26 — Bangla step-by-step book, analog input module, laptop USB fixed
+
+- **সহজ বাংলায় PLC** — a new first part of the **Manual** (tab *বাংলা বই*): seven short chapters in simple Bangla, one new idea per step — ladder basics (button → lamp, NO / NC, latch, SET / RST), timers, the 1 s clock and counters, the MS300 on its terminals (MI1 / MI2, interlock), **Modbus RTU** (RS-485, D1120 / M1143, MODRW taken apart, the 2000H command word, writing the speed and reading the drive back, a fault-finding checklist and a review of a typical student FWD / REV Modbus program), **analog input** (0–10 V, 4–20 mA, scaling, averaging) and a final project, with practice exercises and a one-page reference. New Bangla diagrams throughout.
+- **16 "Step by step" labs** (PLC Lab → *Step by step* tab, also in Examples): each is a small, fully wired and downloaded lab with Bangla rung comments and self-checking tasks — from *Step 01 · one button → one lamp* to *Step 16 · pot → DVP04AD-E2 → PLC → Modbus → VFD*.
+- **Delta DVP04AD-E2 analog input module** (＋ Add device → *PLC expansion modules*): clips onto the right side of the PLC in 3D and 2D, 24 V supply, four channels with V+ / I+ / VI− (I+ bridged to V+ = current input), POWER / ERROR / A→D LEDs and live channel values in 2D. The PLC reads it with **FROM** and configures it with **TO** (new instruction group *12 · Special modules*): CR#1 input mode per channel (±10 V, 0–10 V, ±20 mA, 0–20 mA, 4–20 mA), CR#2–5 samples averaged, CR#6–9 averaged values, CR#12–15 present values, full scale ±32000.
+- **Laptop USB cable fixed in 3D**: the plug sat upright next to the laptop and the cable ended in mid-air; the plug now sits in the laptop's USB port and the cable leaves from it.
 
 ## New in 2.25 — an empty PLC bench, R-Y-B motor wires
 

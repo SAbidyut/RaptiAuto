@@ -39,6 +39,7 @@ export class PlcCpu {
     this.hsSign = new Int8Array(8).fill(1);
     this.hsLive = new Uint8Array(8);
     this.ai = [0, 0, 0, 0];
+    this.ext = []; // right-side modules (DVP04AD-E2 …) read with FROM, written with TO
     this.forceX = new Map();
     this.forceY = new Map();
     this.prog = null;
@@ -853,6 +854,16 @@ export class PlcCpu {
     const rad = (x) => (M[1018] ? x * Math.PI / 180 : x);
     switch (e.t) {
       case 'MOV': W(a[1], R(a[0])); break;
+      // special modules: FROM m1 m2 D n reads n control registers from CR#m2 of module m1, TO writes them
+      case 'FROM': case 'TO': {
+        const mod = this.ext[this.getWord(a[0])], cr = this.getWord(a[1]), n = Math.max(1, Math.min(32, this.getWord(a[3])));
+        if (!mod || !mod.powered) { M[1067] = 1; break; }
+        for (let i = 0; i < n; i++) {
+          if (e.t === 'FROM') this.setWord(offset(a[2], i), mod.read(cr + i));
+          else mod.write(cr + i, a[2].dev === 'K' || a[2].dev === 'H' ? this.getWord(a[2]) : this.getWord(offset(a[2], i)));
+        }
+        break;
+      }
       case 'ADD': case 'SUB': {
         const r = e.t === 'ADD' ? R(a[0]) + R(a[1]) : R(a[0]) - R(a[1]);
         flags(r);
