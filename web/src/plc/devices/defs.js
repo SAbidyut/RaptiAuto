@@ -500,8 +500,6 @@ export const CATEGORIES = [
   { id: 'pc', name: 'Computer', icon: 'display' },
 ];
 
-export const getDeviceDef = (type) => DEVICE_DEFS[type] || null;
-
 /** Devices that carry a user label (START, KM1, LS1 …) shown with their name. */
 export const hasLabel = (def) => !!def && ['field', 'sensor', 'switchgear', 'modbus', 'machine'].includes(def.category);
 

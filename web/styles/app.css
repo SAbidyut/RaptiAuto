@@ -141,7 +141,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .hero h1 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero p { margin: 0 0 18px; color: #b8c4dc; line-height: 1.5; font-size: 14.5px; max-width: 520px; }
 .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.hero-stats { display: flex; gap: 10px; margin-top: 18px; }
 .stat { flex: 1; padding: 10px 12px; border-radius: 14px; background: rgba(10, 16, 34, .6); border: 1px solid var(--line); }
 .stat b { display: block; font-family: var(--display); font-size: 21px; }
 .stat span { font-size: 12px; color: var(--muted); }
@@ -159,8 +158,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .proj-body { flex: 1; min-width: 0; }
 .proj-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .proj-meta { color: var(--muted); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.empty-card { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 18px; border: 1px dashed var(--line2); background: rgba(148, 163, 184, .04); }
-.empty-card p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
 .empty-ic { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; background: var(--grad-soft); color: var(--accent); flex-shrink: 0; }
 .chips-row { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
 .ex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 0 14px; }
@@ -332,8 +329,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .burn-scorch { animation: scorchIn 1.2s ease-out both; transform-box: fill-box; transform-origin: center; }
 @keyframes scorchIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
 .burn-flash { transform-box: fill-box; transform-origin: center; }
-.spin { animation: spin 1s linear infinite; transform-box: fill-box; transform-origin: center; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* code pane */
 .code-bar { display: flex; align-items: center; gap: 2px; height: 46px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--line); background: rgba(10, 16, 32, .85); }
@@ -574,19 +569,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .dr-count:empty { display: none; }
 .dr-foot { padding: 12px 18px calc(14px + var(--safe-b)); color: var(--dim); font-size: 11.5px; border-top: 1px solid var(--line); }
 
-/* home: quick menu tiles and example strip */
-.qa-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 14px; }
-.qa-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 108px; padding: 12px 11px 11px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); text-align: left; transition: transform .12s, border .2s; }
-.qa-tile:active { transform: scale(.95); border-color: rgba(34, 211, 238, .4); }
-.qa-ic { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; margin-bottom: 8px; }
-.qa-tile b { font-size: 13.5px; line-height: 1.2; }
-.qa-tile small { color: var(--muted); font-size: 11.5px; }
-.tone-cyan .qa-ic { background: rgba(34, 211, 238, .14); color: #22d3ee; }
-.tone-violet .qa-ic { background: rgba(139, 92, 246, .17); color: #a78bfa; }
-.tone-blue .qa-ic { background: rgba(59, 130, 246, .17); color: #60a5fa; }
-.tone-green .qa-ic { background: rgba(34, 197, 94, .14); color: #4ade80; }
-.tone-amber .qa-ic { background: rgba(245, 158, 11, .15); color: #fbbf24; }
-.tone-pink .qa-ic { background: rgba(236, 72, 153, .15); color: #f472b6; }
+/* home: example strip */
 .ex-row { display: flex; gap: 12px; overflow-x: auto; padding: 0 14px 6px; scroll-padding-inline: 14px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .ex-row::-webkit-scrollbar { display: none; }
 .ex-row .ex-card { flex: 0 0 196px; scroll-snap-align: start; }
@@ -664,7 +647,6 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .about-body { padding: 0 14px; }
 
 @media (min-width: 700px) {
-  .qa-grid { grid-template-columns: repeat(6, 1fr); }
   .board-list { grid-template-columns: 1fr 1fr; }
   .page > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
 }

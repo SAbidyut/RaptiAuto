@@ -892,11 +892,6 @@ export class Compiler {
     return e;
   }
 
-  loopYield() {
-    const rt = this.rt;
-    return rt;
-  }
-
   compileIf(node, ctx) {
     const c = this.cond(node.cond, ctx);
     this.pushScope(ctx);

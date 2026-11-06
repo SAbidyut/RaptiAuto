@@ -1397,5 +1397,3 @@ export function compare(a, b, op) {
     default: return false;
   }
 }
-
-export const PLC_SCAN_MS = SCAN_MS;

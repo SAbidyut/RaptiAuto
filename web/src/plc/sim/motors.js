@@ -142,11 +142,6 @@ export function stepMotor(rt, spec, vw, load, dt) {
   return rt;
 }
 
-/** A motor no supply reaches: it coasts down. */
-export function coastMotor(rt, spec, load, dt) {
-  return stepMotor(rt, spec, [[0, 0], [0, 0], [0, 0]], load, dt);
-}
-
 /** Balanced terminal currents of a drive-fed motor (A): U / V / W 120° apart. */
 export function driveCurrents(ports, amps) {
   return new Map(ports.map((p, i) => [p, polar(amps, -120 * i)]));

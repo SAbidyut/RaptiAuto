@@ -37,12 +37,7 @@ export function makeTypes(arch) {
 export const ptrTo = (t) => ({ k: 'ptr', name: (t.name || '?') + '*', to: t });
 export const arrOf = (t, len) => ({ k: 'arr', name: (t.name || '?') + '[]', of: t, len });
 
-export const isInt = (t) => t.k === 'int';
 export const isFloat = (t) => t.k === 'float';
-export const isNum = (t) => t.k === 'int' || t.k === 'float' || t.k === 'any';
-export const isArith = isNum;
-export const isCharPtr = (t) => (t.k === 'ptr' && t.to && t.to.k === 'int' && t.to.bits === 8) ||
-  (t.k === 'arr' && t.of && t.of.k === 'int' && t.of.bits === 8);
 
 /** Coercion function applied when a value is stored into a variable of type t. */
 export function coercer(t) {

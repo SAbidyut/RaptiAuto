@@ -87,10 +87,6 @@ export function fmtAddr(dev, idx) {
   return dev + (info && info.octal ? idx.toString(8) : String(idx));
 }
 
-export const isBitOperand = (op) => !!op && BIT_DEVS.includes(op.dev);
-export const isWordOperand = (op) => !!op && (WORD_DEVS.includes(op.dev) || KN_DEVS.includes(op.dev) || op.dev === 'K' || op.dev === 'H');
-export const isWritableWord = (op) => !!op && WORD_DEVS.includes(op.dev);
-
 /** Delta DVP Modbus address of a device (used by the HMI link and the comm log). */
 export function modbusAddr(dev, idx) {
   if (dev === 'M' && idx >= 1536) return 0xB000 + (idx - 1536);
@@ -169,11 +165,3 @@ export const SPECIAL = {
   D1129: 'COM2 time-out (ms)',
   D1130: 'COM2 Modbus error code',
 };
-
-/** Decode a D1120 protocol word. */
-export function decodeD1120(v) {
-  const b = v & 0xFFFF;
-  const bauds = { 1: 110, 2: 150, 3: 300, 4: 600, 5: 1200, 6: 2400, 7: 4800, 8: 9600, 9: 19200, 10: 38400, 11: 57600, 12: 115200 };
-  const parity = ['N', 'O', 'N', 'E'][(b >> 1) & 3];
-  return { baud: bauds[(b >> 4) & 15] || 9600, bits: b & 1 ? 8 : 7, parity, stop: b & 8 ? 2 : 1 };
-}

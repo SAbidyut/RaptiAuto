@@ -116,16 +116,6 @@ export function pcb(x, y, w, h, color, o = {}) {
   return rect(x, y, w, h, { fill: color, rx: o.rx ?? 3, stroke: o.stroke || 'rgba(0,0,0,.35)', sw: 0.8 });
 }
 
-/** Labels for a row of pins. */
-export function pinLabels(pins, o = {}) {
-  let s = '';
-  for (const p of pins) {
-    const lab = p.label ?? p.id;
-    s += text(p.x + (o.dx || 0), p.y + (o.dy || 0), lab, { size: o.size || 4, fill: o.fill || '#f5f5f5', rot: o.rot, anchor: o.anchor });
-  }
-  return s;
-}
-
 // ------------------------------------------------------------------ board detail (SMD parts, silkscreen)
 const SILK = '#eafcff';
 

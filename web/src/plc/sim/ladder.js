@@ -276,7 +276,6 @@ export const INSTR_FILTERS = [
 
 export const CMP_OPS = ['=', '<>', '>', '>=', '<', '<=', '&', '|', '^'];
 
-export const isContactType = (t) => INSTR[t] && (INSTR[t].kind === 'contact' || INSTR[t].kind === 'wire');
 export const isOutputType = (t) => INSTR[t] && (INSTR[t].kind === 'out' || INSTR[t].kind === 'box');
 
 let uid = 0;
@@ -328,8 +327,6 @@ export function normalizeProgram(p) {
 }
 
 // ------------------------------------------------------------------ editing helpers
-export function rowCount(rung) { return rung.cells.length; }
-
 export function addRow(rung, at = rung.cells.length) {
   const cols = rung.cells[0].length;
   const n = rung.cells.length;

@@ -30,7 +30,6 @@ export function popBack() {
   if (fn) { fn(); return true; }
   return false;
 }
-export const backDepth = () => backStack.length;
 
 // ------------------------------------------------------------------ toasts
 let toastHost;

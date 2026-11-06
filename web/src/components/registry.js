@@ -87,12 +87,6 @@ export function toLocal(part, wx, wy) {
   return rotatePoint(dx, dy, 360 - (part.rot || 0));
 }
 
-export function pinWorld(part, pinId) {
-  const pin = pinsOf(part).find((p) => p.id === pinId);
-  if (!pin) return null;
-  return toWorld(part, pin.x, pin.y);
-}
-
 /** World-space bounding box [x0,y0,x1,y1]. */
 export function worldBox(part) {
   const b = boxOf(part);

@@ -82,5 +82,4 @@ export function formatsMatch(a, b) {
   return a.baud === b.baud && a.bits === b.bits && a.parity === b.parity && a.mode === b.mode;
 }
 
-export const FC_NAMES = { 1: 'Read coils', 2: 'Read inputs', 3: 'Read registers', 5: 'Write coil', 6: 'Write register', 15: 'Write coils', 16: 'Write registers' };
 export const EXCEPTIONS = { 1: 'Illegal function', 2: 'Illegal data address', 3: 'Illegal data value', 4: 'Slave device failure' };

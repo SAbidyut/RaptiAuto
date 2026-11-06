@@ -58,12 +58,6 @@ export function strToArr(str, arr, offset = 0) {
   return arr;
 }
 
-export function newCharArray(len, str = '') {
-  const a = new Array(Math.max(len, str.length + 1)).fill(0);
-  strToArr(str, a, 0);
-  return a;
-}
-
 /** Arduino Print::printFloat */
 export function fmtFloat(number, digits = 2, f32 = false) {
   if (Number.isNaN(number)) return 'nan';
