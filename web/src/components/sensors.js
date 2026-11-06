@@ -45,7 +45,7 @@ register({
         widthUs() { return clamp(this.distance, 2, 400) * 58.3; },
         trigger(t) {
           if (!this.powered()) return;
-          const start = t + 450;
+          const start = t + (this.echoDelayUs || 450); // the Pi Lab lengthens it for its slower Python (circuit-hw.js)
           const width = this.distance > 400 ? 38000 : this.widthUs();
           this.pending = { start, width };
           this.visual.ping = performance.now();

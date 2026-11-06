@@ -234,6 +234,9 @@ export const INSTR = {
   MBS: { kind: 'box', cat: 'matrix', api: 188, name: 'Matrix bit shift by one (M1097 = right, M1096 in, M1095 out)', ops: ['wordw', 'wordw', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'D20', 'K3'], defP: true },
   MBR: { kind: 'box', cat: 'matrix', api: 189, name: 'Matrix bit rotate by one (M1097 = right, M1095 = carry)', ops: ['wordw', 'wordw', 'n'], labels: ['S', 'D', 'n'], steps: 7, pulse: true, def: ['D0', 'D20', 'K3'], defP: true },
   MBC: { kind: 'box', cat: 'matrix', api: 190, name: 'Matrix bit count → D (M1088 ON: ON bits, OFF: OFF bits)', ops: ['wordw', 'n', 'dreg'], labels: ['S', 'n', 'D'], steps: 7, pulse: true, def: ['D0', 'K3', 'D30'] },
+  // right-side special modules (DVP04AD-E2 …)
+  FROM: { kind: 'box', cat: 'ext', api: 78, name: 'Read n control registers (CR) of special module m1, from CR#m2 → D…', ops: ['n', 'n', 'dreg', 'n'], labels: ['m1 (module K0 …)', 'm2 (CR#)', 'D', 'n'], steps: 9, pulse: true, def: ['K0', 'K12', 'D0', 'K4'] },
+  TO: { kind: 'box', cat: 'ext', api: 79, name: 'Write S to n control registers (CR) of special module m1, from CR#m2', ops: ['n', 'n', 'word', 'n'], labels: ['m1 (module K0 …)', 'm2 (CR#)', 'S', 'n'], steps: 9, pulse: true, def: ['K0', 'K1', 'H0', 'K1'] },
   // checksums
   CCD: { kind: 'box', cat: 'comm', api: 84, name: 'Check code: sum of n bytes → D, parity (XOR) → D+1', ops: ['wordw', 'dreg', 'n'], labels: ['S', 'D', 'n (bytes)'], steps: 7, pulse: true, def: ['D0', 'D100', 'K6'] },
   LRC: { kind: 'box', cat: 'comm', api: 107, name: 'LRC check of n bytes (Modbus ASCII) → D', ops: ['wordw', 'n', 'dreg'], labels: ['S', 'n (bytes)', 'D'], steps: 7, pulse: true, def: ['D0', 'K6', 'D100'] },
@@ -258,6 +261,7 @@ export const INSTR_GROUPS = [
   ['pulse', '10 · High-speed, pulse & positioning (DHSCS, PLSY, PWM, DRVI …)'],
   ['matrix', '11 · Matrix (MAND, MOR, MXOR, MINV, MBRD, MBS …)'],
   ['comm', '05 · Communication, VFD & checksums (MODRW, FWD, CRC …)'],
+  ['ext', '12 · Special modules: analog input (FROM, TO)'],
 ];
 
 /** Picker filter chips: [label, categories]. */
@@ -272,6 +276,7 @@ export const INSTR_FILTERS = [
   ['Pulse', ['pulse']],
   ['Handy', ['handy']],
   ['Comm', ['comm']],
+  ['Analog', ['ext']],
 ];
 
 export const CMP_OPS = ['=', '<>', '>', '>=', '<', '<=', '&', '|', '^'];

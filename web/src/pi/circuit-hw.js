@@ -15,7 +15,32 @@ export class CircuitHw {
   }
 
   has(n) { return !!(this.engine.pins && this.engine.pins.has(n)); }
-  advance() { this.engine.advanceTo(now()); }
+  advance() { this.pace(); this.engine.advanceTo(now()); }
+
+  /** A TRIG pulse just started an HC-SR04 echo: no UI turn for Python until the echo is over, or a
+   *  pause of a few ms inside its timing loop would make the measured distance wrong. */
+  quietForEcho() {
+    if (!this.quiet) return;
+    const e = this.engine, t = e.time();
+    let end = 0;
+    for (const rt of e.parts.values()) if (rt && rt.def && rt.def.type === 'hc-sr04' && rt.pending) end = Math.max(end, rt.pending.start + rt.pending.width);
+    if (end > t) this.quiet(now() + (end - t) / 1000 + 6);
+  }
+
+  /** Python here is much slower than on a real Pi (a pin access takes 50–400 µs, there ~1 µs), so an
+   *  RPi.GPIO loop waiting for an HC-SR04 ECHO to rise could miss the low phase (450 µs) and never set
+   *  its start time. The echo therefore starts after max(450 µs, six pin accesses) — measured as the
+   *  program runs, so a slow phone gets more. The pulse width (the distance) stays exact. */
+  pace() {
+    const t = now();
+    if (this.lastAccess != null) {
+      const gap = (t - this.lastAccess) * 1000; // µs; pauses (time.sleep) are not counted
+      if (gap < 5000) this.gapUs = this.gapUs ? this.gapUs * 0.8 + gap * 0.2 : gap;
+    }
+    this.lastAccess = t;
+    const delay = Math.max(450, Math.min(20000, 6 * (this.gapUs || 0)));
+    for (const rt of this.engine.parts.values()) if (rt && rt.def && rt.def.type === 'hc-sr04') rt.echoDelayUs = delay;
+  }
 
   /** Push what Python set on a pin (mode, level, pull, PWM) into the circuit. */
   syncPin(p) {
@@ -31,6 +56,7 @@ export class CircuitHw {
       if (st.tone) e.noTone(n);
       if (st.mode !== 1) e.pinMode(n, 1);
       e.digitalWrite(n, p.out ? 1 : 0);
+      if (!p.out) this.quietForEcho();
     } else if (p.mode === 'pwm') {
       const f = p.freq || 0, d = Math.max(0, Math.min(1, p.duty));
       if (st.mode !== 1) e.pinMode(n, 1);

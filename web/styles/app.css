@@ -769,3 +769,9 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 /* entering / leaving full screen: a curtain hides the re-layout (ui/widgets.js smoothSwap) */
 .fs-curtain { position: fixed; inset: 0; z-index: 99999; background: radial-gradient(120% 90% at 50% 0%, #0f1a36 0%, var(--bg) 70%); opacity: 0; pointer-events: none; transition: opacity .3s cubic-bezier(.4, 0, .2, 1); }
 .fs-curtain.on { opacity: 1; pointer-events: auto; transition-duration: .17s; }
+/* PLC Lab → Step by step: the card that opens the Bangla book */
+.steps-book { display: flex; align-items: center; gap: 12px; margin: 0 14px 12px; padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(34, 211, 238, .3); background: linear-gradient(135deg, rgba(34, 211, 238, .1), rgba(139, 92, 246, .1)); color: var(--text); text-align: left; width: calc(100% - 28px); }
+.steps-book > div { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.steps-book b { font-size: 15px; }
+.steps-book small { color: var(--text2, #94a3b8); font-size: 12.5px; line-height: 1.4; }
+.steps-book .sb-ic, .steps-book > span:last-child { display: grid; place-items: center; color: var(--accent); }
