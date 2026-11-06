@@ -34,9 +34,15 @@ aapt package -f -m \
   --no-version-vectors
 
 echo "==> javac"
-find "$ROOT/android/src" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
+# android/stubs: newer framework classes (e.g. RenderProcessGoneDetail, API 26) for javac only — not dexed
+mkdir -p "$OUT/stubs"
+find "$ROOT/android/stubs" -name '*.java' > "$OUT/stubs.txt"
 javac -nowarn -encoding UTF-8 -source 8 -target 8 \
   -bootclasspath "$PLATFORM_JAR" -classpath "$PLATFORM_JAR" \
+  -d "$OUT/stubs" @"$OUT/stubs.txt" 2>&1 | grep -v "^warning: \[options\]" || true
+find "$ROOT/android/src" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
+javac -nowarn -encoding UTF-8 -source 8 -target 8 \
+  -bootclasspath "$PLATFORM_JAR" -classpath "$PLATFORM_JAR:$OUT/stubs" \
   -d "$OUT/classes" @"$OUT/sources.txt" 2>&1 | grep -v "^warning: \[options\]" || true
 test -f "$OUT/classes/net/rapti/raptiauto/MainActivity.class"
 

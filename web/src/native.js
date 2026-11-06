@@ -91,7 +91,7 @@ export const Native = {
   version() {
     const n = N();
     if (n) try { return n.getAppVersion(); } catch (e) { /* ignore */ }
-    return '2.26.0';
+    return '2.27.0';
   },
 
   exit() { const n = N(); if (n) try { n.exitApp(); } catch (e) { /* ignore */ } },

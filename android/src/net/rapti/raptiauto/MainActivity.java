@@ -138,8 +138,10 @@ public class MainActivity extends Activity {
             return true;
         }
 
-        /** The renderer died (e.g. out of memory): start the page again instead of crashing the app. */
-        @Override
+        /**
+         * The renderer died (e.g. out of memory): start the page again instead of crashing the app.
+         * API 26+ (no @Override: the build compiles against API 23, where the method does not exist yet).
+         */
         public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
             if (web != null) {
                 root.removeView(web);
