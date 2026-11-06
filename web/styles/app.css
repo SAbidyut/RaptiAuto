@@ -227,6 +227,9 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .editor.fs .pane-code, .editor.fs .pane-serial { padding-left: var(--safe-l); }
 .editor.fs .code-bar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); height: 46px; border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
 .editor.fs.split .code-bar { left: 8px; }
+/* the text starts below the floating bar, so the first lines can always be read (no re-wrap, no jump) */
+.editor.fs .pane-code .cm-content { padding-top: calc(58px + var(--safe-t)); }
+.editor.fs:not(.runsplit) .serial-out { padding-top: calc(66px + var(--safe-t)); }
 .editor.fs .code-bar [title="Fullscreen"] { display: none; }
 .editor.fs:not(.runsplit) .serial-toolbar { position: absolute; z-index: 19; top: calc(8px + var(--safe-t)); left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; background: rgba(10, 16, 32, .5); backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%); box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9); }
 .editor.fs.split:not(.runsplit) .serial-toolbar { left: 8px; }
@@ -584,7 +587,7 @@ textarea.input { height: 90px; padding: 10px 14px; resize: vertical; }
 .tone-green .qa-ic { background: rgba(34, 197, 94, .14); color: #4ade80; }
 .tone-amber .qa-ic { background: rgba(245, 158, 11, .15); color: #fbbf24; }
 .tone-pink .qa-ic { background: rgba(236, 72, 153, .15); color: #f472b6; }
-.ex-row { display: flex; gap: 12px; overflow-x: auto; padding: 0 14px 6px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.ex-row { display: flex; gap: 12px; overflow-x: auto; padding: 0 14px 6px; scroll-padding-inline: 14px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .ex-row::-webkit-scrollbar { display: none; }
 .ex-row .ex-card { flex: 0 0 196px; scroll-snap-align: start; }
 

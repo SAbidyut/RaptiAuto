@@ -21,7 +21,8 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
-const exe = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// the pre-installed Chromium (any Playwright revision); CHROME=<path> overrides it
+const exe = process.env.CHROME || ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => existsSync(p));
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 
 const errors = [];
@@ -67,17 +68,11 @@ const scenarios = {
     await page.evaluate((t) => { const e = window.__rapti.editor; e.setFullscreen(true); e.setTab(t); }, tab); await sleep(700);
     await page.screenshot({ path: join(outDir, `fs-${tab}${tag}.png`) });
   },
-  async fssplit(page) {
-    await scenarios.fs(page, 'code');
-    await page.evaluate(() => window.__rapti.editor.setChrome(true));
-    await page.click('.fs-btn.split-toggle'); await sleep(700);
-    await page.screenshot({ path: join(outDir, 'fs-split.png') });
-    await page.click('.fs-btn.split-toggle'); // restore the default for later scenarios
-  },
   async fsrun(page, id = 'knight-rider', ms = 1500) {
     // full screen, run (circuit + serial together), then stop (one panel again)
     await scenarios.example(page, id);
-    await page.evaluate(() => { const e = window.__rapti.editor; e.setFullscreen(true); e.setChrome(true); }); await sleep(400);
+    await page.evaluate(() => window.__rapti.editor.setFullscreen(true)); await sleep(900);
+    await page.evaluate(() => window.__rapti.editor.setChrome(true)); await sleep(400);
     await page.click('.fs-btn.fs-run'); await sleep(+ms);
     await page.screenshot({ path: join(outDir, `fsrun-${id}.png`) });
     await page.click('.fs-btn.fs-run'); await sleep(600);
@@ -271,16 +266,12 @@ const scenarios = {
     await page.screenshot({ path: join(outDir, 'labtasks-sheet.png') });
   },
   async labnew(page) {
+    // a new PLC project is an empty bench (2.25): no device, no wire, the "Add a device" card
     await scenarios.page(page, 'plclab');
-    await page.click('.lab-intro .btn-primary'); await sleep(700);
-    await page.screenshot({ path: join(outDir, 'labnew-sheet.png') });
-    await page.click('.lab-new .board-item >> text=DVP-32ES2'); await sleep(2600);
-    await page.click('.lab .run-btn'); await sleep(600);
-    await page.evaluate(() => { const s = window.__rapti.lab.sys; for (let i = 0; i < 50; i++) s.step(20); });
-    const st = await page.evaluate(() => { const l = window.__rapti.lab; return { plc: l.sys.plc.def.short, powered: l.sys.plc.cpu.powered, issues: l.sys.issues.map((i) => i.text) }; });
+    await page.click('.lab-intro .btn-primary'); await sleep(2600);
+    const st = await page.evaluate(() => { const l = window.__rapti.lab; return { devices: l.project.devices.length, empty: !document.querySelector('.lab-empty').classList.contains('hidden'), hint: !document.querySelector('.lab-hint').classList.contains('hidden') }; });
     console.log('new lab', JSON.stringify(st));
-    await page.evaluate(() => window.__rapti.lab.scene.focus('plc', false)); await sleep(1500);
-    await page.screenshot({ path: join(outDir, 'labnew-32es2.png') });
+    await page.screenshot({ path: join(outDir, 'labnew-empty.png') });
   },
   // ---- 2D wiring schematic, selection box, double-tap zoom, full screen without menus
   async lab2d(page, id = 'vfd-modbus-hmi', ms = 3000) {
@@ -489,7 +480,7 @@ const scenarios = {
     await page.screenshot({ path: join(outDir, `picircuit-${board}.png`) });
     await page.click('.pi-runbtn'); await sleep(3500);
     await page.screenshot({ path: join(outDir, `picircuit-${board}-run.png`) });
-    const st = await page.evaluate(() => { const p = window.__rapti.pi; const e = p.circuit.engine; return JSON.stringify({ engine: !!e, hw: !!p.sys.gpio.hw, running: p.programRunning(), pins: e ? [...e.pins.values()].filter((s) => s.mode === 1).map((s) => s.id + '=' + s.out) : [], out: p.mini.el.textContent.slice(0, 120) }); });
+    const st = await page.evaluate(() => { const p = window.__rapti.pi; const e = p.circuit.engine; return JSON.stringify({ engine: !!e, hw: !!p.sys.gpio.hw, running: p.programRunning(), pins: e ? [...e.pins.values()].filter((s) => s.mode === 1).map((s) => s.id + '=' + s.out) : [] }); });
     console.log('pi run', st);
     await page.evaluate(() => window.__rapti.pi.setFullscreen(true)); await sleep(900);
     await page.screenshot({ path: join(outDir, `picircuit-${board}-fs.png`) });
@@ -516,7 +507,6 @@ const scenarios = {
     await page.screenshot({ path: join(outDir, 'pifs-thonny-clean.png') });
     await page.evaluate(() => { const p = window.__rapti.pi; p.setChrome(true); p.setTab('circuit'); }); await sleep(500);
     await page.click('.pi-fsbar .fs-run'); await sleep(2500);
-    await page.evaluate(() => window.__rapti.pi.toggleOutput(true)); await sleep(500);
     await page.screenshot({ path: join(outDir, 'pifs-run-output.png') });
   },
   async piwire(page) {
