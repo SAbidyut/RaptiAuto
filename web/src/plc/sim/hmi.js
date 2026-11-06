@@ -247,7 +247,8 @@ export class HmiRuntime {
     for (const [id, p] of [...this.pressed]) {
       if (p !== pid && pid !== '*') continue;
       this.pressed.delete(id);
-      const el = this.current.elements.find((e) => e.id === id);
+      // the screen may have changed while the button was held: look in every screen
+      const el = this.current.elements.find((e) => e.id === id) || this.project.screens.flatMap((sc) => sc.elements).find((e) => e.id === id);
       if (el && el.type === 'button' && el.mode === 'momentary') this.write(el.bit, 0);
       this.dirty = true;
     }

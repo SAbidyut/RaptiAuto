@@ -87,6 +87,7 @@ export function toLocal(part, wx, wy) {
   return rotatePoint(dx, dy, 360 - (part.rot || 0));
 }
 
+/** World position of a pin (used by the screenshot tool). */
 export function pinWorld(part, pinId) {
   const pin = pinsOf(part).find((p) => p.id === pinId);
   if (!pin) return null;

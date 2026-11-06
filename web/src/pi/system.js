@@ -130,10 +130,25 @@ export class PiSystem {
     return proc;
   }
 
-  /** Pull files the program wrote back into the file system. */
+  /**
+   * Pull back only what the program itself changed since it started. Copying everything would put
+   * the interpreter's start-up copy of a file over one saved since (Thonny's edit, nano), and the
+   * next Run would run the old code. Files the program deleted are deleted too.
+   */
   syncBack(proc = this.proc) {
     if (!proc || proc.dead || !proc.mp) return;
-    try { this.fs.merge(proc.readFiles(this.isPico ? '/' : '/home/pi'), this.isPico ? '/' : '/home/pi'); } catch (e) { /* ignore */ }
+    const root = this.isPico ? '/' : '/home/pi';
+    try {
+      const now = proc.readFiles(root), base = proc.files || {}, changed = {};
+      for (const [p, t] of Object.entries(now)) if (base[p] !== t) changed[p] = t;
+      let gone = false;
+      for (const p of Object.keys(base)) {
+        if (p in now || !proc.gone(p)) continue;
+        if (this.fs.isFile(p) && this.fs.read(p) === base[p]) { this.fs.files.delete(p); gone = true; }
+      }
+      if (!this.fs.merge(changed, root) && gone) this.fs.save();
+      proc.files = now;
+    } catch (e) { /* ignore */ }
   }
 
   killProcess() {

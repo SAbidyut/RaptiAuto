@@ -153,6 +153,7 @@ export class Editor {
     this.iot.destroy();
     this.resizeObs.disconnect();
     this.canvas.destroy();
+    this.code.destroy();
     this.audio.close();
     if (this.unback) this.unback();
     this.root.remove();

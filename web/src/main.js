@@ -8,9 +8,13 @@ function boot() {
   const app = new App(root);
   window.__rapti = app;
   window.__examples = EXAMPLES;
-  app.start();
-  const splash = document.getElementById('splash');
-  if (splash) { splash.classList.add('gone'); setTimeout(() => splash.remove(), 600); }
+  try {
+    app.start();
+  } finally {
+    // the splash always goes, even if a page fails to draw
+    const splash = document.getElementById('splash');
+    if (splash) { splash.classList.add('gone'); setTimeout(() => splash.remove(), 600); }
+  }
 }
 
 window.addEventListener('error', (e) => {

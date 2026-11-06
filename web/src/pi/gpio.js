@@ -121,8 +121,11 @@ export class GpioSim {
     if (p.mode === 'pwm') p.mode = 'out';
     if (p.mode === 'out') p.duty = v;
     const t = now();
-    if (this.hw) this.sync(p);
-    else if (was !== v) for (const part of this.parts) { const s = PART_SIM[part.type]; if (s && s.onWrite) s.onWrite(part, n, v, this, t); }
+    if (this.hw) {
+      this.sync(p);
+      // a trigger just ended: no screen frame may interrupt Python until the echo has been timed
+      if (was && !v) this.quietForEcho(n);
+    } else if (was !== v) for (const part of this.parts) { const s = PART_SIM[part.type]; if (s && s.onWrite) s.onWrite(part, n, v, this, t); }
     this.inputsChanged();
     this.changed(n);
   }
@@ -401,6 +404,15 @@ export class GpioSim {
   }
 
   /** Don't interrupt Python with a UI turn until t (it is timing a pulse); capped at 60 ms. */
+  /** An HC-SR04 on the circuit whose TRIG is this pin: stay quiet until its echo pulse is over. */
+  quietForEcho(n) {
+    const hw = this.hw;
+    if (!hw.partsOn || !hw.engine) return;
+    const rt = hw.partsOn(n, 'hc-sr04', 'TRIG')[0];
+    const pend = rt && rt.pending;
+    if (pend) this.quietUntil(now() + (pend.start + pend.width - hw.engine.time()) / 1000 + 6);
+  }
+
   quietUntil(t) { this.quietEnd = Math.min(t, now() + 60); }
 
   // ---------------------------------------------------------------- parts

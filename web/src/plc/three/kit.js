@@ -269,3 +269,28 @@ export function labelSprite(text, { size = 26, color = '#e6f7ff', bg = 'rgba(8,1
   sp.userData.set(text);
   return sp;
 }
+
+// ------------------------------------------------------------------ freeing GPU memory
+/**
+ * Frees what an object tree holds on the GPU: its own geometries, materials and canvas textures.
+ * The cached materials (mat), the shared rounded boxes and the glow texture stay; anything freed
+ * that is drawn again later is simply uploaded again by three.js.
+ */
+export function disposeObject(root) {
+  root.traverse((o) => {
+    if (o.geometry && !(o.geometry.userData && o.geometry.userData.shared)) o.geometry.dispose();
+    const ms = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of ms) {
+      if (matCache.get(m.name) === m) continue;
+      for (const k of ['map', 'emissiveMap', 'alphaMap']) { const t = m[k]; if (t && t !== glowTex) t.dispose(); }
+      m.dispose();
+    }
+  });
+}
+
+/** Lab closed: the module caches let go of the old renderer (three.js keeps a listener on each). */
+export function disposeCaches() {
+  for (const m of matCache.values()) m.dispose();
+  for (const g of rboxCache.values()) g.dispose();
+  if (glowTex) glowTex.dispose();
+}

@@ -6,11 +6,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Vibrator;
+import android.provider.OpenableColumns;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -18,6 +20,7 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -34,6 +37,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -131,6 +135,20 @@ public class MainActivity extends Activity {
             Uri u = Uri.parse(url);
             if (HOST.equals(u.getHost())) return false;
             openExternal(url);
+            return true;
+        }
+
+        /**
+         * The renderer died (e.g. out of memory): start the page again instead of crashing the app.
+         * API 26+ (no @Override: the build compiles against API 23, where the method does not exist yet).
+         */
+        public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+            if (web != null) {
+                root.removeView(web);
+                web.destroy();
+                web = null;
+            }
+            recreate();
             return true;
         }
 
@@ -237,7 +255,7 @@ public class MainActivity extends Activity {
                     }
                     in.close();
                     String text = bos.toString("UTF-8");
-                    String name = uri.getLastPathSegment();
+                    String name = displayName(uri);
                     js("RaptiApp.onNativeFile(" + JSONObject.quote(id) + "," + JSONObject.quote(name == null ? "" : name)
                             + "," + JSONObject.quote(text) + ")");
                     return;
@@ -314,7 +332,10 @@ public class MainActivity extends Activity {
                     pendingSaveName = name;
                     Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     i.addCategory(Intent.CATEGORY_OPENABLE);
-                    i.setType(mime == null || mime.length() == 0 ? "application/octet-stream" : mime);
+                    // a custom extension with a json / text type would be saved as "x.rapti.json" by some providers
+                    String n = name == null ? "" : name.toLowerCase();
+                    boolean own = n.endsWith(".rapti") || n.endsWith(".raptiplc") || n.endsWith(".ino");
+                    i.setType(own || mime == null || mime.length() == 0 ? "application/octet-stream" : mime);
                     i.putExtra(Intent.EXTRA_TITLE, name);
                     try {
                         startActivityForResult(i, REQ_SAVE);
@@ -383,7 +404,11 @@ public class MainActivity extends Activity {
                         String m = method == null || method.length() == 0 ? "GET" : method.toUpperCase();
                         int code = 0;
                         for (int hop = 0; hop < 6; hop++) {
-                            c = (HttpURLConnection) new URL(target).openConnection();
+                            URL u = new URL(target);
+                            String proto = u.getProtocol();
+                            if (!"http".equals(proto) && !"https".equals(proto)) throw new java.io.IOException("only http and https");
+                            if (isLocalHost(u.getHost())) throw new java.io.IOException("local network addresses are blocked");
+                            c = (HttpURLConnection) u.openConnection();
                             c.setInstanceFollowRedirects(false);
                             c.setConnectTimeout(8000);
                             c.setReadTimeout(12000);
@@ -491,6 +516,35 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** The file name the user sees (a document Uri's last path segment is an id like "msf:1000000034"). */
+    private String displayName(Uri uri) {
+        String name = null;
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null);
+            if (c != null && c.moveToFirst()) name = c.getString(0);
+        } catch (Exception ignored) {
+        } finally {
+            if (c != null) c.close();
+        }
+        return name != null ? name : uri.getLastPathSegment();
+    }
+
+    /** True for addresses of the phone itself or its local network (the simulated internet stays outside). */
+    private static boolean isLocalHost(String host) {
+        try {
+            for (InetAddress a : InetAddress.getAllByName(host)) {
+                if (a.isAnyLocalAddress() || a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress()) return true;
+                byte[] b = a.getAddress();
+                if (b.length == 16 && (b[0] & 0xFE) == 0xFC) return true; // IPv6 unique local fc00::/7
+                if (b.length == 4 && (b[0] & 0xFF) == 100 && (b[1] & 0xC0) == 64) return true; // carrier NAT 100.64/10
+            }
+        } catch (Exception e) {
+            return false; // unknown host: the request itself reports the error
+        }
+        return false;
+    }
+
     private void openExternal(String url) {
         try {
             Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
@@ -581,6 +635,7 @@ public class MainActivity extends Activity {
 
     /** Keeps the WebView above the soft keyboard, also in immersive mode where adjustResize is ignored. */
     private void handleKeyboard() {
+        if (web == null) return;
         Rect r = new Rect();
         root.getWindowVisibleDisplayFrame(r);
         int[] loc = new int[2];
@@ -614,6 +669,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (web == null) { super.onBackPressed(); return; }
         web.evaluateJavascript("(window.RaptiApp&&RaptiApp.onBack)?String(RaptiApp.onBack()):'false'",
                 new ValueCallback<String>() {
                     @Override
@@ -628,14 +684,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         js("RaptiApp.onNativePause&&RaptiApp.onNativePause()");
-        web.onPause();
+        if (web != null) web.onPause();
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        web.onResume();
+        if (web != null) web.onResume();
         js("RaptiApp.onNativeResume&&RaptiApp.onNativeResume()");
     }
 

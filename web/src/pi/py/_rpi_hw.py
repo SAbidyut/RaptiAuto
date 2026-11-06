@@ -25,7 +25,9 @@ def call(cb, *args):
     try:
         return cb()
     except TypeError as e:
-        if args and 'argument' in str(e):
+        # only the call itself had the wrong arity (an error inside the callback is shown as it is)
+        m = str(e)
+        if args and ('but 0 were given' in m or 'required positional argument' in m):
             return cb(*args)
         raise
 

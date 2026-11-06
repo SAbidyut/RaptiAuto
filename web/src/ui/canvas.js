@@ -519,7 +519,7 @@ export class CircuitCanvas {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
       this.cancelLongPress();
-      if (this.down && this.down.dragging === 'part') this.finishPartDrag(false);
+      if (this.down && this.down.dragging === 'part') this.finishPartDrag(true); // keep the move (saved, undoable)
       if (this.down && this.down.simPointer) this.releaseSimPointer(this.down.simPointer);
       this.box.cancel();
       const [a, b] = [...this.pointers.values()];
@@ -691,7 +691,7 @@ export class CircuitCanvas {
       if (!d.simPointer) this.taps.tap(e.clientX, e.clientY);
       return;
     }
-    if (cancelled) { if (d.dragging === 'part') this.finishPartDrag(false); if (d.dragging === 'box' || d.boxArmed) this.box.cancel(); this.hideTip(); return; }
+    if (cancelled) { if (d.dragging === 'part') this.finishPartDrag(true); if (d.dragging === 'box' || d.boxArmed) this.box.cancel(); this.hideTip(); return; }
     const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
     if (!d.dragging) {
       if (d.boxArmed) this.box.cancel();
@@ -992,7 +992,7 @@ export class CircuitCanvas {
     this.selection = sel;
     this.renderWires();
     this.renderOverlay();
-    if (!silent || true) this.ed.selectionChanged && this.ed.selectionChanged(sel);
+    if (this.ed.selectionChanged) this.ed.selectionChanged(sel);
   }
 
   // ------------------------------------------------------------------ simulation mode

@@ -9,12 +9,12 @@ const safe = (fn, fallback) => { try { return fn(); } catch (e) { return fallbac
 
 export function listProjects() {
   const list = safe(() => JSON.parse(localStorage.getItem(INDEX) || '[]'), []);
-  return Array.isArray(list) ? list.sort((a, b) => (b.updated || 0) - (a.updated || 0)) : [];
+  return Array.isArray(list) ? list.filter((x) => x && typeof x === 'object' && x.id).sort((a, b) => (b.updated || 0) - (a.updated || 0)) : [];
 }
 
 export function loadProject(id) {
   const p = safe(() => JSON.parse(localStorage.getItem(PKEY(id)) || 'null'), null);
-  return p ? normalize(p) : null;
+  return p && typeof p === 'object' ? safe(() => normalize(p), null) : null;
 }
 
 export function saveProject(p) {
@@ -32,14 +32,18 @@ export function deleteProject(id) {
   safe(() => localStorage.setItem(INDEX, JSON.stringify(listProjects().filter((x) => x.id !== id))));
 }
 
+/** Makes a stored or imported project safe to open: a broken entry is dropped, never fatal. */
 export function normalize(p) {
-  p.parts = Array.isArray(p.parts) ? p.parts : [];
-  p.wires = Array.isArray(p.wires) ? p.wires : [];
+  if (!p || typeof p !== 'object') p = {};
+  const obj = (x) => !!x && typeof x === 'object';
+  p.parts = (Array.isArray(p.parts) ? p.parts : []).filter((x) => obj(x) && typeof x.type === 'string' && x.id);
+  const ids = new Set(p.parts.map((x) => x.id));
+  p.wires = (Array.isArray(p.wires) ? p.wires : []).filter((w) => obj(w) && obj(w.from) && obj(w.to) && ids.has(w.from.part) && ids.has(w.to.part));
   p.code = typeof p.code === 'string' ? p.code : '';
-  p.name = p.name || 'Untitled project';
+  p.name = typeof p.name === 'string' && p.name ? p.name : 'Untitled project';
   p.id = p.id || newId('prj');
-  p.settings = p.settings || {};
-  for (const w of p.wires) { w.points = w.points || []; w.id = w.id || newId('w'); }
+  p.settings = obj(p.settings) ? p.settings : {};
+  for (const w of p.wires) { w.points = Array.isArray(w.points) ? w.points.filter((q) => Array.isArray(q) && q.length === 2) : []; w.id = w.id || newId('w'); }
   return p;
 }
 

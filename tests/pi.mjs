@@ -121,15 +121,19 @@ GPIO.setup(18, GPIO.OUT)
 GPIO.output(18, GPIO.HIGH)
 GPIO.setup(23, GPIO.OUT)
 GPIO.setup(24, GPIO.IN)
-GPIO.output(23, True)
-time.sleep(0.00001)
-GPIO.output(23, False)
-start = stop = time.time()
-while GPIO.input(24) == 0:
-    start = time.time()
-while GPIO.input(24) == 1:
-    stop = time.time()
-print('cm', round((stop - start) * 34300 / 2))
+def ping():
+    GPIO.output(23, True)
+    time.sleep(0.00001)
+    GPIO.output(23, False)
+    start = stop = time.time()
+    while GPIO.input(24) == 0:
+        start = time.time()
+    while GPIO.input(24) == 1:
+        stop = time.time()
+    return (stop - start) * 34300 / 2
+time.sleep(0.05)
+r = sorted(ping() for _ in range(5))
+print('cm', round(r[2]))
 GPIO.setup(12, GPIO.OUT)
 p = GPIO.PWM(12, 50)
 p.start(7.5)
@@ -288,7 +292,8 @@ console.log('Circuit (wired on the canvas)');
   engine.input('b1', 'press', false);
   tick();
   // RPi.GPIO polling an HC-SR04 echo in real time (the circuit clock follows the wall clock)
-  out = await py(g, 'import RPi.GPIO as GPIO, time\nGPIO.setmode(GPIO.BCM)\nGPIO.setup(23, GPIO.OUT)\nGPIO.setup(24, GPIO.IN)\nGPIO.output(23, 1)\ntime.sleep(0.00001)\nGPIO.output(23, 0)\nt0 = time.time()\nwhile GPIO.input(24) == 0 and time.time() - t0 < 0.1:\n    start = time.time()\nwhile GPIO.input(24) == 1 and time.time() - t0 < 0.2:\n    stop = time.time()\nprint("echo", round((stop - start) * 17150))\n');
+  // one ping right after the interpreter starts can be cut by a host GC pause: settle, then take the median of 5
+  out = await py(g, 'import RPi.GPIO as GPIO, time\nGPIO.setwarnings(False)\nGPIO.setmode(GPIO.BCM)\nGPIO.setup(23, GPIO.OUT)\nGPIO.setup(24, GPIO.IN)\ndef ping():\n    GPIO.output(23, 1)\n    time.sleep(0.00001)\n    GPIO.output(23, 0)\n    t0 = time.time()\n    start = stop = t0\n    while GPIO.input(24) == 0 and time.time() - t0 < 0.1:\n        start = time.time()\n    while GPIO.input(24) == 1 and time.time() - t0 < 0.2:\n        stop = time.time()\n    return (stop - start) * 17150\ntime.sleep(0.05)\nr = sorted(ping() for _ in range(5))\nprint("echo", round(r[2]))\n');
   check('RPi.GPIO echo timing loop on the circuit', /echo (8[5-9]|9[0-9]|10[0-9]|11[0-5])\b/.test(out), out);
   check('5 V on a GPIO is warned about', warnings.some((w) => /3\.3 V only/.test(w)), warnings.join('\n'));
   out = await py(g, 'from i2c_lcd import I2cLcd\nlcd = I2cLcd(0x27, 2, 16)\nlcd.putstr("Hello Pi!")\nlcd.move_to(0, 1)\nlcd.putstr("RAPTI")\n');

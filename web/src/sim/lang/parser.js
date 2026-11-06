@@ -72,7 +72,11 @@ export class Parser {
     if (!t || t.t !== 'id') return false;
     const v = t.v;
     if (QUALIFIERS.has(v) || v === 'struct' || v === 'class' || v === 'enum' || v === 'union') return true;
-    if (TYPE_WORDS.has(v)) return true;
+    if (TYPE_WORDS.has(v)) {
+      const n = nextTok || this.toks[this.toks.indexOf(t) + 1];
+      if (v === 'String' && n && n.t === 'op' && n.v === '(') return false; // String(x).toCharArray(...) is an expression
+      return true;
+    }
     if (this.typeNames.has(v) || this.typedefs.has(v) || this.enumNames.has(v)) {
       const n = nextTok || this.toks[this.toks.indexOf(t) + 1];
       // `Type::member` is an expression, `Type(` is a functional cast / constructor expression

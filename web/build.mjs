@@ -73,6 +73,7 @@ await build({
   minify: !dev,
   outfile: join(out, 'app.css'),
   external: ['fonts/*'],
+  target: ['chrome80'], // like the JS: inset → top/right/bottom/left for older WebViews
   logLevel: 'warning',
 });
 

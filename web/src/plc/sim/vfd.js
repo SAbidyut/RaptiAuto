@@ -360,7 +360,7 @@ export class VfdMS300 {
 
   powerOn() {
     if (this.powered) return;
-    this.powered = true; this.bootT = 1.2; this.keyRun = false; this.keyStop = false; this.commRun = false; this.f = 0; this.rate = 0;
+    this.powered = true; this.bootT = 1.2; this.lastComm = this.time; this.keyRun = false; this.keyStop = false; this.commRun = false; this.f = 0; this.rate = 0;
     this.kp.mode = ['F', 'H', 'U', 'A'][this.P('00-03')] || 'F';
     if (this.kp.mode === 'A') { this.kp.mode = 'U'; this.kp.uOverride = 0; } else this.kp.uOverride = null;
   }
@@ -573,7 +573,7 @@ export class VfdMS300 {
     // communication time-out
     const usesComm = this.P('00-20') === 1 || this.P('00-21') === 2;
     const tmo = this.P('09-03');
-    if (usesComm && tmo > 0 && this.time - this.lastComm > tmo) {
+    if (usesComm && tmo > 0 && !(this.bootT > 0) && this.time - this.lastComm > tmo) {
       const tr = this.P('09-02');
       if (tr === 0) warn.push('CE10');
       else if (tr === 1 || tr === 2) { this.trip('CE10'); if (tr === 2) this.f = 0; }
@@ -834,7 +834,8 @@ export class VfdMS300 {
     const p = paramByAddr(a);
     if (!p) return 2;
     if (p.ro) return 3;
-    const err = this.setParam(p.id, v / 10 ** p.dec);
+    const raw = p.min < 0 && v > 0x7FFF ? v - 0x10000 : v; // signed parameters (e.g. -10.0 %)
+    const err = this.setParam(p.id, raw / 10 ** p.dec);
     return err ? 3 : null;
   }
 

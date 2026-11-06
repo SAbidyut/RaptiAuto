@@ -131,6 +131,9 @@ def status():
  * One Python process (a fresh interpreter). out(text, stream) receives stdout/stderr text;
  * readLine(prompt) must return a Promise of the typed line.
  */
+// strict UTF-8: a binary file (e.g. bytes([0, 255])) must not be stored as cut-off text
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+
 export class PyProcess {
   constructor({ gpio, libs, out, readLine, files, cwd = '/home/pi', banner, wasmLoader, heap = 6 << 20 }) {
     this.gpio = gpio;
@@ -212,6 +215,9 @@ export class PyProcess {
     }
   }
 
+  /** Did the program delete this file? (a binary file still exists but is not read back as text) */
+  gone(p) { try { this.mp.FS.stat(p); return false; } catch (e) { return true; } }
+
   /** Files under root as { path: text } (to save what a program wrote). */
   readFiles(root) {
     const FS = this.mp.FS;
@@ -225,7 +231,7 @@ export class PyProcess {
         let st;
         try { st = FS.stat(p); } catch (e) { continue; }
         if (FS.isDir(st.mode)) { if (p !== '/rlib' && p !== '/proc' && p !== '/dev' && p !== '/tmp') walk(p); }
-        else { try { out[p] = FS.readFile(p, { encoding: 'utf8' }); } catch (e) { /* binary */ } }
+        else { try { out[p] = utf8.decode(FS.readFile(p)); } catch (e) { /* binary: stays in the interpreter only */ } }
       }
     };
     walk(root);

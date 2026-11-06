@@ -77,7 +77,6 @@ export class SerialMonitor {
       if (i > 0) {
         this.parsePlotLine(this.lines[this.lines.length - 1]);
         this.lines.push('');
-        this.lineStamps = this.lineStamps || [];
       }
       if (this.lines[this.lines.length - 1] === '' && parts[i] !== '') this.setStamp(this.lines.length - 1, stamp);
       this.lines[this.lines.length - 1] += parts[i];
@@ -87,8 +86,21 @@ export class SerialMonitor {
       this.lines.splice(0, cut);
       if (this.stamps) this.stamps.splice(0, cut);
     }
-    this.redraw();
+    this.scheduleRedraw();
     if (this.mode === 'plotter') this.drawPlot();
+  }
+
+  /**
+   * A chatty sketch prints every frame: rebuilding up to 1500 lines each frame made the simulator
+   * stutter. The text is redrawn at most ~12 times a second, and not at all while it is hidden
+   * (showing the Serial tab redraws it).
+   */
+  scheduleRedraw() {
+    if (this.outWrap.offsetParent === null) return;
+    const now = performance.now();
+    const wait = 80 - (now - (this.lastDraw || 0));
+    if (wait <= 0) { this.lastDraw = now; this.redraw(); return; }
+    if (!this.drawT) this.drawT = setTimeout(() => { this.drawT = null; this.lastDraw = performance.now(); this.redraw(); }, wait);
   }
 
   stampText() {

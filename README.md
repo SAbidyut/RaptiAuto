@@ -4,6 +4,18 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.27 — bug fixes and a smoother app
+
+A full check of the app: every screen driven in a phone-sized browser and every part of the code audited. What changed:
+
+- **No more lost projects:** a damaged or half-valid project (a bad import, a broken save) can no longer stop the app at the splash screen; broken parts and wires are dropped and the rest opens. A failing Back step no longer closes the app.
+- **Smoother:** the Serial Monitor redraws at most about 12 times a second (a chatty `Serial.println` loop no longer slows the simulation), closed projects, Pi labs and 3D labs now free their memory (the editor, the 3D models, materials and textures), full-screen code and Serial text start below the floating bar, and an empty PLC bench shows only its own card.
+- **Arduino:** `EEPROM.put()` works, ArduinoJson values work in `if` / `bool` (`{"led":false}` keeps the LED off), structs whose constructor has a loop compile, `String(x).toCharArray(…)` parses, `strtol` sets the end pointer and reads `0x…`, `memset` / `memcpy` work on structs, `printf("%05.1f")` pads with zeros, and a DHT22 on an ESP32 no longer burns its 3.3 V pin.
+- **PLC Lab:** `HFFFF` in 32-bit instructions is 65535, 16-bit constants above K32767 are reported, an STL step used in several networks switches all its outputs off, long `FOR` loops run, every PLC keeps its latched memory, the VFD does not trip CE10 while booting and accepts negative parameters over Modbus, the PLC slave answers S and C200+ addresses, and an HMI button held while the screen changes is released.
+- **Raspberry Pi Lab:** pressing Run after an edit runs the edited code (it could run the old one), files a program deletes or renames stay deleted / renamed, binary files are not stored as cut-off text, HC-SR04 echo timing on the circuit is reliable, `time.perf_counter()` no longer wraps after 18 minutes, `threading.Timer.cancel()`, `Button(hold_repeat=True)` and error messages from callbacks are right, and `mv dir dir/sub` is refused instead of deleting the folder.
+- **Android:** imported files keep their real name, exports are no longer saved as `x.rapti.json`, a WebView crash restarts the page instead of the app, the real-internet layer refuses addresses on the phone's local network (also after redirects), and older WebViews get CSS they understand.
+- **Cleaner code:** unused functions, imports and styles removed; the test suite runs with `npm test` on Node 22 and the timing tests are stable.
+
 ## New in 2.26 — motor starters, process machines, fault finding, encoders, live SFC
 
 - **3-phase supply and real motor starters (PLC Lab):** a **Main supply 3~ 400 V** (L1 L2 L3 N PE through a 4-pole breaker) and a **1.5 kW 6-terminal motor** (U1 V1 W1 / W2 U2 V2) with Δ links, Y links or none. Every winding gets the voltage of its terminals, so star (230 V, ⅓ current), delta (400 V), reversing (two phases swapped) and a **lost phase** (the motor hums, the current climbs) behave like the real thing. A phase-to-phase short trips the main breaker and says which phases touched. The **thermal overload relay** now has a current setting and a class-10 curve (1.5 × in a minute or two, 6 × in seconds), and must cool before it resets.

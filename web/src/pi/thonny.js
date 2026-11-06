@@ -83,7 +83,7 @@ export class Thonny {
   join() {
     if (this.mode === 'joined') return;
     this.mode = 'joined';
-    this.el.replaceChildren(this.toolbar, this.tabBar, this.edHost, this.grip, this.shell, this.status);
+    setChildren(this.el, this.toolbar, this.tabBar, this.edHost, this.grip, this.shell, this.status);
   }
 
   /** Two screens: the code (toolbar, tabs, editor) goes in codeHost, the Shell / program output in outHost. */
@@ -91,8 +91,8 @@ export class Thonny {
     if (this.mode !== 'split') {
       this.mode = 'split';
       this.shell.style.flex = '';
-      this.codeEl.replaceChildren(this.toolbar, this.tabBar, this.edHost, this.status);
-      this.outEl.replaceChildren(this.shell);
+      setChildren(this.codeEl, this.toolbar, this.tabBar, this.edHost, this.status);
+      setChildren(this.outEl, this.shell);
     }
     if (this.codeEl.parentNode !== codeHost) codeHost.appendChild(this.codeEl);
     if (this.outEl.parentNode !== outHost) outHost.appendChild(this.outEl);
@@ -495,3 +495,9 @@ export class Thonny {
 }
 
 function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
+
+/** el.replaceChildren(...) for older Android WebViews (Chrome < 86). */
+function setChildren(el, ...kids) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+  el.append(...kids);
+}

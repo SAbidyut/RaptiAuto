@@ -74,8 +74,8 @@ export class PanelView {
     this.updateTaskPill();
     this.updateEmpty();
     if (this.no3d) setTimeout(() => this.hint('3D needs WebGL 2, which this phone does not have — showing the 2D wiring schematic.', 6000), 500);
-    else if (!localStorage.getItem('raptiauto.plc.hinted')) {
-      try { localStorage.setItem('raptiauto.plc.hinted', '1'); } catch (e) { /* ignore */ }
+    // the first lab with devices gets the how-to hint (an empty bench has its own card instead)
+    else if (this.lab.project.devices.length && !storedFlag('raptiauto.plc.hinted')) {
       setTimeout(() => this.hint(this.scene.mode === '2d'
         ? '2D wiring schematic: drag to move, pinch or double-tap-and-slide to zoom. Tap 3D (bottom left) for the 3D lab. Press Simulate to power the lab.'
         : 'Drag to orbit · pinch to zoom · tap a chip below to jump to a device. Press Simulate to power the lab.', 6500), 600);
@@ -1215,3 +1215,12 @@ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 /** Element.append without the null / false placeholders of optional buttons. */
 function appendAll(parent, ...items) { parent.append(...items.filter(Boolean)); }
+
+/** Reads a one-time flag (a hint already shown) and sets it; storage may be unavailable. */
+function storedFlag(key) {
+  try {
+    if (localStorage.getItem(key)) return true;
+    localStorage.setItem(key, '1');
+  } catch (e) { /* ignore */ }
+  return false;
+}

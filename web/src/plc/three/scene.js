@@ -1,6 +1,6 @@
 // The 3D lab view: renderer, camera + orbit controls, device models, cables, port markers,
 // picking (ports, controls, devices, cables), camera focus animation and the render loop.
-import { THREE, canvasTexture, setMaxAnisotropy, labelSprite } from './kit.js';
+import { THREE, canvasTexture, setMaxAnisotropy, labelSprite, disposeObject, disposeCaches } from './kit.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { setupLights, buildEnvironment, buildDucts } from './environment.js';
 import { buildModel, disposeModel } from './models.js';
@@ -187,6 +187,8 @@ export class LabScene {
     for (const c of this.cables.values()) disposeCable(c);
     this.setDucts(null);
     this.net.dispose();
+    if (this.env) disposeObject(this.env);
+    disposeCaches();
     this.renderer.dispose();
     this.renderer.forceContextLoss && this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
@@ -234,7 +236,7 @@ export class LabScene {
     }
     const envKey = JSON.stringify(this.layout.console) + '|' + devs.filter((d) => ['hmi', 'motor', 'machine'].includes(DEVICE_DEFS[d.type].zone)).map((d) => d.id).join(',');
     if (force || envKey !== this.envKey) {
-      if (this.env) this.scene.remove(this.env);
+      if (this.env) { this.scene.remove(this.env); disposeObject(this.env); }
       this.env = buildEnvironment(this.layout, devs);
       this.scene.add(this.env);
       this.envKey = envKey;

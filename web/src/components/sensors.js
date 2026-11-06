@@ -110,7 +110,7 @@ register({
     create(ctx) {
       const vcc = ctx.node('VCC'), gnd = ctx.node('GND');
       ctx.add(new Resistor(vcc, gnd, 3000));
-      ctx.add(new VSource(ctx.node('DATA'), gnd, 5, 15000)); // weak internal pull-up / idle high
+      ctx.add(new Resistor(ctx.node('DATA'), vcc, 15000)); // pull-up to the sensor's own VCC (3.3 V on an ESP32)
       return {
         dht: { model: Number(ctx.props.model) },
         visual: { temp: 24, hum: 55, shown: false },

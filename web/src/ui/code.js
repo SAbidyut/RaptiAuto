@@ -152,6 +152,9 @@ const execLineField = StateField.define({
 const SYMBOLS = ['{', '}', '(', ')', ';', '[', ']', '<', '>', '=', '"', "'", '+', '-', '*', '/', '&', '|', '!', '#', ',', '.', ':', '_', '%', '\\'];
 
 export class CodeEditor {
+  /** CodeMirror listens on window / document: without this the whole Editor stays in memory. */
+  destroy() { this.view.destroy(); }
+
   constructor(host, { code, onChange, fontSize = 14, readOnly = false }) {
     this.host = host;
     this.onChange = onChange;

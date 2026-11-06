@@ -156,12 +156,6 @@ export class VSource {
   }
 }
 
-/** Ideal current source pushing `amps` out of node p into the circuit (returning via n). */
-export class ISource {
-  constructor(p, n, amps) { this.p = p; this.n = n; this.amps = amps; this.i = amps; }
-  stamp(s) { s.inj(this.p, this.n, this.amps); }
-}
-
 /** Piece-wise linear diode / LED (anode a, cathode k). */
 export class Diode {
   constructor(a, k, vf = 0.65, rd = 0.05, opts = {}) {
@@ -294,9 +288,6 @@ export class Mosfet {
   }
   measure(V) { this.i = (vAt(V, this.d) - vAt(V, this.s)) * this.cond; }
 }
-
-/** Controlled source helper: a VSource whose value is driven by part logic (e.g. comparator output). */
-export class LogicOut extends VSource {}
 
 /**
  * Switch whose state is decided from node voltages inside the solver iteration

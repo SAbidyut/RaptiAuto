@@ -14,7 +14,7 @@ import { GUIDE } from './guide.js';
 import { Native } from '../native.js';
 import { listLabs, loadLab, deleteLab, saveLab, cloneLab, importLab, exportLab, labThumb } from '../plc/store.js';
 import { LAB_EXAMPLES, buildExample, emptyLab } from '../plc/examples.js';
-import { DEVICE_DEFS, PLC_MODELS } from '../plc/devices/defs.js';
+import { DEVICE_DEFS } from '../plc/devices/defs.js';
 import { PI_EXAMPLES, PICO_EXAMPLES } from '../pi/examples.js';
 import { BOARDS as PI_BOARDS, BOARD_ORDER as PI_ORDER, boardSVG as piBoardSVG } from '../pi/boards.js';
 import { autowire } from '../pi/autowire.js';
@@ -776,7 +776,7 @@ export class Shell {
     const def = p.parts && p.parts.map((x) => getDef(x.type)).find((d) => d && d.board);
     const more = h('button', { class: 'icon-btn sm', 'aria-label': 'More', html: icon('dots', 20), onclick: (e) => { e.stopPropagation(); this.projectMenu(e.currentTarget, p); } });
     return h('div', { class: 'proj-card', onclick: () => this.app.openProject(p) },
-      h('div', { class: 'proj-thumb', html: projectPreview(p) }),
+      h('div', { class: 'proj-thumb', html: safePreview(p) }),
       h('div', { class: 'proj-body' },
         h('div', { class: 'proj-name' }, p.name),
         h('div', { class: 'proj-meta' }, `${def ? def.name : 'No board'} · ${p.parts.length} parts · ${timeAgo(p.updated || Date.now())}`)),
@@ -860,6 +860,9 @@ export class Shell {
     }
   }
 }
+
+/** A thumbnail that cannot break the page (a damaged project shows an empty one). */
+function safePreview(p) { try { return projectPreview(p); } catch (e) { return ''; } }
 
 function partCount() { return allDefs().filter((d) => !d.board && !d.hidden).length; }
 function fmtBytes(n) { return n >= 1048576 ? `${Math.round(n / 1048576)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`; }
@@ -959,14 +962,4 @@ function piArt() {
     <rect x="196" y="20" width="44" height="34" rx="3" fill="#cfd5db"/><rect x="196" y="62" width="44" height="34" rx="3" fill="#cfd5db"/><rect x="190" y="104" width="50" height="40" rx="3" fill="#cfd5db"/>
     <circle cx="16" cy="130" r="4" fill="#ff3b30"/><circle cx="30" cy="130" r="4" fill="#22e55e"/></g>
     <g transform="translate(232 128) scale(1.6)"><path d="M-6-12c-3-2-7-1-7 2 1 3 4 4 7 4zM6-12c3-2 7-1 7 2-1 3-4 4-7 4z" fill="#3ec43e"/><g fill="#c51a4a"><circle cx="0" cy="-2" r="4.2"/><circle cx="-6.5" cy="2" r="4"/><circle cx="6.5" cy="2" r="4"/><circle cx="-3.6" cy="8" r="4"/><circle cx="3.6" cy="8" r="4"/><circle cx="0" cy="13" r="3.4"/></g></g></svg>`;
-}
-
-function plcArt(m) {
-  const w = m.inputs > 8 ? 150 : 120;
-  return `<svg viewBox="0 0 ${w + 10} 100"><g transform="translate(5 5)"><rect width="${w}" height="90" rx="5" fill="#e8eae6"/><rect width="${w}" height="20" rx="3" fill="#2b2f36"/><rect y="70" width="${w}" height="20" rx="3" fill="#2b2f36"/>
-    <rect x="6" y="28" width="22" height="34" rx="3" fill="#16181c"/>
-    ${Array.from({ length: m.inputs }, (_, i) => `<rect x="${40 + i * ((w - 50) / m.inputs)}" y="32" width="3" height="2.4" fill="#22e06a"/>`).join('')}
-    ${Array.from({ length: m.outputs }, (_, i) => `<rect x="${40 + i * ((w - 50) / m.inputs)}" y="42" width="3" height="2.4" fill="#ffb020"/>`).join('')}
-    <text x="${w - 6}" y="60" font-size="9" font-weight="800" fill="#1d4f9c" text-anchor="end" font-family="Space Grotesk, sans-serif">▲ DELTA</text>
-    <text x="${w - 6}" y="66" font-size="5.5" font-weight="700" fill="#374151" text-anchor="end" font-family="Inter, sans-serif">${m.short}</text></g></svg>`;
 }

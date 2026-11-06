@@ -23,7 +23,9 @@ export class CircuitHw {
     const n = p.n;
     const st = e.pins && e.pins.get(n);
     if (!st) return;
-    this.advance();
+    // the browser clock ticks in 0.1 ms steps: every pin change moves the circuit on by at least
+    // 10 µs, so a 10 µs HC-SR04 trigger pulse is never 0 µs long in circuit time
+    if (e.lastWall != null) e.advanceTo(Math.max(now(), e.lastWall + 0.01)); else this.advance();
     if (p.mode === 'out') {
       if (st.servoUs != null) e.setServo(n, null);
       if (st.tone) e.noTone(n);
