@@ -77,7 +77,7 @@ export class PlcCpu {
   R(op) {
     if (!op.ix) return op;
     const add = op.ix.dev === 'E' ? this.E[op.ix.idx] : this.F[op.ix.idx];
-    if (op.dev === 'K' || op.dev === 'H') return { dev: op.dev, val: op.val + add };
+    if (op.dev === 'K' || op.dev === 'H') return { dev: op.dev, val: op.val + add, raw: op.raw == null ? undefined : op.raw + add };
     return { ...op, idx: op.idx + add, ix: null };
   }
 
@@ -156,7 +156,8 @@ export class PlcCpu {
   getDWord(op) {
     if (op.ix) op = this.R(op);
     switch (op.dev) {
-      case 'K': case 'H': return op.val | 0;
+      case 'K': return op.val | 0;
+      case 'H': return (op.raw == null ? op.val : op.raw) | 0; // HFFFF is 65535 in 32 bits, not -1
       case 'FL': return Math.trunc(op.val) | 0;
       case 'D': return op.idx < 9999 ? ((this.D[op.idx + 1] << 16) | (this.D[op.idx] & 0xFFFF)) : (this.D[op.idx] || 0);
       case 'C': return this.CV[op.idx] || 0;
@@ -409,14 +410,18 @@ export class PlcCpu {
     this.callStack.length = 0;
     const loops = []; // FOR … NEXT: {start, left}
     let pc = 0, guard = 0;
+    // a step (STL Sn) may head several networks: its mode is worked out once per scan, so every
+    // block of the step gets the same final "no power" pass when the step ends
+    const heads = this.stlSeen || (this.stlSeen = new Set());
+    heads.clear();
     while (pc < R.length) {
-      if (++guard > 20000) { this.errorFlag = true; this.M[1067] = 1; break; } // endless jump loop: watchdog
+      if (++guard > 400000) { this.errorFlag = true; this.M[1067] = 1; break; } // endless jump loop: watchdog
       const r = R[pc];
       let rail = this.mcOff ? 0 : 1;
       this.curStep = -1;
       if (r.step >= 0) {
         const n = r.step;
-        if (r.stlHead) { const act = this.S[n]; this.stlMode[n] = act ? 1 : this.stlWas[n] ? 2 : 0; this.stlWas[n] = act; }
+        if (r.stlHead && !heads.has(n)) { heads.add(n); const act = this.S[n]; this.stlMode[n] = act ? 1 : this.stlWas[n] ? 2 : 0; this.stlWas[n] = act; }
         const mode = this.stlMode[n];
         if (mode === 0) { if (r.live) { for (const c of r.live.cells) c.fill(0); r.live.rows.fill(0); } pc++; continue; }
         if (mode === 2 || !this.S[n]) rail = 0;

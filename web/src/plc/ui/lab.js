@@ -256,7 +256,7 @@ export class LabScreen {
   /** Program another PLC: its ladder opens and the laptop's USB cable moves over to it. */
   selectPlc(id) {
     const P = this.project;
-    if (this.sys) { const rt = this.sys.plc; if (rt && rt.cpu.powered) this.sys.saveLatched(rt); }
+    if (this.sys) this.saveAllLatched();
     if (!switchPlc(P, id)) return;
     this.activeId = id;
     const pc = P.devices.find((d) => d.type === 'laptop');
@@ -361,9 +361,14 @@ export class LabScreen {
   undo() { if (!this.history.length) { toast('Nothing to undo'); return; } this.future.push(this.snapshot); this.restoreHw(this.history.pop()); Native.vibrate(6); }
   redo() { if (!this.future.length) { toast('Nothing to redo'); return; } this.history.push(this.snapshot); this.restoreHw(this.future.pop()); Native.vibrate(6); }
 
+  /** Latched memory of every powered PLC (a lab may hold a master and its slaves). */
+  saveAllLatched() {
+    for (const rt of this.sys.byKind('plc')) if (rt.cpu && rt.cpu.powered) this.sys.saveLatched(rt);
+  }
+
   saveNow() {
     const sys = this.sys;
-    if (sys && sys.plc && sys.plc.cpu.powered) sys.saveLatched(sys.plc);
+    if (sys) this.saveAllLatched();
     if (this.scene) { const v = this.scene.views(); if (v.view) this.project.view = v.view; if (v.view2d) this.project.view2d = v.view2d; }
     if (!saveLab(this.project)) toast('Storage is full — could not save', 'error');
   }
@@ -447,8 +452,7 @@ export class LabScreen {
 
   stopSim(silent = false) {
     if (!this.sys) return;
-    const plc = this.sys.plc;
-    if (plc && plc.cpu.powered) this.sys.saveLatched(plc);
+    this.saveAllLatched();
     for (const v of this.sys.byKind('vfd')) this.sys.persistVfd(v);
     this.sys = null;
     this.audio.stopAll();

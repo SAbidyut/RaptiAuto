@@ -672,14 +672,20 @@ function rungILPlain(rung, onStepBus) {
 
 // ------------------------------------------------------------------ compiler
 /** 16 / 32-bit rules of one operand: returns an error text or null. */
-function widthCheck(op, cls, wide) {
+function widthCheck(op, cls, wide, set32 = false) {
   if (op.dev === 'FL' && cls !== 'fsrc') return 'a floating-point constant (F…) only goes into floating-point instructions';
   if (!['word', 'wordw', 'fsrc', 'fdst', 'dreg'].includes(cls)) return null;
   if (op.dev && op.dev[0] === 'K' && op.n) {
     if (!wide && op.n > 4) return `${op.text}: K5 … K8 only in 32-bit (D…) instructions — use K1 … K4`;
     return null;
   }
-  if (!wide) return null;
+  if (!wide) {
+    if (set32) return null; // DCNT: a 32-bit set value
+    // a 16-bit word holds K-32768 … K32767 / H0 … HFFFF (TMR K40000 would wrap and never time out)
+    if (op.dev === 'K' && (op.val < -32768 || op.val > 32767)) return `${op.text}: a 16-bit value is K-32768 … K32767 — use the 32-bit (D…) instruction`;
+    if (op.dev === 'H' && op.raw > 0xFFFF) return `${op.text}: a 16-bit value is H0 … HFFFF — use the 32-bit (D…) instruction`;
+    return null;
+  }
   if (op.dev === 'T') return `${op.text}: timers are 16-bit — 32-bit instructions use D, C200 … C255, E or KnM`;
   if (op.dev === 'C' && op.idx < 200) return `${op.text}: C0 … C199 are 16-bit — use C200 … C255 in 32-bit instructions`;
   if (op.dev === 'F') return `${op.text}: in 32-bit instructions use E (E and F together hold the value)`;
@@ -838,7 +844,7 @@ export function compileProgram(program, model) {
         const r = checkOperand(el.a[i], cls, ctxFor(row, col));
         if (r.err) errors.push({ ...loc(row, col), msg: `${mnemonic(el)}: ${r.err}` });
         else if (r.op) {
-          const w = widthCheck(r.op, cls, wide || ((cls === 'fsrc' || cls === 'fdst') && flt));
+          const w = widthCheck(r.op, cls, wide || ((cls === 'fsrc' || cls === 'fdst') && flt), el.t === 'DCNT');
           if (w) errors.push({ ...loc(row, col), msg: `${mnemonic(el)}: ${w}` });
         }
         ops.push(r.op || null);

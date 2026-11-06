@@ -1157,7 +1157,8 @@ function plcSlave(cpu, fc, addr, n, values) {
     if (a >= 0x1000 && a < 0x2000) return { dev: 'D', idx: a - 0x1000 };
     if (a >= 0x9000 && a < 0x9000 + 5904) return { dev: 'D', idx: 4096 + a - 0x9000 };
     if (a >= 0x0600 && a < 0x0700) return { dev: 'T', idx: a - 0x0600, word: true };
-    if (a >= 0x0E00 && a < 0x0EC8) return { dev: 'C', idx: a - 0x0E00, word: true };
+    if (a >= 0x0E00 && a < 0x0F00) return { dev: 'C', idx: a - 0x0E00, word: true };
+    if (a < 0x0400) return { dev: 'S', idx: a, bit: true };
     if (a >= 0x0800 && a < 0x0E00) return { dev: 'M', idx: a - 0x0800, bit: true };
     if (a >= 0xB000 && a < 0xB000 + 2560) return { dev: 'M', idx: 1536 + a - 0xB000, bit: true };
     if (a >= 0x0500 && a < 0x0600) return { dev: 'Y', idx: a - 0x0500, bit: true };

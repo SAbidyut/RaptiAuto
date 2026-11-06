@@ -195,7 +195,7 @@ export function sprintf(fmt, args, avr = false) {
       const w = parseInt(width, 10);
       if (s.length < w) {
         if (flags.includes('-')) s = s.padEnd(w, ' ');
-        else if (flags.includes('0') && 'diuxXofFeEgG'.includes(conv) && prec === null) {
+        else if (flags.includes('0') && 'diuxXofFeEgG'.includes(conv) && (prec === null || 'fFeEgG'.includes(conv))) {
           const neg = s[0] === '-' || s[0] === '+' ? s[0] : '';
           s = neg + s.slice(neg.length).padStart(w - neg.length, '0');
         } else s = s.padStart(w, ' ');

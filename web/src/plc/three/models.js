@@ -3,7 +3,7 @@
 // in the device-local frame of devices/defs.js (mm, origin bottom-centre-back, +z = front).
 import {
   THREE, MAT, FLIP, mat, ledMat, setLed, canvasTexture, decal, rbox, box, cyl, M4, alongDir, Builder, addScrew, addSocket,
-  glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M,
+  glowSprite, labelSprite, txt, rrect, deltaLogo, offsetMat, FONT, FONT_D, FONT_M, disposeObject,
 } from './kit.js';
 import { DEVICE_DEFS, PLC_MODELS, PLC_GEO, plcTermX, plcTermLabel, devicePorts, deviceProps, encoderPpr } from '../devices/defs.js';
 import { drawSegDisplay } from './sevenseg.js';
@@ -1362,10 +1362,7 @@ export function buildModel(dev, ctx) {
 }
 
 export function disposeModel(model) {
-  model.group.traverse((o) => {
-    if (o.geometry && !o.geometry.parameters) o.geometry.dispose();
-    if (o.material && o.material.map && o.material.map.userData && o.material.map.userData.canvas && o.userData.tex) o.material.map.dispose();
-  });
+  disposeObject(model.group);
 }
 
 export { LAMP_COLORS, CAP_COLORS };

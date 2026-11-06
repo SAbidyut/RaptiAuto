@@ -68,6 +68,7 @@ class JsonRef {
     if (typeof def === 'string' || def instanceof Ptr || Array.isArray(def) || def instanceof AStr) return typeof v === 'string' ? v : def;
     return v === undefined || v === null ? def : this;
   }
+  truthy() { return this.as_bool(); }
   valueOf() { const v = this.val; return typeof v === 'number' ? v : typeof v === 'boolean' ? +v : 0; }
   toString() { const v = this.val; return v === undefined || v === null ? '' : typeof v === 'string' ? v : typeof v === 'number' ? numStr(v) : typeof v === 'boolean' ? String(v) : toJson(v); }
   printTo() { return this.toString(); }

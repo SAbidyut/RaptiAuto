@@ -351,6 +351,9 @@ export class Compiler {
         case 'Construct':
           fi.calls.add('#ctor:' + n.type.name);
           break;
+        case 'Var':
+          if (n.type && this.structs.has(n.type.name)) fi.calls.add('#ctor:' + n.type.name);
+          break;
         default:
       }
       for (const k in n) {
@@ -875,6 +878,10 @@ export class Compiler {
 
   toBool(e, node) {
     if (e.t.k === 'String' || e.t.k === 'struct') throw this.err(`could not convert '${typeName(e.t)}' to 'bool'`, node);
+    if (e.t.k === 'any' && !e.gen) {
+      const fn0 = e.fn;
+      return E(this.T.bool, (f) => { const v = fn0(f); return (v && typeof v === 'object' && typeof v.truthy === 'function' ? v.truthy() : v) ? 1 : 0; });
+    }
     if (e.t.k === 'obj') {
       // `if (Serial)` / `if (!bme.begin())` -> objects are truthy
       const fn = e.fn;
@@ -1320,8 +1327,9 @@ export class Compiler {
     switch (t.k) {
       case 'int': case 'float': {
         if (from.k === 'int' || from.k === 'float' || from.k === 'any') {
-          const c = coercer(t);
+          let c = coercer(t);
           if (!c) return e;
+          if (from.k === 'any' && t.isBool) c = (v) => ((v && typeof v === 'object' && typeof v.truthy === 'function' ? v.truthy() : v) ? 1 : 0);
           if (from.k === 'int' && t.k === 'int' && !t.isBool) {
             const fits = from.isBool || (from.bits < t.bits && (from.uns || !t.uns)) || (from.bits === t.bits && from.uns === t.uns);
             if (fits) return { ...e, t };
@@ -1336,7 +1344,7 @@ export class Compiler {
         }
         if (from.k === 'obj') {
           if (t.isBool) return this.mapE(e, t, (v) => (v ? 1 : 0));
-          return this.mapE(e, t, (v) => (typeof v === 'number' ? v : (v && v.valueOf ? +v.valueOf() || 0 : 0)));
+          { const c = coercer(t); return this.mapE(e, t, (v) => c(typeof v === 'number' ? v : (v && v.valueOf ? +v.valueOf() || 0 : 0))); }
         }
         if (from.k === 'String') throw this.err(`cannot convert 'String' to '${typeName(t)}' (use .toInt() or .toFloat())`, node);
         if (from.k === 'void') throw this.err(`void value not ignored as it ought to be`, node);
@@ -1482,6 +1490,9 @@ export class Compiler {
         const eq = (a, b) => {
           if ((a === null || a === 0) && (b === null || b === 0)) return true;
           if (a instanceof Ptr && b instanceof Ptr) return a.a === b.a && a.i === b.i;
+          // a pointer to the start of an array equals the array (buf + 0 == buf)
+          if (a instanceof Ptr && Array.isArray(b)) return a.a === b && a.i === 0;
+          if (b instanceof Ptr && Array.isArray(a)) return b.a === a && b.i === 0;
           if (typeof a === 'string' && typeof b === 'string') return a === b;
           if ((typeof a === 'string' || Array.isArray(a)) && (typeof b === 'string' || Array.isArray(b))) return cstr(a) === cstr(b);
           return a === b;
@@ -1649,7 +1660,7 @@ export class Compiler {
     switch (node.op) {
       case '!':
         if (t.k === 'String') throw this.err("no match for 'operator!' (operand type is 'String')", node);
-        return this.lift1(T.bool, a, t.k === 'obj' ? (v) => ((v && typeof v.truthy === 'function' ? v.truthy() : v) ? 0 : 1) : (v) => (v ? 0 : 1));
+        return this.lift1(T.bool, a, t.k === 'obj' || t.k === 'any' ? (v) => ((v && typeof v.truthy === 'function' ? v.truthy() : v) ? 0 : 1) : (v) => (v ? 0 : 1));
       case '-': {
         if (t.k === 'float' || t.k === 'any') return this.lift1(t, a, (v) => -v);
         if (t.k !== 'int') throw this.err(`wrong type argument to unary minus`, node);
@@ -2297,10 +2308,9 @@ export class Compiler {
       });
     }
     if (meta.typed) {
-      // implementation needs static types: pass type descriptors as first argument
       const types = args.map((a) => a.t);
-      const impl0 = meta.fn;
-      meta = { ...meta, fn: (...vals) => impl0(types, ...vals) };
+      if (meta.fnWithThis) { const fw0 = meta.fnWithThis; meta = { ...meta, fnWithThis: (o, ...vals) => fw0(o, types, ...vals) }; }
+      else { const impl0 = meta.fn; meta = { ...meta, fn: (...vals) => impl0(types, ...vals) }; }
     }
     if (meta.compile) {
       // compile-time specialisation hook: returns E

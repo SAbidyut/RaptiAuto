@@ -1,5 +1,5 @@
 // Arduino String class methods and C string (<string.h>, <stdlib.h>, <ctype.h>) helpers.
-import { AStr, Ptr, Ref, RuntimeError, cstr, strToArr, sprintf, fmtFloat } from './values.js';
+import { AStr, Ptr, Ref, RuntimeError, cstr, strToArr, sprintf, fmtFloat, cloneValue } from './values.js';
 
 export function atol(s) {
   const m = /^\s*([+-]?\d+)/.exec(s);
@@ -91,6 +91,24 @@ function bufOf(p) {
   return [null, 0];
 }
 
+/** C strtol: whitespace, sign, base 0 (0x… hex, 0… octal), and *end set past the last digit used. */
+function strtol(s, end, base) {
+  const str = cstr(s);
+  let i = 0;
+  while (i < str.length && ' \t\n\r\f\v'.includes(str[i])) i++;
+  let sign = 1;
+  if (str[i] === '+' || str[i] === '-') { if (str[i] === '-') sign = -1; i++; }
+  let b = base | 0;
+  if ((b === 0 || b === 16) && str[i] === '0' && (str[i + 1] === 'x' || str[i + 1] === 'X') && /[0-9a-fA-F]/.test(str[i + 2] || '')) { i += 2; b = 16; }
+  else if (b === 0) b = str[i] === '0' ? 8 : 10;
+  const start = i;
+  let v = 0;
+  for (; i < str.length; i++) { const dg = parseInt(str[i], 36); if (Number.isNaN(dg) || dg >= b) break; v = v * b + dg; }
+  if (i === start) i = 0; // no number: end = the start of the string
+  if (end instanceof Ref) { const [a, off] = bufOf(s); if (a) end.set(new Ptr(a, off + i)); }
+  return sign * v;
+}
+
 function writeStr(dst, s, max = Infinity) {
   const [a, off] = bufOf(dst);
   if (!a || typeof a === 'string') throw new RuntimeError('Destination is not a writable char array');
@@ -176,7 +194,7 @@ export function makeStringNatives(rt, avr) {
       ret: 'void', args: ['raw'],
       fn: (p, v, n) => {
         const [a, off] = bufOf(p);
-        if (!a) return p;
+        if (!a) { if (p && p.__struct && v === 0) zeroStruct(p); return p; } // memset(&s, 0, sizeof(s))
         if (a.length && Array.isArray(a[0])) { fillDeep(a, v); return p; }
         for (let i = 0; i < n && off + i < a.length; i++) {
           if (typeof a[off + i] === 'number') a[off + i] = v & 255;
@@ -190,7 +208,11 @@ export function makeStringNatives(rt, avr) {
       fn: (d, s, n) => {
         const [da, doff] = bufOf(d);
         const [sa, soff] = bufOf(s);
-        if (!da) return d;
+        if (!da) {
+          // memcpy(&dst, &src, sizeof(S)) between two structs
+          if (d && d.__struct && s && s.__struct) for (const k of Object.keys(s)) d[k] = cloneValue(s[k]);
+          return d;
+        }
         if (typeof sa === 'string') { for (let i = 0; i < n; i++) da[doff + i] = i < sa.length - soff ? sa.charCodeAt(soff + i) : 0; return d; }
         if (!sa) return d;
         const tmp = sa.slice(soff, soff + n);
@@ -209,8 +231,8 @@ export function makeStringNatives(rt, avr) {
     atoi: { ret: 'int', args: ['raw'], fn: (s) => atol(cstr(s)) },
     atol: { ret: 'long', args: ['raw'], fn: (s) => atol(cstr(s)) },
     atof: { ret: 'double', args: ['raw'], fn: (s) => atof(cstr(s)) },
-    strtol: { ret: 'long', args: ['raw', 'raw'], fn: (s, end, base) => parseInt(cstr(s).trim(), base || 10) || 0 },
-    strtoul: { ret: 'ulong', args: ['raw', 'raw'], fn: (s, end, base) => (parseInt(cstr(s).trim(), base || 10) || 0) >>> 0 },
+    strtol: { ret: 'long', args: ['raw', 'raw'], fn: (s, end, base) => strtol(s, end, base) | 0 },
+    strtoul: { ret: 'ulong', args: ['raw', 'raw'], fn: (s, end, base) => strtol(s, end, base) >>> 0 },
     strtod: { ret: 'double', args: ['raw', 'raw'], fn: (s) => atof(cstr(s)) },
     itoa: { ret: 'cstr', args: ['num', 'raw'], fn: (v, d, base) => writeStr(d, intToStr(v, base, avr ? 16 : 32)) },
     ltoa: { ret: 'cstr', args: ['num', 'raw'], fn: (v, d, base) => writeStr(d, intToStr(v, base, 32)) },
