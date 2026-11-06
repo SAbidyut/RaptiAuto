@@ -75,7 +75,7 @@ export class CircuitCanvas {
     this.svg.addEventListener('pointercancel', (e) => this.onUp(e, true), opts);
     this.svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !this.pointers.size) this.hideTip(); });
     this.svg.addEventListener('wheel', (e) => this.onWheel(e), opts);
-    this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.svg.addEventListener('contextmenu', (e) => { e.preventDefault(); this.mouseMenu(e); });
     this.ro = new ResizeObserver(() => this.onResize());
     this.ro.observe(this.host);
   }
@@ -538,9 +538,11 @@ export class CircuitCanvas {
       return;
     }
     const hit = this.hit(wx, wy, !!this.wiring);
-    const d = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx, wy, hit, t: performance.now(), dragging: null, view: { ...this.view }, zoomCand: first, mouse: e.pointerType === 'mouse', button: e.button };
+    const d = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx, wy, hit, t: performance.now(), dragging: null, view: { ...this.view }, zoomCand: first, mouse: e.pointerType === 'mouse', button: e.button, boxKey: e.shiftKey || e.ctrlKey || e.metaKey };
     this.down = d;
     if (hit.kind === 'pin' && !this.wiring) this.showTip(hit.pin, e.clientX, e.clientY);
+    // a mouse: the right button opens the menu (contextmenu), the right / middle button drags the view
+    if (d.mouse && d.button !== 0) return;
     if (hit.kind === 'part' || hit.kind === 'wire' || (hit.kind === 'pin' && hit.part && !getDef(hit.part.type).connectorOnly)) {
       if (this.selectTool && this.boxable(hit)) return;
       this.longPress = setTimeout(() => {
@@ -552,7 +554,7 @@ export class CircuitCanvas {
         this.down = null;
         this.ed.contextMenu && this.ed.contextMenu(target, e.clientX, e.clientY);
       }, 520);
-    } else if (hit.kind === 'none' && !this.wiring && !first) {
+    } else if (hit.kind === 'none' && !this.wiring && !first && !d.mouse) {
       // press and hold on empty space, then drag: selection box
       this.longPress = setTimeout(() => {
         if (this.down !== d || d.dragging) return;
@@ -561,6 +563,19 @@ export class CircuitCanvas {
         Native.vibrate(14);
       }, 380);
     }
+  }
+
+  /** Right click on a part or wire (a PC mouse): its menu at once, like a long press on a phone. */
+  mouseMenu(e) {
+    if (this.mode !== 'edit' || this.wiring || !this.ed.contextMenu || (this.down && this.down.dragging)) return;
+    const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
+    const hit = this.hit(wx, wy, false);
+    const target = hit.kind === 'wire' ? { kind: 'wire', id: hit.wire.id } : hit.part ? { kind: 'part', id: hit.part.id } : null;
+    if (!target) return;
+    this.cancelLongPress();
+    this.down = null;
+    this.select(target);
+    this.ed.contextMenu(target, e.clientX, e.clientY);
   }
 
   /** Can a drag that starts on this hit draw a selection box (with the Select tool on)? */
@@ -614,8 +629,8 @@ export class CircuitCanvas {
     if (!d.dragging && dist > (e.pointerType === 'mouse' ? 3 : 7)) {
       this.cancelLongPress();
       const hit = d.hit;
-      if (this.wiring) d.dragging = 'pan';
-      else if (this.mode === 'edit' && (d.boxArmed || (this.selectTool && this.boxable(hit)) || (d.mouse && d.button === 0 && hit.kind === 'none'))) {
+      if (this.wiring || (d.mouse && d.button !== 0)) d.dragging = 'pan';
+      else if (this.mode === 'edit' && (d.boxArmed || (this.selectTool && this.boxable(hit)) || (d.mouse && d.button === 0 && hit.kind === 'none' && d.boxKey))) {
         d.dragging = 'box';
         if (!this.box.active) this.box.start(d.sx, d.sy);
         this.hideTip();
@@ -692,6 +707,7 @@ export class CircuitCanvas {
       return;
     }
     if (cancelled) { if (d.dragging === 'part') this.finishPartDrag(true); if (d.dragging === 'box' || d.boxArmed) this.box.cancel(); this.hideTip(); return; }
+    if (d.mouse && d.button !== 0 && !d.dragging) return; // a right / middle click is not a tap
     const [wx, wy] = this.screenToWorld(e.clientX, e.clientY);
     if (!d.dragging) {
       if (d.boxArmed) this.box.cancel();

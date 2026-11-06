@@ -116,7 +116,12 @@ function orientAt(obj, pos, dir, side = null) {
   const y = dir.clone().normalize();
   if (side) {
     const x = V(side);
-    x.addScaledVector(y, -x.dot(y)).normalize();
+    x.addScaledVector(y, -x.dot(y));
+    // a port that points along the device's side axis (the laptop's USB on its left edge) has no
+    // side left over: take the horizontal at right angles to the port instead of a zero vector
+    if (x.lengthSq() < 1e-6) x.set(-y.z, 0, y.x);
+    if (x.lengthSq() < 1e-6) x.set(1, 0, 0);
+    x.normalize();
     const z = new THREE.Vector3().crossVectors(x, y);
     obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
     return;

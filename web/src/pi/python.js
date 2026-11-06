@@ -4,6 +4,7 @@
 import { loadMicroPython } from '../../vendor/micropython/micropython.mjs';
 import { PICO_W_LED } from './gpio.js';
 import { netBridge } from './netbridge.js';
+import { asset } from '../site.js';
 
 const PI_ONLY = ['RPi/__init__.py', 'RPi/GPIO.py', 'gpiozero.py', 'board.py', 'adafruit_dht.py', 'signal.py', 'smbus2.py', 'smbus.py', 'serial.py', 'flask.py', 'http/__init__.py', 'http/server.py',
   'paho/__init__.py', 'paho/mqtt/__init__.py', 'paho/mqtt/client.py', 'paho/mqtt/publish.py', 'paho/mqtt/subscribe.py', 'psutil.py', 'threading.py',
@@ -15,7 +16,7 @@ let wasmModule = null;
 export function compileWasm(loader) {
   if (!wasmModule) {
     wasmModule = (async () => {
-      const bytes = loader ? await loader() : await (await fetch('micropython.wasm')).arrayBuffer();
+      const bytes = loader ? await loader() : await (await fetch(asset('micropython.wasm'))).arrayBuffer();
       return WebAssembly.compile(bytes);
     })();
     wasmModule.catch(() => { wasmModule = null; });

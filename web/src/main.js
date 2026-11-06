@@ -2,9 +2,11 @@
 import './components/index.js';
 import { App } from './ui/app.js';
 import { EXAMPLES } from './examples/index.js';
+import { installMouseScroll } from './ui/mouse-scroll.js';
 
 function boot() {
   const root = document.getElementById('app');
+  installMouseScroll();
   const app = new App(root);
   window.__rapti = app;
   window.__examples = EXAMPLES;

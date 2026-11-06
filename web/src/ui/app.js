@@ -6,6 +6,7 @@ import { Editor } from './editor.js';
 import { popBack, toast } from './widgets.js';
 import { SHARED_DEFS } from '../components/draw.js';
 import { LiveWeb, setLiveWeb } from '../net/live.js';
+import { asset } from '../site.js';
 
 export class App {
   constructor(root) {
@@ -120,7 +121,7 @@ function loadBundle(file, global, label) {
   const t = setTimeout(() => document.body.appendChild(veil), 120);
   bundles[file] = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = file;
+    s.src = asset(file);
     s.onload = () => (window[global] ? resolve(window[global]) : reject(new Error(file)));
     s.onerror = () => { bundles[file] = null; reject(new Error(file)); };
     document.head.appendChild(s);
