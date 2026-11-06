@@ -758,15 +758,17 @@ class Button(DigitalInputDevice):
             self._hold_handle = None
         if self.is_active and self._when_held:
             t0 = _time.ticks_ms()
-            fired = [False]
+            fired = [0]
 
             def chk():
                 if not self.is_active:
                     H.stop(self._hold_handle)
                     self._hold_handle = None
                     return
-                if (not fired[0] or self.hold_repeat) and _time.ticks_diff(_time.ticks_ms(), t0) >= self.hold_time * 1000 * (1 + (1 if fired[0] else 0)):
-                    fired[0] = True
+                # when_held after hold_time, then (hold_repeat) once every further hold_time
+                n = fired[0]
+                if (n == 0 or self.hold_repeat) and _time.ticks_diff(_time.ticks_ms(), t0) >= self.hold_time * 1000 * (n + 1):
+                    fired[0] = n + 1
                     H.call(self._when_held, self)
 
             self._hold_handle = H.every(20, chk)

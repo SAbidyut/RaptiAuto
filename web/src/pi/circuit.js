@@ -143,7 +143,8 @@ export class PiCircuit extends Editor {
       if (!this.engine) return;
       const dt = Math.min(0.1, (t - this.lastFrame) / 1000);
       this.lastFrame = t;
-      this.engine.tick(t);
+      // the frame time can be older than the clock Python already moved on to: never step back
+      this.engine.tick(this.engine.lastWall != null ? Math.max(t, this.engine.lastWall) : t);
       if (!this.engine) return;
       if (this.pi.onCircuitFrame) this.pi.onCircuitFrame(dt);
       if (this.pi.tab === 'circuit') { this.canvas.frame(dt); this.updateStatus(); }

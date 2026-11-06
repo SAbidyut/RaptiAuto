@@ -92,9 +92,14 @@ class Timer(Thread):
             _rpi_hw.stop(h[0])
             self._target(*self._args, **self._kwargs)
         h[0] = _rpi_hw.every(int(self.interval * 1000), fire)
+        self._h = h
 
     def cancel(self):
-        pass
+        h = getattr(self, '_h', None)
+        if h and h[0]:
+            import _rpi_hw
+            _rpi_hw.stop(h[0])
+            h[0] = None
 
 
 def current_thread():

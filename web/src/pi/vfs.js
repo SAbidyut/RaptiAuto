@@ -124,6 +124,7 @@ export class VFS {
   move(src, dst) {
     if (this.dirs.has(dst)) dst = (dst === '/' ? '' : dst) + '/' + basename(src);
     if (src === dst) return dst;
+    if (dst.startsWith(src + '/')) throw new Error(`cannot move '${src}' to a subdirectory of itself, '${dst}'`);
     this.copy(src, dst);
     this.remove(src, true);
     return dst;

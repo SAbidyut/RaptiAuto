@@ -624,6 +624,9 @@ export class PiScreen {
     this.audio.close && this.audio.close();
     this.offSys(); this.offGpio();
     if (this.fullscreen) Native.setImmersive(false);
+    // the Desktop clock timer and CodeMirror's window listeners would keep this whole screen alive
+    clearTimeout(this.desktop.clockT);
+    try { this.thonny.editor.view.destroy(); } catch (e) { /* ignore */ }
     this.root.remove();
   }
 

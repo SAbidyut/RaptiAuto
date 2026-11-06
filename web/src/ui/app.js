@@ -29,7 +29,7 @@ export class App {
   start() {
     this.showHome();
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') this.handleBack();
+      if (e.key === 'Escape' && !e.defaultPrevented) this.handleBack(); // not when the code editor used it (search panel)
       if ((e.ctrlKey || e.metaKey) && e.key === 's' && (this.editor || this.lab) && !this.pi) { e.preventDefault(); (this.editor || this.lab).saveNow(); toast('Saved', 'ok'); }
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.onPause(); else this.onResume(); });
@@ -89,7 +89,12 @@ export class App {
 
   /** Android back button. Returns true if handled (false lets the app close). */
   handleBack() {
-    if (popBack()) return true;
+    try {
+      if (popBack()) return true;
+    } catch (e) {
+      console.error(e); // a failing back step must not close the app
+      return true;
+    }
     const now = Date.now();
     if (this.lastBack && now - this.lastBack < 1800) return false;
     this.lastBack = now;

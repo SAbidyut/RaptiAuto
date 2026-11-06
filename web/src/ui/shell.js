@@ -776,7 +776,7 @@ export class Shell {
     const def = p.parts && p.parts.map((x) => getDef(x.type)).find((d) => d && d.board);
     const more = h('button', { class: 'icon-btn sm', 'aria-label': 'More', html: icon('dots', 20), onclick: (e) => { e.stopPropagation(); this.projectMenu(e.currentTarget, p); } });
     return h('div', { class: 'proj-card', onclick: () => this.app.openProject(p) },
-      h('div', { class: 'proj-thumb', html: projectPreview(p) }),
+      h('div', { class: 'proj-thumb', html: safePreview(p) }),
       h('div', { class: 'proj-body' },
         h('div', { class: 'proj-name' }, p.name),
         h('div', { class: 'proj-meta' }, `${def ? def.name : 'No board'} · ${p.parts.length} parts · ${timeAgo(p.updated || Date.now())}`)),
@@ -860,6 +860,9 @@ export class Shell {
     }
   }
 }
+
+/** A thumbnail that cannot break the page (a damaged project shows an empty one). */
+function safePreview(p) { try { return projectPreview(p); } catch (e) { return ''; } }
 
 function partCount() { return allDefs().filter((d) => !d.board && !d.hidden).length; }
 function fmtBytes(n) { return n >= 1048576 ? `${Math.round(n / 1048576)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`; }

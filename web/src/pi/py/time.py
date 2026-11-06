@@ -8,8 +8,14 @@ _DAY = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
 _DAYL = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 
 
+try:
+    from _rapti import ticks_us as _us  # 64-bit: does not wrap like ticks_us (2**30 us = 17.9 min)
+except Exception:
+    _us = _t.ticks_us
+
+
 def perf_counter():
-    return _t.ticks_us() / 1000000
+    return _us() / 1000000
 
 
 def monotonic():
@@ -21,7 +27,7 @@ def process_time():
 
 
 def perf_counter_ns():
-    return _t.ticks_us() * 1000
+    return _us() * 1000
 
 
 def monotonic_ns():
