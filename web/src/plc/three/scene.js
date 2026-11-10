@@ -74,7 +74,7 @@ export class LabScene {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(38, 1, 5, 14000);
     this.camera.position.set(0, 950, 1900);
-    setupLights(this.scene, renderer, { shadows: quality !== 'low' });
+    this.lights = setupLights(this.scene, renderer, { shadows: quality !== 'low' });
     const c = new OrbitControls(this.camera, renderer.domElement);
     c.enableDamping = true;
     c.dampingFactor = 0.1;
@@ -242,8 +242,45 @@ export class LabScene {
       this.envKey = envKey;
     }
     this.syncCables();
+    this.fitShadow();
     this.renderer.shadowMap.needsUpdate = true;
     this.dirty = true;
+  }
+
+  /**
+   * Fit the key light's shadow camera to what is on the bench. It was a fixed box: machines far to the
+   * right (a second machine column, the tank, the cylinders) cast no shadow, and a small lab wasted
+   * most of the shadow map, so its shadows were blurred.
+   */
+  fitShadow() {
+    const key = this.lights && this.lights.key;
+    if (!key || !key.castShadow) return;
+    const box = new THREE.Box3();
+    // what casts a shadow: the devices and the casting parts of the room (enclosure, console), not the
+    // desk or the floor; a shadow falls at the same light-space x / y as its caster
+    for (const e of this.models.values()) box.expandByObject(e.model.group);
+    if (this.env) this.env.traverse((o) => { if (o.isMesh && o.castShadow) box.expandByObject(o); });
+    if (box.isEmpty()) return;
+    const c = key.shadow.camera;
+    key.updateMatrixWorld(true); key.target.updateMatrixWorld(true);
+    c.position.copy(key.position); c.lookAt(key.target.position); c.updateMatrixWorld(true);
+    const inv = c.matrixWorldInverse.copy(c.matrixWorld).invert();
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    const v = new THREE.Vector3();
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      v.set(x, y, z).applyMatrix4(inv);
+      x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); z0 = Math.min(z0, v.z); z1 = Math.max(z1, v.z);
+    }
+    const m = 40;
+    c.left = x0 - m; c.right = x1 + m; c.bottom = y0 - m; c.top = y1 + m;
+    c.near = Math.max(10, -z1 - m); c.far = -z0 + 1600; // the desk behind a caster lies deeper than the caster itself
+    c.updateProjectionMatrix();
+    // a larger area needs a larger map to stay as sharp (capped for phones)
+    const span = Math.max(x1 - x0, y1 - y0);
+    const size = this.quality === 'high' && span > 2600 ? 4096 : 2048;
+    const max = this.renderer.capabilities.maxTextureSize || 4096;
+    const want = Math.min(size, max);
+    if (key.shadow.mapSize.x !== want) { key.shadow.mapSize.set(want, want); if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; } }
   }
 
   syncCables() {

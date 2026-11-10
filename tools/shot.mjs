@@ -268,10 +268,10 @@ const scenarios = {
     await page.screenshot({ path: join(outDir, 'labtasks-sheet.png') });
   },
   async labnew(page) {
-    // a new PLC project is an empty bench (2.25): no device, no wire, the "Add a device" card
+    // a new PLC project is an empty bench (2.25): no device, no wire; nothing pops up over it
     await scenarios.page(page, 'plclab');
     await page.click('.lab-intro .btn-primary'); await sleep(2600);
-    const st = await page.evaluate(() => { const l = window.__rapti.lab; return { devices: l.project.devices.length, empty: !document.querySelector('.lab-empty').classList.contains('hidden'), hint: !document.querySelector('.lab-hint').classList.contains('hidden') }; });
+    const st = await page.evaluate(() => { const l = window.__rapti.lab; return { devices: l.project.devices.length, sheets: document.querySelectorAll('.sheet-overlay').length, hint: !document.querySelector('.lab-hint').classList.contains('hidden') }; });
     console.log('new lab', JSON.stringify(st));
     await page.screenshot({ path: join(outDir, 'labnew-empty.png') });
   },

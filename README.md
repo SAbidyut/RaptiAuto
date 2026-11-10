@@ -4,6 +4,12 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.33 — a real conveyor, no pop-ups when a lab opens
+
+- **Conveyor rebuilt as a real machine:** the belt is an endless loop round a rubber-lagged head drum and a tail drum with screw take-ups, carried on a slider bed and return rollers; the 0.25 kW gear motor sits in line with the head shaft (coupling, flange bearings, nameplate with the simulation's data); one turn of the head drum moves 100 mm of belt, as the encoder (100 PPR = 1 pulse / mm) assumes. The pusher cylinder is longer than its 125 mm stroke and stands on its own post with its 5/2 valve; S3 is a diffuse photo-eye, so nothing stands in the mouth of the reject chute.
+- **No pop-ups:** a Delta lab example no longer opens its guide by itself (it is behind the Guide button), a new PLC project shows the bare bench without the "Add a device" card, and a new Arduino project no longer shows the "Tap + to add parts" hint.
+- **Sharper 3D shadows:** the shadow map is fitted to what is on the bench, so machines far to the right cast shadows and small labs get crisp ones.
+
 ## New in 2.32 — new look: the RAPTI website theme (the look RaptiCKT has)
 
 - **Same design as RaptiCKT:** the website's colours (blue, yellow, cream, navy), the Archivo typeface, chunky buttons with an edge that presses down, the blue hero with the dotted pattern, cards with a 2 px line and the floating dark bottom bar. How the simulators work is unchanged.
