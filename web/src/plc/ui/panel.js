@@ -13,7 +13,6 @@ import { defaultParams } from '../sim/vfd.js';
 import { fmtName } from '../sim/modbus.js';
 import { openCommSheet } from './comm-sheet.js';
 import { FaultTools } from './faults.js';
-import { STEP_GUIDES } from '../guides.js';
 
 const WIRE_COLORS = [['auto', 'Auto'], ['#dc2626', 'Red'], ['#1e3a8a', 'Dark blue'], ['#2563eb', 'Blue'], ['#7c4a1e', 'Brown'], ['#f97316', 'Orange'], ['#e5e7eb', 'White'], ['#111827', 'Black'], ['#a855f7', 'Violet'], ['#eab308', 'Yellow'], ['pe', 'Earth']];
 const thumbs = new Map();
@@ -73,17 +72,15 @@ export class PanelView {
     this.restoreView(this.scene.mode, true);
     this.refresh();
     this.updateTaskPill();
-    this.updateEmpty();
     if (this.no3d) setTimeout(() => this.hint('3D needs WebGL 2, which this phone does not have — showing the 2D wiring schematic.', 6000), 500);
-    // the first lab with devices gets the how-to hint (an empty bench has its own card instead)
+    // the first lab with devices gets the how-to hint
     else if (this.lab.project.devices.length && !storedFlag('raptiauto.plc.hinted')) {
       setTimeout(() => this.hint(this.scene.mode === '2d'
         ? '2D wiring schematic: drag to move, pinch or double-tap-and-slide to zoom. Tap 3D (bottom left) for the 3D lab. Press Simulate to power the lab.'
         : 'Drag to orbit · pinch to zoom · tap a chip below to jump to a device. Press Simulate to power the lab.', 6500), 600);
     }
     if (this.scene.mode === '3d' && !this.lab.settings.labView) this.watchSpeed();
-    // a Step-by-step lab opens its guide the first time
-    if (STEP_GUIDES[this.lab.project.fromExample] && !this.lab.project.guideSeen) setTimeout(() => { if (this.el.isConnected && !this.lab.project.guideSeen) this.lab.showGuide(); }, 1200);
+    // a lab never opens its guide by itself: it is behind the Guide button (top left) and in ⋮ → Guide to this lab
   }
 
   destroy() { clearTimeout(this.speedT); this.chipsRo.disconnect(); this.scene.onLost = null; this.scene.dispose(); }
@@ -234,12 +231,6 @@ export class PanelView {
     this.selBar = h('div', { class: 'sel-bar hidden' });
     this.wireBar = h('div', { class: 'wire-bar lab-wirebar hidden' });
     this.hintEl = h('div', { class: 'canvas-hint lab-hint hidden' });
-    // an empty bench: nothing is placed for you — this card says where to start
-    this.emptyEl = h('div', { class: 'lab-empty hidden' },
-      h('div', { class: 'le-ic', html: icon('plug', 30) }),
-      h('b', {}, 'An empty bench'),
-      h('p', {}, 'Nothing is placed or wired for you. Add what your project needs — for example the main switch (MCB), a 24 V supply, a PLC, a VFD and a motor — then wire them.'),
-      h('button', { class: 'btn btn-primary', html: `${icon('plus', 18)}<span>Add a device</span>`, onclick: () => this.openLibrary() }));
     this.chooser = h('div', { class: 'port-chooser hidden' });
     // Guide | Tasks: the step-by-step guide of the lab and its self-checking tasks
     this.guideBtn = h('button', { class: 'tp-btn tp-guide', html: `${icon('book', 15)}<span>Guide</span>`, onclick: () => this.lab.showGuide() });
@@ -247,7 +238,7 @@ export class PanelView {
     this.taskPill = h('div', { class: 'task-pill hidden' }, this.guideBtn, this.tasksBtn);
     // Network view legend: what the packets mean and the live state of the bus
     this.netCard = h('div', { class: 'net-legend hidden' });
-    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.emptyEl, this.chooser, this.taskPill, this.netCard);
+    this.el.append(this.modeSeg, this.tools, this.viewSeg, this.chips, this.selBar, this.wireBar, this.hintEl, this.chooser, this.taskPill, this.netCard);
     this.faults = new FaultTools(this);
     this.setMode('wire');
   }
@@ -303,10 +294,8 @@ export class PanelView {
     if (this.potCard && this.potCard.upd) this.potCard.upd();
     if (this.faults) this.faults.frame();
     this.updateNetCard();
-    this.updateEmpty();
+    this.updateTaskPill();
   }
-
-  updateEmpty() { this.emptyEl.classList.toggle('hidden', this.lab.project.devices.length > 0); if (this.tasksBtn) this.updateTaskPill(); }
 
   updateTaskPill() {
     const t = this.lab.tasks;

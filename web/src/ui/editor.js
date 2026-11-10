@@ -145,7 +145,6 @@ export class Editor {
     this.canvas.render();
     requestAnimationFrame(() => this.canvas.fit(false));
     this.unback = pushBack(() => this.onBackInEditor());
-    if (this.project.parts.length <= 1 && !this.project.wires.length) this.showHint('Tap ＋ to add parts. Tap a pin, then another pin to draw a wire.');
   }
 
   unmount() {
