@@ -68,7 +68,7 @@ await build({
 copyFileSync(join(here, 'vendor', 'micropython', 'micropython.wasm'), join(out, 'micropython.wasm'));
 
 await build({
-  entryPoints: [join(here, 'styles', 'app.css')],
+  entryPoints: [join(here, 'styles', 'main.css')], // app.css (layout) + rapti-theme.css (the RAPTI look)
   bundle: true,
   minify: !dev,
   outfile: join(out, 'app.css'),
@@ -84,6 +84,8 @@ const fonts = [
   ['@fontsource/space-grotesk/files', ['space-grotesk-latin-600-normal.woff2', 'space-grotesk-latin-700-normal.woff2']],
   ['@fontsource/jetbrains-mono/files', ['jetbrains-mono-latin-400-normal.woff2', 'jetbrains-mono-latin-600-normal.woff2']],
 ];
+// the RAPTI typeface (Archivo, a variable font) is kept in the repository
+copyFileSync(join(here, 'fonts', 'archivo-latin.woff2'), join(out, 'fonts', 'archivo-latin.woff2'));
 for (const [dir, files] of fonts) {
   for (const f of files) {
     const src = join(here, 'node_modules', dir, f);

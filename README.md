@@ -4,6 +4,15 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.32 — new look: the RAPTI website theme (the look RaptiCKT has)
+
+- **Same design as RaptiCKT:** the website's colours (blue, yellow, cream, navy), the Archivo typeface, chunky buttons with an edge that presses down, the blue hero with the dotted pattern, cards with a 2 px line and the floating dark bottom bar. How the simulators work is unchanged.
+- **Three themes** in **Settings → Appearance**: **RAPTI Day** (bright, the default), **RAPTI Night** and **Black**.
+- **The work bench keeps dark screens** in every theme, like real bench gear: the circuit, the code editor, the Serial Monitor, the PLC lab and the Pi lab with their sheets. The bars around them follow the theme.
+- New launcher icon and splash screen in the new colours; on Android the status and navigation bars follow the theme (dark icons on the bright theme).
+- The three section websites (`npm run site`) get the same look (`css/theme.css`).
+- For developers: the colours are variables now. `web/styles/rapti-theme.css` holds the palette of the three themes and the look; `app.css`, `plc.css`, `pi.css` and `manual.css` keep the layout. `LOOK=dark node tools/shot.mjs …` takes the screenshots in another theme.
+
 ## New in 2.31 — one version: every fix and every feature
 
 - **Both lines together:** the bug fixes of 2.27 (main line) and the features of 2.26–2.30 (Bangla step-by-step book, DVP04AD-E2 analog module, PLC lab Guides and the Step-by-step course, section websites, mouse dragging on a PC) are now in one app.

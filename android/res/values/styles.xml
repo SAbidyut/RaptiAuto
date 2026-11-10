@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_bg">#FF070B16</color>
+    <!-- the RAPTI blue of the splash screen -->
+    <color name="brand_bg">#FF1D4BFF</color>
 
     <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@drawable/splash</item>
@@ -8,7 +9,7 @@
         <item name="android:navigationBarColor">@color/brand_bg</item>
         <item name="android:colorPrimary">@color/brand_bg</item>
         <item name="android:colorPrimaryDark">@color/brand_bg</item>
-        <item name="android:colorAccent">#FF22D3EE</item>
+        <item name="android:colorAccent">#FFFFD92E</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>
 </resources>

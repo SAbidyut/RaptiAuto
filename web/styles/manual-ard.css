@@ -2,4 +2,4 @@
 /* chapter opening: the hero picture, then the promise of the chapter in one paragraph */
 .mx-ard-hero { margin: 0 0 16px; padding: 4px 0 2px; }
 .mx-ard-hero .mf { margin-bottom: 10px; }
-.mx-ard-promise { margin: 0 !important; padding: 10px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: rgba(34, 211, 238, .07); color: #dbe5f7; font-size: 15.5px; line-height: 1.55; }
+.mx-ard-promise { margin: 0 !important; padding: 10px 14px; border-left: 3px solid var(--accent); border-radius: 0 12px 12px 0; background: rgba(var(--acc), .07); color: var(--text2); font-size: 15.5px; line-height: 1.55; }

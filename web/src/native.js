@@ -18,6 +18,9 @@ export const Native = {
     } catch (e) { /* ignore */ }
   },
 
+  /** Colours of the Android status and navigation bars ("#rrggbb"); light = a bright page, so the bar icons turn dark. */
+  setBars(status, nav, light) { const n = N(); if (n && n.setBars) try { n.setBars(status, nav, !!light); } catch (e) { /* ignore */ } },
+
   keepScreenOn(on) { const n = N(); if (n) try { n.keepScreenOn(!!on); } catch (e) { /* ignore */ } },
 
   setOrientation(mode) { const n = N(); if (n) try { n.setOrientation(mode); } catch (e) { /* ignore */ } },
@@ -91,7 +94,7 @@ export const Native = {
   version() {
     const n = N();
     if (n) try { return n.getAppVersion(); } catch (e) { /* ignore */ }
-    return '2.31.0';
+    return '2.32.0';
   },
 
   exit() { const n = N(); if (n) try { n.exitApp(); } catch (e) { /* ignore */ } },
