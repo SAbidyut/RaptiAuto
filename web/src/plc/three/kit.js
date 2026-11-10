@@ -244,7 +244,7 @@ export function glowSprite(color, size) {
 }
 
 /** Text label sprite (always faces the camera). */
-export function labelSprite(text, { size = 26, color = '#e6f7ff', bg = 'rgba(8,14,30,.82)', border = 'rgba(34,211,238,.6)', scale = 0.26 } = {}) {
+export function labelSprite(text, { size = 26, color = '#f4f6ff', bg = 'rgba(11,16,38,.86)', border = 'rgba(255,217,46,.75)', scale = 0.26 } = {}) {
   const c = document.createElement('canvas');
   const g = c.getContext('2d');
   g.font = `700 ${size}px ${FONT}`;

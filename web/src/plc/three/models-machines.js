@@ -40,36 +40,90 @@ function junctionBox(B, group, ports, { x0, x1, z0, z1, y0 = 0, y1, label }) {
   }
 }
 
-/** Stripe texture of the belt (moves with texture.offset). */
-function beltTexture() {
-  const t = canvasTexture(256, 32, (g, w, h) => {
-    g.fillStyle = '#1d2128'; g.fillRect(0, 0, w, h);
-    g.strokeStyle = '#2c323c'; g.lineWidth = 6;
-    for (let x = 0; x < w; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 12, h); g.stroke(); }
-  }, { repeat: true });
-  t.repeat.set(700 / 90, 1);
-  return t;
-}
-
 // ====================================================================== conveyor
 const BY = 150; // belt top
 const bx = (k) => -CONV.L / 2 + k * CONV.L; // belt position (fraction) → x
+/**
+ * The drums: Ø29 mm with a 3 mm belt, so one turn of the head drum moves 100 mm of belt (the
+ * encoder: 100 PPR = 1 pulse / mm). The 1380 rpm gear motor (i ≈ 9.2) turns it at 150 rpm: 250 mm/s.
+ */
+const DRUM_R = 14.5, BELT_T = 3, BELT_W = 118;
+const DRUM_Y = BY - BELT_T - DRUM_R;        // drum axis
+const RETURN_Y = DRUM_Y - DRUM_R - BELT_T;  // underside of the return strand
+const FRAME_Z = 66, FRAME_Y0 = 98, FRAME_Y1 = BY - 1; // side frames: z of their middle, bottom and top edge
+const CHUTE_W = 140; // reject chute
 
-function photoEye(group, B, x, id, label) {
-  // emitter on the front rail, reflector on the back rail, the beam between them
+/** PVC belt surface (moves with texture.offset): green cover, fine weave, a faint cross rib every 22 mm. */
+function beltTexture() {
+  return canvasTexture(256, 64, (g, w, h) => {
+    g.fillStyle = '#1f5a41'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 1;
+    for (let x = -h; x < w; x += 6) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + h, h); g.stroke(); g.beginPath(); g.moveTo(x + h, 0); g.lineTo(x, h); g.stroke(); }
+    g.fillStyle = 'rgba(0,0,0,.2)';
+    for (let x = 0; x < w; x += 64) g.fillRect(x, 0, 5, h);
+    g.fillStyle = 'rgba(255,255,255,.1)';
+    for (let x = 0; x < w; x += 64) g.fillRect(x + 5, 0, 2, h);
+    g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(0, 0, w, 3); g.fillRect(0, h - 3, w, 3); // the sealed edges
+  }, { repeat: true });
+}
+
+/**
+ * The endless belt: carrying strand on top (tail → head), half a turn round the head drum, the return
+ * strand underneath and half a turn round the tail drum. u runs along the belt, so moving the texture
+ * moves every part of the loop the right way. Returns the cover surface and the plain edges.
+ */
+function beltLoop(L, tiles) {
+  const R = DRUM_R + BELT_T, n = 14, total = 2 * L + 2 * Math.PI * R;
+  const pts = [];
+  pts.push({ x: -L / 2, y: DRUM_Y + R, nx: 0, ny: 1, s: 0 });
+  for (let k = 0; k <= n; k++) { const a = Math.PI / 2 - (k * Math.PI) / n; pts.push({ x: L / 2 + R * Math.cos(a), y: DRUM_Y + R * Math.sin(a), nx: Math.cos(a), ny: Math.sin(a), s: L + (R * k * Math.PI) / n }); }
+  for (let k = 0; k <= n; k++) { const a = -Math.PI / 2 - (k * Math.PI) / n; pts.push({ x: -L / 2 + R * Math.cos(a), y: DRUM_Y + R * Math.sin(a), nx: Math.cos(a), ny: Math.sin(a), s: 2 * L + Math.PI * R + (R * k * Math.PI) / n }); }
+  const pos = [], nor = [], uv = [], idx = [], ePos = [], eNor = [], eIdx = [];
+  pts.forEach((p, i) => {
+    for (const side of [1, -1]) { pos.push(p.x, p.y, (side * BELT_W) / 2); nor.push(p.nx, p.ny, 0); uv.push((p.s / total) * tiles, side > 0 ? 0 : 1); }
+    for (const side of [1, -1]) { // edge: cover → carcass
+      ePos.push(p.x, p.y, (side * BELT_W) / 2, p.x - p.nx * BELT_T, p.y - p.ny * BELT_T, (side * BELT_W) / 2);
+      eNor.push(0, 0, side, 0, 0, side);
+    }
+    if (i === pts.length - 1) return;
+    const a = i * 2, b = a + 2;
+    idx.push(a, a + 1, b + 1, a, b + 1, b);
+    for (const o of [0, 2]) { const e = i * 4 + o, f = e + 4; eIdx.push(e, e + 1, f + 1, e, f + 1, f); }
+  });
+  const make = (P, N, I, U) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    if (U) g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+    g.setIndex(I);
+    return g;
+  };
+  return { cover: make(pos, nor, idx, uv), edges: make(ePos, eNor, eIdx), total };
+}
+
+/**
+ * Photo-eye on a bracket of the front side plate. Retro-reflective: its reflector is on the back side
+ * plate. Diffuse (S3, at the pusher): it sees the box itself, so nothing stands in the mouth of the
+ * reject chute.
+ */
+function photoEye(group, B, x, id, label, diffuse = false) {
   const housing = mat('photoBody', { color: 0x2f3742, roughness: 0.45 });
   B.add(rbox(18, 24, 16, 2), housing, M4(x, BY + 22, 84));
-  B.add(box(6, 34, 6), MAT.alu, M4(x, BY + 4, 76));
-  B.add(rbox(16, 22, 6, 1.5), mat('reflector', { color: 0xb91c1c, roughness: 0.3, metalness: 0.2 }), M4(x, BY + 22, -80));
-  B.add(box(6, 34, 6), MAT.alu, M4(x, BY + 4, -76));
+  B.add(box(6, 44, 5), MAT.alu, M4(x, BY - 1, 73.5));
+  B.add(cyl(3, 3, 14, 10), MAT.blackPlastic, M4(x, BY + 6, 88)); // cable gland, cable down to the frame
+  if (!diffuse) {
+    B.add(rbox(16, 22, 5, 1.5), mat('reflector', { color: 0xd92d20, roughness: 0.25, metalness: 0.2 }), M4(x, BY + 22, -79.5));
+    B.add(box(6, 44, 5), MAT.alu, M4(x, BY - 1, -73.5));
+  }
   const lens = new THREE.Mesh(cyl(4, 4, 2, 16), mat('lens', { color: 0x0f172a, roughness: 0.1, metalness: 0.4 }));
   lens.rotation.x = Math.PI / 2; lens.position.set(x, BY + 22, 75.5);
   group.add(lens);
   const led = new THREE.Mesh(box(4, 3, 1.2), ledMat('#ffb020'));
   led.position.set(x, BY + 31, 92.4);
   group.add(led);
-  const beam = new THREE.Mesh(cyl(0.7, 0.7, 156, 6), new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.55 }));
-  beam.rotation.x = Math.PI / 2; beam.position.set(x, BY + 22, 0);
+  const reach = diffuse ? 75.5 + BELT_W / 2 : 152; // a diffuse eye reaches across the belt, the other one to its reflector
+  const beam = new THREE.Mesh(cyl(0.7, 0.7, reach, 6), new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.55 }));
+  beam.rotation.x = Math.PI / 2; beam.position.set(x, BY + 22, 75.5 - reach / 2);
   beam.visible = false;
   group.add(beam);
   const tag = decal(18, 7, (g, W, H) => txt(g, label, W / 2, H / 2, { size: 5, weight: 800, color: '#f8fafc' }), { ppm: 10 });
@@ -78,92 +132,201 @@ function photoEye(group, B, x, id, label) {
   return { id, led, beam };
 }
 
+/** An open bin: floor and four walls. */
+function bin(B, m, x, z, w, d, hgt) {
+  B.add(box(w, 4, d), m, M4(x, 2, z));
+  for (const [dx, dz, ww, dd] of [[0, -d / 2 + 2, w, 4], [0, d / 2 - 2, w, 4], [-w / 2 + 2, 0, 4, d], [w / 2 - 2, 0, 4, d]]) B.add(box(ww, hgt, dd), m, M4(x + dx, hgt / 2, z + dz));
+}
+
 function buildConveyor(dev) {
   const pr = deviceProps(dev);
   const group = new THREE.Group();
   const B = new Builder();
-  const alu = MAT.alu, frame = mat('convFrame', { color: 0x9aa3ae, metalness: 0.7, roughness: 0.35 });
-  const paint = MAT.paintBlue;
-  const L = CONV.L;
-  // frame, legs, rollers
-  for (const z of [-66, 66]) B.add(box(L + 30, 26, 8), frame, M4(0, BY - 12, z));
-  for (const x of [-L / 2 + 40, L / 2 - 40]) for (const z of [-52, 52]) {
-    B.add(box(26, BY - 26, 26), alu, M4(x, (BY - 26) / 2, z));
-    B.add(box(46, 6, 46), MAT.darkPlastic, M4(x, 3, z));
+  const alu = MAT.alu, steel = MAT.steel, paint = MAT.paintBlue;
+  const frame = mat('convFrame', { color: 0xa4acb6, metalness: 0.7, roughness: 0.35 });
+  const dark = MAT.darkPlastic;
+  const L = CONV.L, xh = L / 2, xt = -L / 2;
+  const fh = FRAME_Y1 - FRAME_Y0, fy = (FRAME_Y0 + FRAME_Y1) / 2;
+
+  // ---- frame: two side plates, the slider bed under the carrying strand, cross ties between the strands
+  for (const z of [-FRAME_Z, FRAME_Z]) B.add(box(L + 64, fh, 8), frame, M4(0, fy, z));
+  B.add(box(L - 2 * DRUM_R - 6, 2, BELT_W + 6), steel, M4(0, BY - BELT_T - 1, 0));
+  for (const x of [-230, 0, 230]) B.add(box(10, 18, 2 * FRAME_Z - 8), frame, M4(x, DRUM_Y + 2, 0));
+  // return rollers carry the return strand (they touch its cover side from below)
+  for (const x of [-140, 140]) {
+    B.add(cyl(7, 7, BELT_W + 4, 16), steel, M4(x, RETURN_Y - 7, 0, Math.PI / 2, 0, 0));
+    B.add(cyl(2.5, 2.5, 2 * FRAME_Z + 12, 8), dark, M4(x, RETURN_Y - 7, 0, Math.PI / 2, 0, 0));
   }
-  B.add(box(L - 60, 20, 18), alu, M4(0, 70, 52)); B.add(box(L - 60, 20, 18), alu, M4(0, 70, -52));
-  for (const x of [-L / 2, L / 2]) B.add(cyl(13, 13, 124, 24), MAT.steel, M4(x, BY - 13, 0, Math.PI / 2, 0, 0));
-  // gear motor at the head end, behind the belt
-  B.add(rbox(70, 80, 44, 4), mat('gearbox', { color: 0x4b5563, metalness: 0.4, roughness: 0.45 }), M4(L / 2 - 10, BY - 30, -92));
-  B.add(cyl(36, 36, 112, 32), paint, M4(L / 2 - 10, BY - 30, -170, Math.PI / 2, 0, 0));
-  for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; B.add(box(4, 96, 7), paint, M4(L / 2 - 10 + Math.cos(a) * 37, BY - 30 + Math.sin(a) * 37, -172, Math.PI / 2, 0, -a)); }
-  B.add(cyl(38, 38, 22, 32), mat('fanCowl', { color: 0x23272e, roughness: 0.55, metalness: 0.4 }), M4(L / 2 - 10, BY - 30, -236, Math.PI / 2, 0, 0));
-  B.add(rbox(44, 26, 40, 3), paint, M4(L / 2 - 10, BY + 16, -170));
-  // conduit from the gear motor to the junction box
+  // legs under the side plates, levelling feet, stretchers
+  for (const x of [-250, 250]) {
+    for (const z of [-56, 56]) {
+      B.add(box(28, FRAME_Y0 - 14, 28), alu, M4(x, 14 + (FRAME_Y0 - 14) / 2, z));
+      B.add(box(44, 5, 30), frame, M4(x, FRAME_Y0 - 2.5, z)); // joint plate
+      B.add(cyl(4, 4, 12, 10), steel, M4(x, 8, z));
+      B.add(cyl(15, 17, 5, 20), dark, M4(x, 2.5, z));
+    }
+    B.add(box(16, 16, 112 - 28), alu, M4(x, 46, 0));
+  }
+  for (const z of [-56, 56]) B.add(box(500 - 28, 16, 16), alu, M4(0, 46, z));
+
+  // ---- drums. Head (drive) drum: rubber lagging for grip. Tail drum: plain steel, on screw take-ups.
+  B.add(cyl(DRUM_R, DRUM_R, BELT_W + 6, 28), mat('lagging', { color: 0x202327, roughness: 0.95 }), M4(xh, DRUM_Y, 0, Math.PI / 2, 0, 0));
+  B.add(cyl(DRUM_R, DRUM_R, BELT_W + 6, 28), steel, M4(xt, DRUM_Y, 0, Math.PI / 2, 0, 0));
+  const bearing = mat('bearing', { color: 0x2f6f4e, roughness: 0.5, metalness: 0.3 }); // cast flange bearing
+  for (const z of [-1, 1]) {
+    // head: flange bearings bolted to the outside of the side plates
+    B.add(rbox(38, 24, 8, 3), bearing, M4(xh, DRUM_Y, z * (FRAME_Z + 8)));
+    B.add(cyl(10, 10, 10, 20), bearing, M4(xh, DRUM_Y, z * (FRAME_Z + 13), Math.PI / 2, 0, 0));
+    for (const dx of [-14, 14]) B.add(cyl(2.4, 2.4, 3, 6), steel, M4(xh + dx, DRUM_Y, z * (FRAME_Z + 13), Math.PI / 2, 0, 0));
+    // tail: the bearing block slides in a slot; the screw pulls it back to tension and track the belt
+    B.add(box(46, 9, 1.2), dark, M4(xt + 8, DRUM_Y, z * (FRAME_Z + 4.4)));
+    B.add(rbox(26, 24, 8, 3), bearing, M4(xt, DRUM_Y, z * (FRAME_Z + 8)));
+    B.add(cyl(9, 9, 10, 20), bearing, M4(xt, DRUM_Y, z * (FRAME_Z + 13), Math.PI / 2, 0, 0));
+    B.add(cyl(2.6, 2.6, 46, 8), steel, M4(xt + 33, DRUM_Y, z * (FRAME_Z + 9), 0, 0, Math.PI / 2));
+    B.add(box(6, 18, 10), frame, M4(xt + 50, DRUM_Y, z * (FRAME_Z + 9)));
+    B.add(cyl(5, 5, 4.5, 6), steel, M4(xt + 55.5, DRUM_Y, z * (FRAME_Z + 9), 0, 0, Math.PI / 2));
+  }
+
+  // ---- drive: a helical gear motor in line with the head drum's shaft, on a console of the back side plate
+  const gz = -FRAME_Z - 18; // the end of the bearing hub on the back side plate
+  B.add(cyl(5, 5, 14, 12), steel, M4(xh, DRUM_Y, gz - 13, Math.PI / 2, 0, 0));                 // drum shaft
+  B.add(cyl(9, 9, 12, 16), mat('coupling', { color: 0xb45309, roughness: 0.5, metalness: 0.4 }), M4(xh, DRUM_Y, gz - 10, Math.PI / 2, 0, 0)); // coupling
+  B.add(rbox(64, 64, 44, 5), mat('gearbox', { color: 0x4b5563, metalness: 0.4, roughness: 0.45 }), M4(xh, DRUM_Y, gz - 38));
+  B.add(cyl(4, 4, 3, 6), steel, M4(xh + 20, DRUM_Y + 33, gz - 38));                            // oil filler plug
+  B.add(box(78, 7, 80), frame, M4(xh, DRUM_Y - 35.5, gz - 26));                                // console, bolted to the side plate
+  B.add(cyl(36, 36, 8, 28), paint, M4(xh, DRUM_Y, gz - 64, Math.PI / 2, 0, 0));                // motor flange
+  const mz = gz - 110, ml = 84;                                                                // motor body: centre, length
+  B.add(cyl(33, 33, ml, 28), paint, M4(xh, DRUM_Y, mz, Math.PI / 2, 0, 0));
+  for (let i = 0; i < 18; i++) {                                                                // cooling fins along the body
+    const a = (i / 18) * Math.PI * 2;
+    if (Math.abs(a - Math.PI / 2) < 0.5) continue;                                             // the terminal box sits here
+    B.add(box(2.6, 7, ml - 6), paint, M4(xh + Math.cos(a) * 35.5, DRUM_Y + Math.sin(a) * 35.5, mz, 0, 0, a - Math.PI / 2));
+  }
+  B.add(cyl(38, 38, 22, 28), mat('fanCowl', { color: 0x23272e, roughness: 0.55, metalness: 0.4 }), M4(xh, DRUM_Y, mz - ml / 2 - 11, Math.PI / 2, 0, 0));
+  B.add(cyl(31, 31, 0.8, 24), mat('fanGrille', { color: 0x0b0d10, roughness: 0.8 }), M4(xh, DRUM_Y, mz - ml / 2 - 22.3, Math.PI / 2, 0, 0));
+  B.add(rbox(40, 20, 40, 3), paint, M4(xh, DRUM_Y + 42, mz + 4));                              // terminal box
+  B.add(cyl(5, 5, 9, 10), dark, M4(xh - 24, DRUM_Y + 42, mz + 4, 0, 0, Math.PI / 2));          // cable gland
+  const plate = decal(34, 16, (g, W, H) => {
+    g.fillStyle = '#d7dbe0'; rrect(g, 0, 0, W, H, 1.5); g.fill();
+    txt(g, '3~ 0.25 kW  1380 rpm', W / 2, 4.4, { size: 3, weight: 800, color: '#111827' });
+    txt(g, 'Δ 230 V 1.3 A · Y 400 V 0.75 A', W / 2, 8.4, { size: 2.5, weight: 700, color: '#111827' });
+    txt(g, 'i = 9.2 · 150 rpm · Ø32', W / 2, 12.2, { size: 2.5, weight: 700, color: '#111827' });
+  }, { ppm: 10 });
+  plate.rotation.y = Math.PI / 2; plate.position.set(xh + 32.4, DRUM_Y + 2, gz - 38);
+  group.add(plate);
+  // flexible conduit: motor terminal box → down → along the back side plate → the junction box
   const conduit = mat('conduit', { color: 0x1f2937, roughness: 0.7 });
-  B.add(cyl(5, 5, 600, 10), conduit, M4(L / 2 - 340, 40, -200, 0, 0, Math.PI / 2));
-  B.add(cyl(5, 5, 96, 10), conduit, M4(L / 2 - 40, 82, -200));
-  // feeder chute at the tail
+  const cx = xh - 52, cyy = FRAME_Y0 + 6, cz = -FRAME_Z - 12;
+  const run = (x0, y0, z0, x1, y1, z1) => {
+    const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    const rot = x0 !== x1 ? [0, 0, Math.PI / 2] : z0 !== z1 ? [Math.PI / 2, 0, 0] : [0, 0, 0];
+    B.add(cyl(4, 4, len, 10), conduit, M4((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, ...rot));
+    B.add(new THREE.SphereGeometry(4.6, 10, 8), conduit, M4(x1, y1, z1));
+  };
+  run(xh - 28, DRUM_Y + 42, mz + 4, cx, DRUM_Y + 42, mz + 4);
+  run(cx, DRUM_Y + 42, mz + 4, cx, cyy, mz + 4);
+  run(cx, cyy, mz + 4, cx, cyy, cz);
+  run(cx, cyy, cz, -262, cyy, cz);
+  run(-262, cyy, cz, -262, cyy, -97);
+  for (const x of [200, 40, -120]) B.add(box(10, 3, 12), frame, M4(x, cyy + 5, cz + 2)); // saddle clips
+
+  // ---- optional encoder on the free end of the head drum's shaft (front)
+  if (pr.encoder && pr.encoder !== 'none') {
+    B.add(cyl(13, 13, 22, 24), mat('encBody', { color: 0x1f2937, roughness: 0.5, metalness: 0.3 }), M4(xh, DRUM_Y, FRAME_Z + 31, Math.PI / 2, 0, 0));
+    B.add(cyl(15, 15, 3, 24), steel, M4(xh, DRUM_Y, FRAME_Z + 19.5, Math.PI / 2, 0, 0));
+    B.add(cyl(3, 3, 12, 8), dark, M4(xh - 12, DRUM_Y - 16, FRAME_Z + 34));
+  }
+
+  // ---- feeder: a short gravity chute that sets the box on the belt above the tail drum
   const chuteM = mat('chute', { color: 0xd1d5db, metalness: 0.5, roughness: 0.35 });
-  B.add(box(80, 4, 96), chuteM, M4(-L / 2 - 20, BY + 70, 0, 0, 0, -0.5));
-  B.add(box(80, 46, 4), chuteM, M4(-L / 2 - 20, BY + 80, 50, 0, 0, -0.5));
-  B.add(box(80, 46, 4), chuteM, M4(-L / 2 - 20, BY + 80, -50, 0, 0, -0.5));
-  B.add(box(16, 130, 16), alu, M4(-L / 2 - 50, 60, 40)); B.add(box(16, 130, 16), alu, M4(-L / 2 - 50, 60, -40));
-  // gantry with the inductive sensor S2
+  const slope = -0.5, cl = 58, ccx = xt - 2 - (cl / 2) * Math.cos(slope), ccy = BY + 6 + (cl / 2) * Math.sin(-slope);
+  B.add(box(cl, 3, 96), chuteM, M4(ccx, ccy, 0, 0, 0, slope));
+  for (const z of [-48, 48]) B.add(box(cl, 20, 3), chuteM, M4(ccx + 4.5, ccy + 8, z, 0, 0, slope));
+  for (const z of [-40, 40]) B.add(box(12, ccy + 8, 12), alu, M4(xt - 44, (ccy + 8) / 2, z));
+
+  // ---- S2: an M18 inductive sensor on a bridge, 5 mm above the top of a box
   const gx = bx(CONV.at.S2);
-  B.add(box(14, 100, 14), alu, M4(gx, BY + 40, 82)); B.add(box(14, 100, 14), alu, M4(gx, BY + 40, -82));
-  B.add(box(14, 14, 178), alu, M4(gx, BY + 96, 0));
-  B.add(cyl(9, 9, 34, 20), MAT.chrome, M4(gx, BY + 76, 0));
-  B.add(cyl(10.5, 10.5, 4, 6), MAT.steel, M4(gx, BY + 86, 0));
-  B.add(cyl(9.2, 9.2, 3, 20), mat('indFace', { color: 0x2563eb, roughness: 0.5 }), M4(gx, BY + 58, 0));
-  // pusher: a cylinder on the front rail
-  const px = bx(CONV.at.push);
-  B.add(rbox(40, 34, 100, 4), MAT.alu, M4(px, BY + 24, 150));
-  B.add(box(30, 6, 60), MAT.darkPlastic, M4(px, BY - 4, 128));
-  B.add(rbox(26, 22, 20, 2), mat('valveBlue', { color: 0x2563eb, roughness: 0.45 }), M4(px + 34, BY + 24, 168));
-  B.add(rbox(16, 16, 14, 2), MAT.blackPlastic, M4(px + 34, BY + 40, 168));
-  // reject chute behind the belt and its bin
-  B.add(box(90, 4, 150), chuteM, M4(px, BY - 50, -140, -0.62, 0, 0));
-  B.add(box(4, 50, 150), chuteM, M4(px - 46, BY - 36, -140, -0.62, 0, 0));
-  B.add(box(4, 50, 150), chuteM, M4(px + 46, BY - 36, -140, -0.62, 0, 0));
-  const binM = mat('bin', { color: 0x334155, roughness: 0.6 });
-  B.add(box(110, 4, 90), binM, M4(px, 2, -205));
-  for (const [dx, dz, w, d] of [[0, -45, 110, 4], [0, 45, 110, 4], [-55, 0, 4, 90], [55, 0, 4, 90]]) B.add(box(w, 60, d), binM, M4(px + dx, 30, -205 + dz));
-  // end bin at the head
-  const endBin = mat('endBin', { color: 0x166534, roughness: 0.6 });
-  B.add(box(110, 4, 120), endBin, M4(L / 2 + 70, 2, 0));
-  for (const [dx, dz, w, d] of [[0, -60, 110, 4], [0, 60, 110, 4], [55, 0, 4, 120], [-55, 0, 4, 120]]) B.add(box(w, 80, d), endBin, M4(L / 2 + 70 + dx, 40, dz));
-  // junction box (terminals)
+  for (const z of [-78, 78]) B.add(box(14, 104, 14), alu, M4(gx, BY + 42, z));
+  B.add(box(14, 14, 170), alu, M4(gx, BY + 101, 0));
+  B.add(cyl(9, 9, 40, 20), MAT.chrome, M4(gx, BY + 77, 0));
+  B.add(cyl(13, 13, 4, 6), steel, M4(gx, BY + 92, 0));
+  B.add(cyl(13, 13, 4, 6), steel, M4(gx, BY + 86, 0));
+  B.add(cyl(9.1, 9.1, 3, 20), mat('indFace', { color: 0x2563eb, roughness: 0.5 }), M4(gx, BY + 56.5, 0));
+
+  // ---- pusher: a pneumatic cylinder (125 mm stroke, so the body is longer than the stroke) on its own post
+  const px = bx(CONV.at.push), py = BY + 22, pz0 = FRAME_Z + 14;
+  B.add(rbox(36, 36, 8, 2), alu, M4(px, py, pz0 + 4));                              // front cap (clear of the S3 photo-eye beside it)
+  B.add(cyl(18, 18, 152, 24), alu, M4(px, py, pz0 + 84, Math.PI / 2, 0, 0));        // barrel
+  B.add(rbox(36, 36, 8, 2), alu, M4(px, py, pz0 + 164));                            // rear cap
+  for (const [dx, dy] of [[-14.5, -14.5], [14.5, -14.5], [-14.5, 14.5], [14.5, 14.5]]) B.add(cyl(2, 2, 168, 6), steel, M4(px + dx, py + dy, pz0 + 84, Math.PI / 2, 0, 0)); // tie rods
+  B.add(box(52, 6, 60), frame, M4(px, py - 25, pz0 + 134));                         // foot bracket
+  B.add(box(30, py - 28 - 5, 30), alu, M4(px, 5 + (py - 28 - 5) / 2, pz0 + 134));   // post
+  B.add(cyl(16, 18, 5, 20), dark, M4(px, 2.5, pz0 + 134));
+  // 5/2 valve with one solenoid and a spring return, on top of the cylinder; two tubes to its ports
+  const vz = pz0 + 96;
+  B.add(rbox(26, 20, 52, 2), mat('valveBlue', { color: 0x2563eb, roughness: 0.45 }), M4(px, py + 29, vz));
+  B.add(rbox(22, 22, 24, 2), MAT.blackPlastic, M4(px, py + 30, vz + 38));           // solenoid coil
+  const tube = mat('airTube', { color: 0x38bdf8, roughness: 0.4 });
+  for (const z of [pz0 + 4, pz0 + 164]) { B.add(cyl(2.2, 2.2, 12, 8), tube, M4(px + 16, py + 24, z)); B.add(cyl(3.4, 3.4, 5, 6), MAT.brass, M4(px + 16, py + 19, z)); }
+  B.add(cyl(2.2, 2.2, 160, 8), tube, M4(px + 16, py + 30, pz0 + 84, Math.PI / 2, 0, 0));
+  B.add(cyl(2.2, 2.2, py + 24, 8), tube, M4(px - 23, (py + 24) / 2, vz - 10));      // air supply up from the floor
+
+  // ---- reject chute behind the belt and its bin; the bin at the head end
+  // (wide enough for a box wherever the pusher takes it; the low side walls lead it to the middle)
+  B.add(box(CHUTE_W, 3, 150), chuteM, M4(px, BY - 50, -FRAME_Z - 66, -0.62, 0, 0));
+  for (const dx of [-CHUTE_W / 2, CHUTE_W / 2]) B.add(box(3, 22, 150), chuteM, M4(px + dx, BY - 40, -FRAME_Z - 73, -0.62, 0, 0));
+  bin(B, mat('bin', { color: 0x334155, roughness: 0.6 }), px, -216, CHUTE_W + 12, 96, 60);
+  bin(B, mat('endBin', { color: 0x166534, roughness: 0.6 }), xh + 74, 0, 104, 116, 84);
+
+  // ---- junction box (terminals) on its post
   const ports = devicePorts(dev);
   junctionBox(B, group, ports, { x0: -372, x1: -175, z0: -160, z1: -96, y0: 96, y1: 176, label: pr.label || 'CONVEYOR' });
   B.add(box(24, 96, 24), alu, M4(-275, 48, -128));
-  // photo-eyes S1, S3, S4 (emitter front, reflector back)
-  const eyes = [photoEye(group, B, bx(CONV.at.S1), 'S1', 'S1'), photoEye(group, B, bx(CONV.at.S3), 'S3', 'S3'), photoEye(group, B, bx(CONV.at.S4), 'S4', 'S4')];
+  B.add(cyl(16, 18, 5, 20), dark, M4(-275, 2.5, -128));
+  // photo-eyes S1, S3, S4
+  const eyes = [photoEye(group, B, bx(CONV.at.S1), 'S1', 'S1'), photoEye(group, B, bx(CONV.at.S3), 'S3', 'S3', true), photoEye(group, B, bx(CONV.at.S4), 'S4', 'S4')];
   B.build(group);
 
-  // the belt (texture moves)
+  // ---- the belt
+  const tiles = 17;
+  const loop = beltLoop(L, tiles);
+  const tile = loop.total / tiles; // mm of belt per texture repeat
   const tex = beltTexture();
-  const belt = new THREE.Mesh(box(L, 5, 118), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 }));
-  belt.position.set(0, BY - 2.5, 0);
+  const belt = new THREE.Mesh(loop.cover, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, side: THREE.DoubleSide }));
   belt.receiveShadow = true;
-  group.add(belt);
+  group.add(belt, new THREE.Mesh(loop.edges, mat('beltEdge', { color: 0x14181d, roughness: 0.9, side: THREE.DoubleSide })));
+  // the free ends of the two shafts turn with the belt (a keyway shows it)
+  const shaftEnd = (x, z) => {
+    const g = new THREE.Group();
+    const stub = new THREE.Mesh(cyl(5, 5, 10, 14), steel); stub.rotation.x = Math.PI / 2;
+    const key = new THREE.Mesh(box(2.4, 3.4, 10.4), dark); key.position.set(0, 4, 0);
+    g.add(stub, key); g.position.set(x, DRUM_Y, z);
+    group.add(g);
+    return g;
+  };
+  const turning = [shaftEnd(xt, FRAME_Z + 24), shaftEnd(xt, -FRAME_Z - 24)];
+  if (!(pr.encoder && pr.encoder !== 'none')) turning.push(shaftEnd(xh, FRAME_Z + 22));
+
   const s2led = new THREE.Mesh(box(4, 3, 4), ledMat('#ffb020'));
-  s2led.position.set(gx, BY + 94, 0);
+  s2led.position.set(gx, BY + 96, 9);
   group.add(s2led);
   const s2tag = decal(20, 8, (g, W, H) => txt(g, 'S2', W / 2, H / 2, { size: 5.5, weight: 800, color: '#111827' }), { ppm: 10 });
-  s2tag.position.set(gx, BY + 96, 7.2);
+  s2tag.position.set(gx, BY + 101, 7.2);
   group.add(s2tag);
-  // pusher rod + plate
+  // pusher rod, its two guide rods and the plate. The plate is narrower than a box so that it never
+  // cuts the beam of S3. Retracted, its face is level with the edge of the belt; it reaches a box at a quarter stroke.
+  const STROKE = 125, FACE0 = 62;
   const rod = new THREE.Group();
-  const r1 = new THREE.Mesh(cyl(4, 4, 120, 12), MAT.chrome);
-  r1.rotation.x = Math.PI / 2; r1.position.set(0, 0, 60);
-  const plate = new THREE.Mesh(rbox(70, 34, 8, 2), mat('pushPlate', { color: 0xf59e0b, roughness: 0.4 }));
-  plate.position.set(0, 0, 0);
-  rod.add(r1, plate);
-  rod.position.set(px, BY + 22, 96);
+  const r1 = new THREE.Mesh(cyl(5, 5, 142, 12), MAT.chrome);
+  r1.rotation.x = Math.PI / 2; r1.position.set(0, 0, 4 + 71);
+  const pplate = new THREE.Mesh(rbox(44, 34, 8, 2), mat('pushPlate', { color: 0xf59e0b, roughness: 0.4 }));
+  pplate.position.set(0, 0, 4);
+  rod.add(r1, pplate);
+  rod.position.set(px, py, FACE0);
   group.add(rod);
   const coilLed = new THREE.Mesh(box(4, 3, 1.2), ledMat('#ff3434'));
-  coilLed.position.set(px + 34, BY + 42, 175.4);
+  coilLed.position.set(px, py + 41.6, vz + 38);
+  coilLed.rotation.x = -Math.PI / 2;
   group.add(coilLed);
   // boxes (instanced by hand: a pool of meshes)
   const metal = mat('boxMetal', { color: 0x9ca3af, metalness: 0.85, roughness: 0.32 });
@@ -174,23 +337,28 @@ function buildConveyor(dev) {
   // what has been delivered / rejected: a few boxes in the bins
   const binBoxes = [];
   for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(geo, i < 3 ? plastic : metal); m.visible = false; m.castShadow = true; group.add(m); binBoxes.push(m); }
-  binBoxes.slice(0, 3).forEach((m, i) => { m.position.set(L / 2 + 60 + (i % 2) * 18, 30 + i * 22, -24 + i * 22); m.rotation.y = i * 0.5; });
-  binBoxes.slice(3).forEach((m, i) => { m.position.set(px - 18 + (i % 2) * 30, 30 + i * 18, -205 + (i - 1) * 16); m.rotation.y = 0.3 + i * 0.6; m.material = metal; });
+  binBoxes.slice(0, 3).forEach((m, i) => { m.position.set(xh + 64 + (i % 2) * 18, 30 + i * 22, -24 + i * 22); m.rotation.y = i * 0.5; });
+  binBoxes.slice(3).forEach((m, i) => { m.position.set(px - 18 + (i % 2) * 30, 30 + i * 18, -216 + (i - 1) * 16); m.rotation.y = 0.3 + i * 0.6; m.material = metal; });
   // tap: the feeder puts a box on; the valve's manual override fires the pusher
   const feedHit = control(hitBox(110, 100, 120), dev.id, 'feed', { label: 'Feeder: put a box on the belt' });
-  feedHit.position.set(-L / 2 - 30, BY + 60, 0);
-  const pushHit = control(hitBox(50, 50, 40), dev.id, 'press', { label: 'Pusher valve: manual override' });
-  pushHit.position.set(px + 34, BY + 30, 168);
+  feedHit.position.set(xt - 30, BY + 50, 0);
+  const pushHit = control(hitBox(50, 50, 100), dev.id, 'press', { label: 'Pusher valve: manual override' });
+  pushHit.position.set(px, py + 32, vz + 14);
   group.add(feedHit, pushHit);
   const label = labelSprite('', { scale: 0.5, size: 28 });
   label.position.set(0, 330, 0);
   label.visible = false;
   group.add(label);
-  let off = 0, lastTxt = '', lastSig = '';
+  let off = 0, turn = 0, lastTxt = '', lastSig = '';
   const update = (rt, ctx = { dt: 0, running: false }) => {
     const s = rt.dev.state;
     let changed = false;
-    if (rt.belt) { off += (rt.belt * ctx.dt) / 90; tex.offset.x = -off; changed = true; }
+    if (rt.belt) {
+      off += (rt.belt * ctx.dt) / tile; tex.offset.x = -off;
+      turn -= (rt.belt * ctx.dt) / (DRUM_R + BELT_T / 2); // the drums turn clockwise seen from the front
+      for (const g of turning) g.rotation.z = turn;
+      changed = true;
+    }
     // boxes
     const list = s.boxes || [];
     pool.forEach((m, i) => {
@@ -198,8 +366,10 @@ function buildConveyor(dev) {
       if (!b) { if (m.visible) { m.visible = false; changed = true; } return; }
       m.visible = true;
       m.material = b.m ? metal : plastic;
-      const x = -L / 2 + b.x;
       const p = b.push || 0;
+      // on its way down the chute a box that was taken off-centre slides to the middle of it
+      const x0 = -L / 2 + b.x, lead = Math.max(px - 24, Math.min(px + 24, x0));
+      const x = x0 + (lead - x0) * Math.min(1, p * 1.6);
       const z = -p * 190, drop = Math.max(0, (p - 0.32) / 0.68) * 110;
       m.position.set(x, BY + 25 - drop, z);
       m.rotation.x = -Math.min(0.62, p * 1.2) * (p > 0.3 ? 1 : 0);
@@ -208,7 +378,7 @@ function buildConveyor(dev) {
     const nd = Math.min(3, s.done || 0), nr = Math.min(3, s.rejected || 0);
     binBoxes.forEach((m, i) => { const v = i < 3 ? i < nd : i - 3 < nr; if (m.visible !== v) { m.visible = v; changed = true; } });
     // pusher
-    const pz = 96 - (rt.push || 0) * 150;
+    const pz = FACE0 - (rt.push || 0) * STROKE;
     if (rod.position.z !== pz) { rod.position.z = pz; changed = true; }
     changed = setLed(coilLed.material, !!rt.coil) || changed;
     const sens = rt.sens || {};

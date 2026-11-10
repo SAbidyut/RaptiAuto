@@ -454,8 +454,8 @@ export const DEVICE_DEFS = {
   // ---------------------------------------------------------------- machines (process models on the bench)
   'conveyor': {
     type: 'conveyor', name: 'Belt conveyor with sensors + pusher', short: 'Conveyor', part: '700 mm belt · 0.25 kW gear motor · 4 sensors · pusher', brand: '', category: 'machine', sim: 'conveyor', zone: 'machine', max: 1,
-    size: [880, 290, 380], box: [[-400, 0, -235], [480, 290, 145]],
-    description: 'A 700 mm belt driven by a 0.25 kW gear motor (U V W: 230 V Δ for the MS300 drive, or 400 V Y for a contactor on the 3-phase mains). Boxes come from the feeder at the left — tap it, or set an automatic feed — metal (grey) and plastic (blue) mixed. Sensors (PNP, 24 V from +24 / 0V): S1 photo-eye at the entry, S2 inductive above the belt (metal only), S3 photo-eye at the pusher, S4 photo-eye at the end. Y1 (24 V coil to 0V) fires the pneumatic pusher: a box in front of it is pushed into the reject chute. Boxes that reach the end drop into the bin. With an encoder on the head pulley A / B give 100 pulses per 100 mm of belt.',
+    size: [890, 290, 512], box: [[-410, 0, -262], [480, 290, 250]],
+    description: 'A 700 mm belt on a Ø32 mm rubber-lagged head drum and a tail drum with screw take-ups, driven by a 0.25 kW gear motor on the head shaft (i ≈ 9.2: 150 rpm, 250 mm/s at 50 Hz; U V W: 230 V Δ for the MS300 drive, or 400 V Y for a contactor on the 3-phase mains). Boxes come from the feeder at the left — tap it, or set an automatic feed — metal (grey) and plastic (blue) mixed. Sensors (PNP, 24 V from +24 / 0V): S1 photo-eye at the entry, S2 inductive above the belt (metal only), S3 photo-eye at the pusher, S4 photo-eye at the end. Y1 (24 V coil to 0V) fires the pneumatic pusher: a box in front of it is pushed into the reject chute. Boxes that reach the end drop into the bin. With an encoder on the head pulley A / B give 100 pulses per 100 mm of belt.',
     props: [
       { id: 'label', label: 'Label', type: 'text' },
       { id: 'conn', label: 'Gear motor connection', type: 'select', options: { D230: 'Δ 230 V (MS300 drive)', Y400: 'Y 400 V (3-phase mains)' } },
