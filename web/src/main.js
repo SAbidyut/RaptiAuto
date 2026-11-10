@@ -16,6 +16,7 @@ function boot() {
     // the splash always goes, even if a page fails to draw
     const splash = document.getElementById('splash');
     if (splash) { splash.classList.add('gone'); setTimeout(() => splash.remove(), 600); }
+    document.documentElement.classList.add('booted'); // the page takes its own colour once the splash is going
   }
 }
 

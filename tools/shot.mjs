@@ -28,6 +28,8 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 const errors = [];
 async function newPage(w = +process.env.VW || 390, h = +process.env.VH || 844) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  // LOOK=dark | amoled shows the other themes (the default is RAPTI Day)
+  if (process.env.LOOK) await ctx.addInitScript((look) => { try { const k = 'raptiauto.settings.v1'; localStorage.setItem(k, JSON.stringify({ ...JSON.parse(localStorage.getItem(k) || '{}'), look })); } catch (e) { /* ignore */ } }, process.env.LOOK);
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`); });
   page.on('pageerror', (e) => errors.push('[pageerror] ' + e.message + '\n' + (e.stack || '')));

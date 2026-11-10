@@ -2,7 +2,7 @@
 // (Home, My Projects, Examples, Boards, Components, Guide, Settings, About RAPTI).
 import { getDef, allDefs, CATEGORIES, pinsOf, defaultProps } from '../components/registry.js';
 import { BOARD_TYPES } from '../components/boards.js';
-import { listProjects, loadProject, deleteProject, createProject, cloneProject, saveProject, importJSON, exportJSON } from '../store.js';
+import { listProjects, loadProject, deleteProject, createProject, cloneProject, saveProject, importJSON, exportJSON, THEMES } from '../store.js';
 import { EXAMPLES, EXAMPLE_CATEGORIES } from '../examples/index.js';
 import { h, toast, popupMenu, confirmDialog, promptDialog, timeAgo, pushBack, Sheet, dialog } from './widgets.js';
 import { icon } from './icons.js';
@@ -515,6 +515,9 @@ export class Shell {
     const group = (title, ...rows) => h('section', { class: 'set-group' }, h('h3', {}, title), h('div', { class: 'card set-card' }, ...rows));
     const ard = SECTION !== 'plc' && SECTION !== 'pi'; // the editor settings belong to the Arduino section
     el.append(
+      group('Appearance',
+        h('div', { class: 'theme-pick' }, ...Object.keys(THEMES).map((id) => h('button', { class: 'theme-opt' + (s.look === id ? ' active' : ''), 'aria-pressed': String(s.look === id),
+          onclick: () => { s.look = id; save(); this.app.applyTheme(); this.render(true); } }, h('i', { class: 't-' + id }), THEMES[id].name)))),
       ...(ard ? [group('Circuit editor',
         toggle('Show grid', 'Dotted background grid on the canvas', () => s.showGrid, (v) => { s.showGrid = v; }, 'grid'),
         toggle('Current flow animation', 'Moving dots show current in wires while simulating', () => s.flow, (v) => { s.flow = v; }, 'bolt'),
@@ -912,8 +915,8 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&am
 function heroArt() {
   // animated circuit traces
   return `<svg viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice">
-  <defs><linearGradient id="hg1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee" stop-opacity="0"/><stop offset=".5" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient></defs>
-  <g fill="none" stroke="rgba(148,163,184,.13)" stroke-width="2">
+  <defs><linearGradient id="hg1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffd92e" stop-opacity="0"/><stop offset=".5" stop-color="#ffd92e"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient></defs>
+  <g fill="none" stroke="rgba(255,255,255,.2)" stroke-width="2">
     <path d="M-10 60 H120 L150 90 H260 L290 60 H420"/><path d="M-10 200 H90 L120 170 H230 L260 200 H420"/>
     <path d="M200 -10 V40 L230 70 V130"/><path d="M330 270 V210 L300 180 V140"/><path d="M60 270 V230 L90 200"/>
   </g>
@@ -922,8 +925,8 @@ function heroArt() {
     <path d="M-10 200 H90 L120 170 H230 L260 200 H420" stroke-dasharray="40 360" style="animation-delay:-1.4s"/>
     <path d="M200 -10 V40 L230 70 V130" stroke-dasharray="30 200" style="animation-delay:-.6s"/>
   </g>
-  <g fill="#22d3ee"><circle cx="150" cy="90" r="3.5"/><circle cx="260" cy="90" r="3.5"/><circle cx="120" cy="170" r="3.5"/><circle cx="230" cy="70" r="3.5"/><circle cx="300" cy="180" r="3.5"/></g>
-  <g class="hero-leds"><circle cx="330" cy="110" r="9" fill="#ef4444"/><circle cx="355" cy="110" r="9" fill="#eab308"/><circle cx="380" cy="110" r="9" fill="#22c55e"/></g>
+  <g fill="#ffd92e"><circle cx="150" cy="90" r="3.5"/><circle cx="260" cy="90" r="3.5"/><circle cx="120" cy="170" r="3.5"/><circle cx="230" cy="70" r="3.5"/><circle cx="300" cy="180" r="3.5"/></g>
+  <g class="hero-leds"><circle cx="330" cy="110" r="9" fill="#ff5a3c"/><circle cx="355" cy="110" r="9" fill="#ffd92e"/><circle cx="380" cy="110" r="9" fill="#3ddc97"/></g>
 </svg>`;
 }
 

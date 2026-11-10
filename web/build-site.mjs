@@ -2,7 +2,7 @@
 //   node build.mjs && node build-site.mjs        (npm run site)
 // Output: build/site/<folder>/ and release/website/RaptiAuto-<Name>-Website.zip
 //   index.php, config.php, includes/ (header, footer, helpers) — from web/site/
-//   css/style.css (+ css/plc.css or css/pi.css), js/app.js (+ lab.js or pi.js, micropython.wasm), fonts/
+//   css/style.css (+ css/plc.css or css/pi.css) and css/theme.css, js/app.js (+ lab.js or pi.js, micropython.wasm), fonts/
 import { build } from 'esbuild';
 import { mkdirSync, copyFileSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -17,13 +17,14 @@ const zips = join(here, '..', 'release', 'website');
 if (!existsSync(join(www, 'app.js'))) throw new Error('build/www is missing: run "node build.mjs" first');
 const version = (readFileSync(join(here, '..', 'android', 'AndroidManifest.xml'), 'utf8').match(/versionName="([^"]+)"/) || [])[1] || '1.0.0';
 
-// The order of the style sheets is the order of the @imports in app.css: the lab's sheet comes first.
+// The order of the style sheets is the order of the @imports in app.css: the lab's sheet comes first;
+// theme.css (the RAPTI look, styles/rapti-theme.css) is always the last one.
 const SECTIONS = [
-  { id: 'arduino', folder: 'arduino', name: 'Arduino', css: ['css/style.css'], js: [],
+  { id: 'arduino', folder: 'arduino', name: 'Arduino', css: ['css/style.css', 'css/theme.css'], js: [],
     title: 'Arduino Simulator — RaptiAuto', description: 'Build Arduino and ESP32 circuits on a breadboard, write the code and simulate them in your browser. By RAPTI.' },
-  { id: 'plc', folder: 'plc', name: 'PLC', css: ['css/plc.css', 'css/style.css'], js: ['lab.js'],
+  { id: 'plc', folder: 'plc', name: 'PLC', css: ['css/plc.css', 'css/style.css', 'css/theme.css'], js: ['lab.js'],
     title: 'Delta PLC Lab — RaptiAuto', description: 'A 3D Delta PLC, HMI and VFD trainer: wire the devices, write ladder, design HMI screens and run Modbus in your browser. By RAPTI.' },
-  { id: 'pi', folder: 'raspberry-pi', name: 'Raspberry-Pi', css: ['css/pi.css', 'css/style.css'], js: ['pi.js', 'micropython.wasm'],
+  { id: 'pi', folder: 'raspberry-pi', name: 'Raspberry-Pi', css: ['css/pi.css', 'css/style.css', 'css/theme.css'], js: ['pi.js', 'micropython.wasm'],
     title: 'Raspberry Pi Lab — RaptiAuto', description: 'A virtual Raspberry Pi 5, Pi 4 and Pico: wire a breadboard and run Python in Thonny, right in your browser. By RAPTI.' },
 ];
 
@@ -36,6 +37,8 @@ const core = appCss.replace(/@import\s+["']\.\/(plc|pi)\.css["'];\s*\n/g, '');
 if (core === appCss) throw new Error('app.css: lab @imports not found');
 css['css/style.css'] = fontsUp((await build({ ...cssOpts, stdin: { contents: core, resolveDir: join(here, 'styles'), sourcefile: 'style.css', loader: 'css' } })).outputFiles[0].text);
 for (const f of ['plc', 'pi']) css[`css/${f}.css`] = fontsUp((await build({ ...cssOpts, entryPoints: [join(here, 'styles', f + '.css')] })).outputFiles[0].text);
+// the RAPTI look (colours of the three themes, typeface, buttons, cards) comes last, as in the app
+css['css/theme.css'] = fontsUp((await build({ ...cssOpts, entryPoints: [join(here, 'styles', 'rapti-theme.css')] })).outputFiles[0].text);
 
 // 2. one folder per section
 const copyDir = (from, to) => {
@@ -109,7 +112,7 @@ Files
   includes/functions.php
   favicon.svg          the tab icon
 ${files.map((f) => '  ' + f.padEnd(21) + desc(f)).join('\n')}
-  fonts/               Inter, Space Grotesk, JetBrains Mono (used by the css)
+  fonts/               Archivo, Inter, JetBrains Mono (used by the css)
   .htaccess            Apache: index.php as start page, file types (.wasm), caching
 
 Notes
@@ -127,7 +130,7 @@ Notes
 }
 function desc(f) {
   return {
-    'css/style.css': 'main style sheet', 'css/plc.css': 'PLC Lab styles', 'css/pi.css': 'Raspberry Pi Lab styles',
+    'css/style.css': 'main style sheet', 'css/plc.css': 'PLC Lab styles', 'css/pi.css': 'Raspberry Pi Lab styles', 'css/theme.css': 'the RAPTI look: colours, typeface, buttons',
     'js/app.js': 'the simulator (menus, Arduino, examples, manual)', 'js/lab.js': 'the 3D PLC Lab (loaded on first use)',
     'js/pi.js': 'the Raspberry Pi Lab (loaded on first use)', 'js/micropython.wasm': 'MicroPython for the Pi Lab',
   }[f] || '';

@@ -116,9 +116,16 @@ export function importJSON(text) {
   return p;
 }
 
+/** The three looks (Settings → Appearance); the colours themselves are in styles/rapti-theme.css. */
+export const THEMES = {
+  light: { name: 'RAPTI Day', bg: '#fffaf0' },
+  dark: { name: 'RAPTI Night', bg: '#0b1026' },
+  amoled: { name: 'Black', bg: '#000000' },
+};
+
 export function loadSettings() {
   return {
-    wireStyle: 'smooth', showGrid: true, haptics: true, sound: true, fontSize: 14, autosave: true, flow: true, theme: 'dark',
+    wireStyle: 'smooth', showGrid: true, haptics: true, sound: true, fontSize: 14, autosave: true, flow: true, look: 'light',
     ...safe(() => JSON.parse(localStorage.getItem(SETTINGS) || '{}'), {}),
   };
 }

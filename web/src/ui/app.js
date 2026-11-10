@@ -1,5 +1,5 @@
 // Application shell: screen routing, settings, Android lifecycle hooks.
-import { loadSettings, saveSettings, saveProject } from '../store.js';
+import { loadSettings, saveSettings, saveProject, THEMES } from '../store.js';
 import { installNativeCallbacks, Native } from '../native.js';
 import { Shell } from './shell.js';
 import { Editor } from './editor.js';
@@ -12,6 +12,7 @@ export class App {
   constructor(root) {
     this.root = root;
     this.settings = loadSettings();
+    this.applyTheme();
     Native.haptics = this.settings.haptics !== false;
     // the simulated internet uses the phone's real one when online (Settings → Real internet)
     setLiveWeb(new LiveWeb({ enabled: () => this.settings.realInternet !== false, setEnabled: (on) => { this.settings.realInternet = !!on; this.saveSettings(); } }));
@@ -38,10 +39,36 @@ export class App {
 
   saveSettings() { saveSettings(this.settings); }
 
+  /** The look: RAPTI Day (bright, the default), RAPTI Night or Black. */
+  applyTheme() {
+    if (!THEMES[this.settings.look]) this.settings.look = 'light';
+    document.documentElement.dataset.theme = this.settings.look;
+    this.syncBars();
+  }
+
+  /**
+   * Which part of the app is open: none (the menu pages), 'editor' (Arduino) or 'lab' (PLC lab, Pi lab).
+   * The style sheet keeps the work bench's screens dark in every theme; a lab's sheets and menus too.
+   */
+  setZone(zone) {
+    if (zone) document.documentElement.dataset.zone = zone;
+    else delete document.documentElement.dataset.zone;
+    this.syncBars();
+  }
+
+  /** Android status / navigation bars and the browser's theme colour follow the page. */
+  syncBars() {
+    const T = THEMES[this.settings.look] || THEMES.light;
+    const meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.content = T.bg;
+    Native.setBars(T.bg, T.bg, this.settings.look === 'light');
+  }
+
   showHome(page) {
     if (this.editor) { this.editor.unmount(); this.editor = null; }
     if (this.lab) { this.lab.unmount(); this.lab = null; }
     if (this.pi) { this.pi.unmount(); this.pi = null; }
+    this.setZone(null);
     if (!this.home) this.home = new Shell(this);
     if (!this.home.root.isConnected) this.home.mount(this.root);
     else this.home.refreshProjects();
@@ -53,6 +80,7 @@ export class App {
     if (this.editor) this.editor.unmount();
     if (this.lab) { this.lab.unmount(); this.lab = null; }
     if (this.pi) { this.pi.unmount(); this.pi = null; }
+    this.setZone('editor');
     this.editor = new Editor(this, p);
     this.editor.mount(this.root);
   }
@@ -65,6 +93,7 @@ export class App {
     if (this.editor) { this.editor.unmount(); this.editor = null; }
     if (this.lab) this.lab.unmount();
     if (this.pi) { this.pi.unmount(); this.pi = null; }
+    this.setZone('lab');
     this.lab = new mod.LabScreen(this, p);
     this.lab.mount(this.root);
   }
@@ -78,6 +107,7 @@ export class App {
     if (this.editor) { this.editor.unmount(); this.editor = null; }
     if (this.lab) { this.lab.unmount(); this.lab = null; }
     if (this.pi) this.pi.unmount();
+    this.setZone('lab');
     this.pi = new mod.PiScreen(this);
     this.pi.mount(this.root);
     if (opts.board || opts.example || opts.newProject) this.pi.start(opts);

@@ -1,0 +1,361 @@
+/* =====================================================================
+   RaptiAuto — RAPTI website theme (the look RaptiCKT has)
+   Loaded after app.css. It changes how the app LOOKS only: colours,
+   type, buttons, cards. Nothing here moves the working parts of the
+   editor or the labs.
+
+   1. Typeface        2. Colours for the three themes
+   3. Type            4. Buttons, inputs, chips
+   5. Top bar, bottom bar, menu drawer
+   6. Home            7. Lists & cards
+   8. Sheets, dialogs, menus, messages
+   9. Settings, about, guide, manual
+   10. The work bench (editor, PLC lab, Pi lab)
+   11. Splash screen
+   ===================================================================== */
+
+/* ---------- 1. Typeface (the one the website and RaptiCKT use) ---------- */
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-latin.woff2") format("woff2"); font-weight: 100 900; font-stretch: 62% 125%; font-style: normal; font-display: swap; }
+
+/* ---------- 2. Colours ----------
+   "RAPTI Day" (the bright theme) is what a new user sees.
+   The names on the left are the app's own; the values are the website's
+   palette. The --acc / --slate / --glass triplets feed rgba(var(--acc), .2). */
+:root {
+  /* website palette: the same in every theme */
+  --ink: #0b1026; --blue: #1d4bff; --blue-700: #0e2ab3; --volt: #ffd92e; --volt-700: #c79600;
+  --hot: #ff5a3c; --hot-700: #c2360f; --mint: #14c796; --mint-700: #0b8f6b; --go: #1fc15e; --go-700: #128a40;
+
+  --bg: #fffaf0; --bg2: #ffffff; --surface: #ffffff; --surface2: #f6efdc; --elev: #ece3c8;
+  --sheet: #fffaf0; --field: #ffffff;
+  --line: #e9e2cd; --line2: #d8cfb4; --edge: #d8cfb4;
+  --text: #0b1026; --text2: #3b4266; --muted: #5a6183; --dim: #8088a8;
+  --accent: #1d4bff; --accent2: #1d4bff; --accent3: #0e2ab3;
+  --accent-text: #1438e0; --accent2-text: #0e2ab3; --on-accent: #ffffff;
+  --acc: 29, 75, 255; --acc2: 29, 75, 255; --slate: 11, 16, 38; --glass: 255, 255, 255;
+  --grad: linear-gradient(#1d4bff, #1d4bff);
+  --grad-soft: linear-gradient(rgba(29, 75, 255, .1), rgba(29, 75, 255, .1));
+  --ok: #12a150; --warn: #c27a00; --err: #d6401d;
+  --ok-text: #0b7a5c; --warn-text: #8a5a00; --err-text: #c2360f;
+  --tint: rgba(29, 75, 255, .1);                             /* soft fill behind a chosen thing */
+  --on-bg: #0b1026; --on-fg: #ffffff; --on-edge: #000000;    /* a chosen chip or tab */
+  --nav-bg: #0b1026;                                         /* the floating bottom bar */
+  --pop-line: #0b1026; --pop-shadow: 5px 5px 0 #0b1026;      /* menus and pop-ups */
+  --shadow: 0 12px 30px rgba(11, 16, 38, .16);
+  color-scheme: light;
+}
+/* RAPTI Night. The screens of the work bench (circuit, code, Serial Monitor, the PLC and Pi labs with
+   their sheets) and the dark picture tiles use it in every theme, the way real bench gear has a dark
+   screen; the bars around them follow the theme. */
+:root[data-theme=dark], :root[data-theme=amoled],
+.ed-main, .lab-main, .pi-main, .lab-status, .fs-bar, .fs-handle,
+:root[data-zone=lab] .overlay, :root[data-zone=lab] .toast-host, :root[data-zone=lab] .lab-loading,
+.lab-banner, .lab-intro, .mx-article pre, .mf {
+  --bg: #0b1026; --bg2: #0f1533; --surface: #171e42; --surface2: #1f2853; --elev: #2a3261;
+  --sheet: #131a3b; --field: #0f1533;
+  --line: rgba(170, 185, 255, .15); --line2: rgba(170, 185, 255, .28); --edge: #05081a;
+  --text: #f4f6ff; --text2: #c5cbee; --muted: #8f98c8; --dim: #6b749f;
+  --accent: #ffd92e; --accent2: #6d8cff; --accent3: #1d4bff;
+  --accent-text: #ffe680; --accent2-text: #b9c6ff; --on-accent: #0b1026;
+  --acc: 255, 217, 46; --acc2: 109, 140, 255; --slate: 170, 185, 255; --glass: 15, 21, 51;
+  --grad: linear-gradient(#ffd92e, #ffd92e);
+  --grad-soft: linear-gradient(rgba(255, 217, 46, .14), rgba(255, 217, 46, .14));
+  --ok: #1fc15e; --warn: #f59e0b; --err: #ff5a3c;
+  --ok-text: #7ee8b5; --warn-text: #ffe08a; --err-text: #ffab99;
+  --tint: rgba(255, 217, 46, .13);
+  --on-bg: #ffd92e; --on-fg: #0b1026; --on-edge: #c79600;
+  --nav-bg: #171e42;
+  --pop-line: rgba(170, 185, 255, .4); --pop-shadow: 0 14px 34px rgba(0, 0, 0, .55);
+  --shadow: 0 12px 30px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+:root[data-theme=amoled] {
+  --bg: #000000; --bg2: #000000; --surface: #0c1024; --surface2: #141a36; --elev: #1d2548;
+  --sheet: #070a18; --field: #05070f; --edge: #000000; --glass: 6, 8, 20; --nav-bg: #0c1024; --canvas-bg: #000000;
+}
+:root[data-theme=amoled] .ed-main, :root[data-theme=amoled] .lab-main, :root[data-theme=amoled] .pi-main, :root[data-theme=amoled] .lab-status, :root[data-theme=amoled] .fs-bar, :root[data-theme=amoled] .fs-handle,
+:root[data-theme=amoled][data-zone=lab] .overlay, :root[data-theme=amoled][data-zone=lab] .toast-host {
+  --bg: #000000; --bg2: #000000; --surface: #0c1024; --surface2: #141a36; --elev: #1d2548;
+  --sheet: #070a18; --field: #05070f; --edge: #000000; --glass: 6, 8, 20; --canvas-bg: #000000;
+}
+.ed-main, .lab-main, .pi-main, .lab-status, .fs-bar, .fs-handle, :root[data-zone=lab] .overlay, :root[data-zone=lab] .toast-host, :root[data-zone=lab] .lab-loading,
+.lab-banner, .lab-intro, .mx-article pre, .mf { color: var(--text); }
+.ed-main, .lab-main, .pi-main { background: var(--bg); }
+.lab-status { background: linear-gradient(90deg, rgba(31, 193, 94, .18), rgba(255, 217, 46, .05)), var(--bg2); border-bottom-color: rgba(31, 193, 94, .3); }
+
+/* ---------- 3. Type ---------- */
+body { font-stretch: 100%; }
+.wordmark { font-weight: 900; font-stretch: 125%; letter-spacing: .01em; }
+/* the "Auto" in the name: one flat colour instead of a gradient */
+.wordmark i, #splash .sp-name i { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--accent); }
+.logo-mark { filter: none; }
+@media (max-width: 350px) { .app-title .wordmark { font-size: 17px; } }
+.app-title h1, .sec-head h2, .sheet-title, .dialog-title, .empty-state h2, .about-card h3, .lab-intro h2, .lab-banner h2, .mx-hero h2, .mx-article h1, .mx-article h2, .pi-title { font-weight: 800; font-stretch: 112%; letter-spacing: -.005em; }
+.hero h1, .about-hero h1 { font-weight: 900; font-stretch: 125%; letter-spacing: -.012em; }
+.stat b, .rc-text b, .mx-no { font-weight: 900; font-stretch: 120%; }
+.proj-name, .ex-name, .feat b, .bi-body b, .set-text b, .mx-card b, .guide-item summary, .lib-name { font-weight: 800; }
+.tag { font-weight: 800; letter-spacing: .03em; }
+.dr-group, .set-group h3, .field > label, .props-cat, .card-kicker { font-weight: 800; letter-spacing: .09em; }
+.see-all { font-weight: 800; }
+
+/* ---------- 4. Buttons: chunky, with a bottom edge that presses down ---------- */
+.btn { border-radius: 14px; font-weight: 800; transition: transform .12s ease, box-shadow .12s ease, filter .15s; }
+.btn:active { transform: translateY(4px); }
+.btn-lg { border-radius: 16px; }
+.btn-primary { background: var(--volt); color: var(--ink); box-shadow: 0 4px 0 var(--volt-700); }
+.btn-primary:active { box-shadow: 0 0 0 var(--volt-700); }
+.btn-ghost, .btn-glass { border: 0; background: var(--surface); color: var(--text); box-shadow: 0 4px 0 var(--edge), inset 0 0 0 2px var(--line2); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.btn-ghost:active, .btn-glass:active { box-shadow: 0 0 0 var(--edge), inset 0 0 0 2px var(--line2); }
+.btn-danger { background: var(--hot); color: #fff; box-shadow: 0 4px 0 var(--hot-700); }
+.btn-danger:active { box-shadow: 0 0 0 var(--hot-700); }
+.btn-danger-ghost { border: 0; background: var(--surface); color: var(--err-text); box-shadow: 0 4px 0 var(--edge), inset 0 0 0 2px rgba(255, 90, 60, .5); }
+.btn-danger-ghost:active { box-shadow: 0 0 0 var(--edge), inset 0 0 0 2px rgba(255, 90, 60, .5); }
+.btn.sm, .btn-sm { border-radius: 11px; }
+.hero-actions, .empty-actions, .contact-actions, .dialog-actions, .props-actions { row-gap: 14px; }
+/* on the blue and navy picture blocks the second button is see-through */
+.hero .btn-glass, .lab-banner .btn-glass, .lab-intro .btn-glass, .about-hero .btn-glass { background: rgba(255, 255, 255, .12); color: #fff; box-shadow: 0 4px 0 rgba(4, 10, 50, .5), inset 0 0 0 2px rgba(255, 255, 255, .7); }
+.hero .btn-glass:active, .lab-banner .btn-glass:active, .lab-intro .btn-glass:active, .about-hero .btn-glass:active { box-shadow: 0 0 0 rgba(4, 10, 50, .5), inset 0 0 0 2px #fff; }
+.icon-btn:active { background: rgba(var(--slate), .14); }
+
+.input, .select { border: 2px solid var(--line2); font-weight: 600; }
+.input:focus, .select:focus { border-color: var(--accent); box-shadow: none; }
+.lib-search-row, .mx-search { border: 2px solid var(--line2); }
+.lib-search-row:focus-within, .mx-search:focus-within { border-color: var(--accent); }
+.lib-search, .lib-search:focus { border: 0; }
+.search-box .input { border-radius: 14px; }
+.chip:not(.lab-chip) { border: 2px solid var(--line2); background: var(--surface); color: var(--text); font-weight: 700; box-shadow: 0 3px 0 var(--edge); }
+.chip.active:not(.lab-chip) { background: var(--on-bg); color: var(--on-fg); border-color: var(--on-bg); box-shadow: 0 3px 0 var(--on-edge); }
+.chips-row, .lib-chips { padding-bottom: 12px; }
+.ex-hint { border: 2px solid var(--line2); background: var(--tint); color: var(--accent-text); font-weight: 700; }
+.segmented { border: 2px solid var(--line2); background: var(--surface); }
+.seg { font-weight: 700; }
+.seg.active { background: var(--elev); box-shadow: none; }
+.seg-wrap .seg.active { background: var(--on-bg); color: var(--on-fg); }
+.seg-wrap .seg { font-size: 13px; white-space: nowrap; padding: 0 6px; }
+.toggle { background: var(--line2); }
+.toggle.on { background: var(--accent); }
+.toggle span { box-shadow: 0 1px 3px rgba(11, 16, 38, .35); }
+.range::-webkit-slider-runnable-track { background: var(--accent); }
+.range::-moz-range-track { background: var(--accent); }
+.range::-webkit-slider-thumb { box-shadow: 0 2px 0 rgba(11, 16, 38, .35), 0 0 0 2px var(--ink); }
+.opt { border: 2px solid var(--line2); background: var(--surface); color: var(--text); font-weight: 700; }
+.opt.active { border-color: var(--accent); background: var(--tint); color: var(--text); }
+
+/* icon tiles: the yellow tile of the website, a little turned */
+.sec-ic, .sheet-icon, .gi-ic, .feat-ic, .empty-ic, .mx-no { background: var(--volt); color: var(--ink); border: 0; }
+.sec-ic, .gi-ic, .feat-ic { transform: rotate(-5deg); }
+.feat:nth-child(4n+2) .feat-ic, .guide-item:nth-child(4n+2) .gi-ic { background: var(--mint); transform: rotate(4deg); }
+.feat:nth-child(4n+3) .feat-ic, .guide-item:nth-child(4n+3) .gi-ic { background: var(--blue); color: #fff; }
+.feat:nth-child(4n+4) .feat-ic, .guide-item:nth-child(4n+4) .gi-ic { background: var(--hot); color: #fff; transform: rotate(5deg); }
+.set-ic, .c-ic { background: var(--tint); color: var(--accent); }
+
+/* ---------- 5. Top bar, bottom bar, menu drawer ---------- */
+.app-bar { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 2px solid var(--line); }
+.page-tools.sticky { background: linear-gradient(180deg, var(--bg) 82%, transparent); }
+
+/* the floating dark bar from the website's phone view */
+.bottom-nav {
+  position: absolute; left: 50%; right: auto; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%);
+  width: min(560px, calc(100% - 20px - var(--safe-l) - var(--safe-r))); padding: 7px; gap: 2px; border: 0; border-radius: 24px;
+  background: var(--nav-bg); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 10px 30px -8px rgba(11, 16, 38, .55);
+}
+:root[data-theme=dark] .bottom-nav, :root[data-theme=amoled] .bottom-nav { box-shadow: 0 0 0 1px var(--line2), 0 10px 30px -8px rgba(0, 0, 0, .7); }
+.bn-item { padding: 6px 4px 5px; border-radius: 18px; color: #8f98c8; font-weight: 700; gap: 1px; transition: background .2s, color .2s; }
+.bn-item.active { color: var(--volt); background: rgba(255, 255, 255, .09); }
+.bn-ic, .bn-item.active .bn-ic { width: auto; height: 26px; background: none; box-shadow: none; color: inherit; }
+.page { padding-bottom: calc(96px + var(--safe-b)); }
+.page-projects { padding-bottom: calc(168px + var(--safe-b)); }
+.fab-page { bottom: calc(88px + var(--safe-b)); }
+@media (orientation: landscape) and (max-height: 520px) {
+  .bottom-nav { padding: 4px; bottom: calc(6px + var(--safe-b)); }
+  .bn-item { padding: 3px 4px 2px; }
+  .page { padding-bottom: calc(76px + var(--safe-b)); }
+  .fab-page { bottom: calc(70px + var(--safe-b)); }
+}
+
+.drawer-scrim { background: rgba(11, 16, 38, .5); }
+.drawer { background: var(--bg); border-right: 2px solid var(--line2); box-shadow: 24px 0 60px -20px rgba(11, 16, 38, .45); }
+.dr-head { color: #fff; border-bottom: 0; background: radial-gradient(70% 110% at 92% 0%, #456dff 0%, transparent 70%), var(--blue); }
+.dr-head .wordmark { color: #fff; }
+.dr-head .wordmark i { color: var(--volt); }
+.dr-brand small { color: #dbe2ff; font-weight: 600; }
+.dr-new { color: var(--ink); background: var(--volt); font-weight: 800; box-shadow: 0 4px 0 rgba(4, 10, 50, .45); transition: transform .12s ease, box-shadow .12s ease; }
+.dr-new:active { transform: translateY(4px); box-shadow: 0 0 0 rgba(4, 10, 50, .45); }
+.dr-item { color: var(--text); font-weight: 700; }
+.dr-item.active { background: var(--tint); color: var(--text); }
+.dr-ic { color: var(--muted); }
+.dr-count { font-weight: 700; }
+.dr-new-badge { background: var(--mint); color: var(--ink); }
+.dr-foot { border-top: 2px solid var(--line); font-weight: 600; }
+
+/* ---------- 6. Home ---------- */
+/* the blue block with the dotted pattern from the website's hero */
+.hero, .about-hero, .mx-hero {
+  border: 0; color: #fff; box-shadow: 0 6px 0 var(--blue-700);
+  background:
+    radial-gradient(60% 90% at 88% 10%, #456dff 0%, transparent 70%),
+    radial-gradient(50% 80% at 0% 100%, var(--blue-700) 0%, transparent 72%),
+    var(--blue);
+}
+:root[data-theme=dark] .hero, :root[data-theme=amoled] .hero, :root[data-theme=dark] .about-hero, :root[data-theme=amoled] .about-hero,
+:root[data-theme=dark] .mx-hero, :root[data-theme=amoled] .mx-hero { box-shadow: 0 6px 0 #071566; }
+.hero { border-radius: 28px; margin-bottom: 12px; }
+.hero::after, .mx-hero::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; background-image: radial-gradient(rgba(255, 255, 255, .16) 1.3px, transparent 1.5px); background-size: 24px 24px; -webkit-mask-image: linear-gradient(110deg, transparent 40%, #000); mask-image: linear-gradient(110deg, transparent 40%, #000); }
+.hero-bg { opacity: .5; }
+.hero-content { z-index: 1; padding: 26px 22px 24px; }
+.mx-hero > * { position: relative; z-index: 1; }
+.hero h1 { font-size: clamp(25px, 7vw, 44px); line-height: 1.02; text-transform: uppercase; margin: 16px 0 12px; }
+.hero h1 .grad, .lab-banner h2 .grad, .lab-intro h2 .grad { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--volt); }
+.pi-banner h2 .grad, .pi-intro h2 .grad { background: none; color: #ff8fa6; }
+.hero p, .mx-hero p { color: #dbe2ff; font-size: 15px; }
+.hero-kicker { background: rgba(255, 255, 255, .14); border: 0; color: #fff; font-weight: 700; padding: 6px 11px; }
+.pi-banner .hero-kicker, .pi-intro .hero-kicker { color: #fff; }
+.hero-actions { gap: 12px; }
+.hero .btn-lg { padding: 0 16px; font-size: 15px; }
+@media (max-width: 380px) { .hero-content { padding: 24px 18px 22px; } .hero .hero-actions { gap: 10px; } .hero .btn-lg { height: 48px; padding: 0 13px; font-size: 14.5px; gap: 6px; } }
+.stat { background: var(--surface); border: 2px solid var(--line); }
+
+/* the two labs: navy blocks that carry their picture */
+.lab-banner, .lab-intro { border: 0; box-shadow: 0 6px 0 #05081a; background: radial-gradient(90% 120% at 100% 0%, rgba(29, 75, 255, .5), transparent 62%), #131b45; }
+.pi-banner, .pi-intro { background: radial-gradient(90% 120% at 100% 0%, rgba(225, 29, 72, .36), transparent 62%), #131b45; }
+.lab-banner { margin-top: 16px; }
+.lab-banner:active { transform: translateY(3px); box-shadow: 0 3px 0 #05081a; }
+.lab-banner p, .lab-intro p { color: #c5cbee; }
+.lab-intro { margin-bottom: 10px; }
+.li-feats .pill, .about-pills .pill { background: rgba(255, 255, 255, .12); border: 0; color: #fff; font-weight: 700; }
+.pi-intro .li-feats .pill svg { color: var(--volt); }
+
+.home-sec { margin-top: 28px; }
+.sec-head p { font-weight: 500; }
+.see-all { color: var(--accent-text); }
+.rapti-card { background: var(--volt); color: var(--ink); border: 0; box-shadow: 0 5px 0 var(--volt-700); transition: transform .12s ease, box-shadow .12s ease; }
+.rapti-card:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--volt-700); }
+.rc-logo { background: var(--ink); color: var(--volt); }
+.rc-text span { color: #4a3d00; font-weight: 600; }
+.rc-go { color: var(--ink); }
+.home-foot .muted { font-weight: 600; }
+
+/* ---------- 7. Lists & cards: a 2 px line and a bottom edge ---------- */
+.proj-card, .ex-card, .board-item, .guide-item, .mx-card, .mx-hit, .feat, .card, .pi-ex, .mx-toc, .mx-parts, .mx-nav button, .ex-more, .steps-book {
+  background: var(--surface); border: 2px solid var(--line); box-shadow: 0 4px 0 var(--edge);
+}
+.proj-card:active, .ex-card:active, .mx-card:active { border-color: var(--text); }
+.guide-item[open] { border-color: var(--accent); }
+.proj-list, .guide-list, .mx-hits { gap: 12px; }
+.ex-grid { gap: 14px 12px; }
+.ex-row { padding-bottom: 10px; }
+.ex-thumb, .proj-thumb, .bi-thumb, .pi-thumb, .props-thumb, .pi-ex-thumb, .lab-thumb, .lab-ex-thumb { background: radial-gradient(circle at 50% 30%, #1a2350, #0b1026); }
+.proj-thumb { border-radius: 11px; }
+.lib-card { border: 2px solid var(--line); background: var(--surface); }
+.lib-card:active { border-color: var(--text); background: var(--tint); }
+.lib-cat { color: var(--accent-text); font-weight: 800; }
+.empty-state { border: 2px dashed var(--line2); background: var(--surface); }
+.steps-book, .ex-more { background: var(--tint); border-color: var(--line2); }
+.steps-book small { color: var(--text2); }
+.tag { background: rgba(var(--slate), .1); color: var(--text2); }
+.tag-beginner { background: rgba(31, 193, 94, .16); color: var(--ok-text); }
+.tag-intermediate { background: rgba(245, 158, 11, .18); color: var(--warn-text); }
+.tag-advanced { background: rgba(255, 90, 60, .16); color: var(--err-text); }
+.pin-chip { font-weight: 600; }
+.pi-sec h4 { color: var(--accent-text); font-weight: 800; }
+.ex-group span { border-width: 2px; font-weight: 700; }
+
+/* ---------- 8. Sheets, dialogs, menus, messages ---------- */
+.overlay { background: rgba(11, 16, 38, .55); }
+.menu-overlay { background: rgba(11, 16, 38, .3); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sheet { border-top: 2px solid var(--line2); border-radius: 26px 26px 0 0; box-shadow: 0 -16px 44px -12px rgba(11, 16, 38, .4); }
+.sheet-overlay.nonmodal .sheet { background: var(--sheet); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sheet-handle span { background: var(--line2); }
+.dialog { border: 2px solid var(--pop-line); box-shadow: var(--pop-shadow); }
+.popup-menu { background: var(--surface); border: 2px solid var(--pop-line); box-shadow: var(--pop-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.menu-item { font-weight: 600; }
+.menu-item.danger { color: var(--err-text); }
+@media (min-width: 760px) { .sheet { border: 2px solid var(--line2); border-bottom: 0; } }
+.toast { background: #0b1026; color: #fff; border: 2px solid rgba(170, 185, 255, .3); font-weight: 600; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0 12px 28px -10px rgba(11, 16, 38, .6); }
+:root[data-theme=dark] .toast, :root[data-theme=amoled] .toast, :root[data-zone] .toast { background: #2a3261; }
+.toast-ok .ic { color: #3ddc97; }
+.toast-warn { border-color: rgba(255, 217, 46, .6); }
+.toast-warn .ic { color: var(--volt); }
+.toast-error { border-color: rgba(255, 90, 60, .7); }
+.toast-error .ic { color: #ff8a6e; }
+.board-info td { border-bottom: 2px solid var(--line); }
+.warn-list { color: var(--warn-text); }
+
+/* ---------- 9. Settings, about, guide, manual ---------- */
+.set-row + .set-row { border-top: 2px solid var(--line); }
+.set-row.danger .set-ic { background: rgba(255, 90, 60, .14); }
+.theme-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 14px; }
+.theme-opt { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 8px 8px 9px; border-radius: 16px; border: 2px solid var(--line2); background: var(--surface); font-weight: 800; font-size: 12.5px; text-align: center; box-shadow: 0 3px 0 var(--edge); }
+.theme-opt.active { border-color: var(--accent); background: var(--tint); }
+.theme-opt i { display: block; position: relative; height: 54px; border-radius: 10px; overflow: hidden; border: 2px solid rgba(var(--slate), .25); }
+.theme-opt i::before { content: ""; position: absolute; left: 8px; right: 8px; top: 8px; height: 18px; border-radius: 6px; background: #1d4bff; }
+.theme-opt i::after { content: ""; position: absolute; left: 8px; bottom: 8px; width: 26px; height: 12px; border-radius: 5px; background: #ffd92e; }
+.theme-opt .t-light { background: #fffaf0; }
+.theme-opt .t-dark { background: #0b1026; }
+.theme-opt .t-amoled { background: #000; }
+
+.about-hero { border-radius: 28px; }
+.about-badge { background: var(--volt); color: var(--ink); box-shadow: 0 5px 0 rgba(4, 10, 50, .45); transform: rotate(-4deg); }
+.about-full { color: #dbe2ff; font-weight: 600; }
+.card-kicker { color: var(--accent-text); }
+.about-card p.bn { background: var(--tint); border: 2px solid rgba(var(--acc), .28); color: var(--text); }
+.about-card p { color: var(--text2); }
+.course { background: var(--surface); border: 2px solid var(--line2); color: var(--text); font-weight: 700; }
+.contact .c-row { border-bottom: 2px solid var(--line); }
+.gi-tip { border-width: 2px; }
+.gi-libs span { border-width: 2px; background: var(--tint); color: var(--accent2-text); font-weight: 600; }
+
+.mx-hero { border-radius: 26px; margin-bottom: 18px; }
+.mx-top { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 2px solid var(--line); }
+.mx-jump { border: 2px solid var(--line2); font-weight: 600; }
+.mx-parts button.on { background: var(--on-bg); color: var(--on-fg); box-shadow: none; }
+.mx-parts button.on small { color: inherit; opacity: .75; }
+.mx-parts { box-shadow: 0 4px 0 var(--edge); }
+.mx-article h2 i, .mx-toc a i { color: var(--accent-text); }
+.mx-article b, .mx-article strong { color: var(--text); }
+.mx-article a { color: var(--accent-text); font-weight: 700; }
+.mx-article pre, .mf { border: 0; background: #0b1026; }
+:root[data-theme=dark] .mx-article pre, :root[data-theme=dark] .mf, :root[data-zone=lab] .mx-article pre, :root[data-zone=lab] .mf { background: #0f1533; box-shadow: inset 0 0 0 2px rgba(170, 185, 255, .15); }
+:root[data-theme=amoled] .mx-article pre, :root[data-theme=amoled] .mf { background: #0c1024; box-shadow: inset 0 0 0 2px rgba(170, 185, 255, .15); }
+.mx-note, .mx-tip, .mx-warn, .mx-try { border-width: 2px; }
+.mx-table-wrap { border: 2px solid var(--line); }
+.mx-steps > li::before { background: var(--volt); color: var(--ink); }
+button.mx-open { background: var(--volt); color: var(--ink); font-weight: 800; box-shadow: 0 4px 0 var(--volt-700); transition: transform .12s ease, box-shadow .12s ease; }
+button.mx-open:active { transform: translateY(4px); box-shadow: 0 0 0 var(--volt-700); }
+.mx-project { border-width: 2px; background: var(--tint); }
+.mx-project b { color: var(--accent-text); }
+.mx-ard-promise { background: var(--tint); color: var(--text); }
+
+/* ---------- 10. The work bench: Arduino editor, PLC lab, Raspberry Pi lab ---------- */
+.ed-top { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 2px solid var(--line); }
+.ed-title { font-weight: 800; }
+.board-chip { color: var(--accent-text); }
+.run-btn { background: var(--go); box-shadow: 0 4px 0 var(--go-700); font-weight: 800; transition: transform .12s ease, box-shadow .12s ease, background .3s; }   /* green = start */
+.run-btn:active { transform: translateY(4px); box-shadow: 0 0 0 var(--go-700); }
+.run-btn.running { background: var(--hot); box-shadow: 0 4px 0 var(--hot-700); animation: none; }   /* running: press to stop */
+.run-btn.running:active { box-shadow: 0 0 0 var(--hot-700); }
+.ed-nav { background: var(--bg2); border-top: 2px solid var(--line); }
+.sim-status { border-bottom-width: 2px; }
+.nav-tab { font-weight: 700; }
+.nav-tab.active { color: var(--accent); }
+.nav-tab.active .ic { filter: none; }
+.fab { border-radius: 20px; transition: transform .12s ease, box-shadow .12s ease, opacity .2s; }
+.fab-main, .fab-page { background: var(--volt); color: var(--ink); box-shadow: 0 5px 0 var(--volt-700); }
+.fab-main:active, .fab-page:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--volt-700); }
+.side-tools, .sel-bar, .wire-bar { border-width: 2px; }
+.canvas-hint { background: rgba(var(--glass), .92); border: 2px solid rgba(var(--acc), .45); color: var(--text); }
+.pin-tip { border-width: 2px; }
+.code-file { font-weight: 700; }
+.badge { box-shadow: none; }
+.dot.live { background: var(--go); }
+.wire-info { color: var(--accent-text); }
+.code-tab.active b { color: var(--accent-text); }
+.iot-link { background: rgba(var(--acc2), .16); color: var(--accent2-text); }
+
+/* ---------- 11. Splash screen: the website's blue ---------- */
+#splash { background: radial-gradient(60% 60% at 70% 30%, #456dff 0%, transparent 70%), var(--blue); }
+#splash svg { filter: drop-shadow(0 8px 0 rgba(6, 16, 90, .45)); }
+#splash .sp-name { color: #fff; font-weight: 900; font-stretch: 125%; }
+#splash .sp-name i { color: var(--volt); }
+#splash .sp-bar { background: rgba(255, 255, 255, .22); height: 5px; border-radius: 5px; }
+#splash .sp-bar::after { background: var(--volt); }

@@ -1,5 +1,5 @@
 /* ===================================================================== Raspberry Pi Lab */
-.pi-screen { background: #070b16; }
+.pi-screen { background: var(--bg); }
 .pi-title { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 700; font-size: 16.5px; }
 .pi-run-dot { width: 9px; height: 9px; border-radius: 50%; background: #334155; transition: background .2s; }
 .pi-run-dot.on { background: #22c55e; box-shadow: 0 0 0 0 rgba(34, 197, 94, .7); animation: runPulse 1.6s infinite; }
@@ -17,7 +17,7 @@
 .pb-svg { overflow: auto; --z: 1; scrollbar-width: thin; }
 .pb-svg svg { display: block; width: calc(100% * var(--z)); max-width: calc(720px * var(--z)); margin: 0 auto; height: auto; touch-action: manipulation; }
 .pb-zooms { display: flex; gap: 6px; flex-shrink: 0; }
-.pb-zoom { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(15, 23, 43, .85); border: 1px solid var(--line2); color: var(--text); }
+.pb-zoom { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(var(--glass), .85); border: 1px solid var(--line2); color: var(--text); }
 
 .board-svg .silk { fill: #e7f6ec; font: 600 13px var(--font); }
 .board-svg .silk-big { fill: #f1fbf4; font: 700 24px var(--display); }
@@ -29,7 +29,7 @@
 .board-svg .hp[data-st="pwm"] .pst { fill: #ff9f1c; stroke: #ffe1b0; filter: drop-shadow(0 0 4px #ff9f1c); }
 .board-svg .hp[data-st="ihi"] .pst { fill: rgba(34, 229, 94, .35); stroke: #22e55e; }
 .board-svg .hp[data-st="ilo"] .pst { fill: rgba(148, 163, 184, .2); stroke: #94a3b8; }
-.board-svg .hp:active .pst { stroke: #22d3ee; }
+.board-svg .hp:active .pst { stroke: var(--accent); }
 .board-svg .plabel { font: 700 11.5px var(--mono); fill: #d1fae5; pointer-events: none; }
 .board-svg .plabel.t-gnd { fill: #9ca3af; }
 .board-svg .plabel.t-power3, .board-svg .plabel.t-power5 { fill: #fca5a5; }
@@ -76,7 +76,7 @@
 .pin-chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border-radius: 8px; background: rgba(217, 173, 60, .12); border: 1px solid rgba(217, 173, 60, .35); font-size: 12px; color: #fde68a; }
 .pin-chip b { font-weight: 700; color: #fff; font-size: 11px; }
 .pin-chip.unset { background: rgba(239, 68, 68, .12); border-color: rgba(239, 68, 68, .4); color: #fecaca; }
-.pin-chip.spi { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .35); color: #a5f3fc; }
+.pin-chip.spi { background: rgba(var(--acc), .1); border-color: rgba(var(--acc), .35); color: var(--accent-text); }
 .pi-screen .pc-ctl { display: flex; flex-direction: column; gap: 6px; }
 .pc-slider { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .pc-slider span { width: 58px; flex-shrink: 0; }
@@ -88,15 +88,15 @@
 
 .pb-specs { border-radius: 16px; background: var(--surface); border: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .pb-sec { font-family: var(--display); font-size: 15px; margin-bottom: 2px; }
-.spec { display: flex; gap: 12px; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dashed rgba(148, 163, 184, .1); }
+.spec { display: flex; gap: 12px; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dashed rgba(var(--slate), .1); }
 .spec:last-child { border-bottom: none; }
 .spec span { color: var(--muted); width: 110px; flex-shrink: 0; }
 .spec b { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
 /* sheets */
 .pi-boards { display: flex; flex-direction: column; gap: 8px; }
-.pi-bopt { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; background: rgba(148, 163, 184, .06); border: 1px solid var(--line); text-align: left; }
-.pi-bopt.active { border-color: var(--accent); background: rgba(34, 211, 238, .08); }
+.pi-bopt { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; background: rgba(var(--slate), .06); border: 1px solid var(--line); text-align: left; }
+.pi-bopt.active { border-color: var(--accent); background: rgba(var(--acc), .08); }
 .pi-bopt > div:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pi-bopt b { font-size: 14.5px; }
 .pi-bopt small { font-size: 11.5px; color: #b6c3dc; }
@@ -105,16 +105,16 @@
 .pin-info { display: flex; flex-direction: column; gap: 4px; }
 .pin-info .btn { margin-top: 10px; }
 .pi-addparts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
-.pi-addpart { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: rgba(148, 163, 184, .06); border: 1px solid var(--line); text-align: left; }
+.pi-addpart { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: rgba(var(--slate), .06); border: 1px solid var(--line); text-align: left; }
 .pi-addpart > div { display: flex; flex-direction: column; min-width: 0; }
 .pi-addpart b { font-size: 14px; }
 .pi-addpart small { font-size: 11.5px; color: var(--muted); }
 .pin-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 7px; }
-.pin-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 10px; border-radius: 12px; background: rgba(148, 163, 184, .06); border: 1px solid var(--line); text-align: left; }
+.pin-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 10px; border-radius: 12px; background: rgba(var(--slate), .06); border: 1px solid var(--line); text-align: left; }
 .pin-opt b { font-family: var(--mono); font-size: 13.5px; color: #fde68a; }
 .pin-opt span { font-size: 11px; color: var(--muted); }
 .pin-opt small { font-size: 10.5px; color: #fca5a5; }
-.pin-opt.active { border-color: var(--accent); background: rgba(34, 211, 238, .1); }
+.pin-opt.active { border-color: var(--accent); background: rgba(var(--acc), .1); }
 .pin-opt.used { opacity: .75; }
 .pi-about p { margin: 0 0 10px; line-height: 1.5; font-size: 13.5px; }
 
@@ -154,33 +154,33 @@
 /* ---------------------------------------------------------------- Thonny (light, like on the Pi) */
 /* Thonny wears the app's dark theme: the code (toolbar, tabs, editor) and the Output / Shell are two screens, like the Arduino editor's Code and Serial Monitor */
 .thonny { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--canvas-bg); color: var(--text); font-family: var(--font); --th-font: 14px; }
-.th-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: rgba(10, 16, 32, .9); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.th-toolbar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: rgba(var(--glass), .9); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
 .th-toolbar::-webkit-scrollbar { display: none; }
 .th-tb { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 46px; padding: 3px 4px; border-radius: 8px; color: #b6c4de; font-size: 10.5px; flex-shrink: 0; }
 .th-tb i { display: grid; place-items: center; height: 28px; }
-.th-tb:active { background: rgba(148, 163, 184, .18); }
+.th-tb:active { background: rgba(var(--slate), .18); }
 .th-tb.th-run.busy i { animation: thBusy 1s infinite; }
 @keyframes thBusy { 50% { opacity: .45; } }
 .th-sep { width: 1px; height: 32px; background: var(--line2); margin: 0 3px; flex-shrink: 0; }
 .th-flex { flex: 1; }
 .th-more { color: var(--muted); justify-content: center; min-width: 38px; }
-.th-tabs { display: flex; gap: 2px; padding: 4px 6px 0; background: rgba(7, 11, 22, .9); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.th-tabs { display: flex; gap: 2px; padding: 4px 6px 0; background: rgba(var(--glass), .9); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
 .th-tabs::-webkit-scrollbar { display: none; }
-.th-tab { display: flex; align-items: center; gap: 4px; padding: 5px 4px 5px 11px; border-radius: 8px 8px 0 0; background: rgba(148, 163, 184, .08); font-size: 12.5px; color: var(--muted); white-space: nowrap; cursor: pointer; flex-shrink: 0; }
+.th-tab { display: flex; align-items: center; gap: 4px; padding: 5px 4px 5px 11px; border-radius: 8px 8px 0 0; background: rgba(var(--slate), .08); font-size: 12.5px; color: var(--muted); white-space: nowrap; cursor: pointer; flex-shrink: 0; }
 .th-tab.active { background: var(--canvas-bg); color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
 .th-tab-x { width: 22px; height: 22px; border-radius: 6px; color: var(--dim); font-size: 16px; line-height: 1; }
-.th-tab-x:active { background: rgba(148, 163, 184, .2); }
+.th-tab-x:active { background: rgba(var(--slate), .2); }
 .th-editor { flex: 3 1 0; min-height: 120px; display: flex; background: var(--canvas-bg); position: relative; }
 .th-editor .code-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .th-editor .code-cm { flex: 1; min-height: 0; overflow: hidden; }
-.py-wrap .symbol-bar { background: rgba(10, 16, 32, .95); border-top: 1px solid var(--line); }
-.py-wrap .sym { background: rgba(148, 163, 184, .1); color: var(--text); border: 1px solid var(--line2); }
+.py-wrap .symbol-bar { background: rgba(var(--glass), .95); border-top: 1px solid var(--line); }
+.py-wrap .sym { background: rgba(var(--slate), .1); color: var(--text); border: 1px solid var(--line2); }
 .py-wrap .sym-icon { color: var(--accent); }
 .py-wrap.focused .symbol-bar { display: flex; }
-.th-grip { height: 12px; display: grid; place-items: center; background: rgba(10, 16, 32, .95); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: row-resize; touch-action: none; flex-shrink: 0; }
+.th-grip { height: 12px; display: grid; place-items: center; background: rgba(var(--glass), .95); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); cursor: row-resize; touch-action: none; flex-shrink: 0; }
 .th-grip span { width: 38px; height: 4px; border-radius: 2px; background: var(--dim); }
 .th-shell { flex: 0 0 34%; min-height: 90px; display: flex; flex-direction: column; background: #070d1b; }
-.th-shell-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 12px; font-size: 12px; background: rgba(10, 16, 32, .95); border-bottom: 1px solid var(--line); color: var(--muted); flex-shrink: 0; }
+.th-shell-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 12px; font-size: 12px; background: rgba(var(--glass), .95); border-bottom: 1px solid var(--line); color: var(--muted); flex-shrink: 0; }
 .th-shell-head b { color: var(--text); font-weight: 600; letter-spacing: .02em; }
 .th-shell-head .th-clear { color: var(--accent); }
 .con.th-con { background: #070d1b; color: #d7e3f8; font-size: calc(var(--th-font) - 1px); }
@@ -188,9 +188,9 @@
 .con.th-con .err { color: #ff6b6b; }
 .con.th-con .th-magic { color: #7dd3fc; }
 .con.th-con .fg-K { color: #5d6c8c; }
-.con.th-con .con-keys { background: rgba(10, 16, 32, .95); border-top: 1px solid var(--line); }
-.con.th-con .ck { background: rgba(148, 163, 184, .1); color: var(--text); border: 1px solid var(--line2); }
-.th-status { display: flex; justify-content: flex-end; gap: 6px; padding: 3px 10px; font-size: 11.5px; color: var(--muted); background: rgba(7, 11, 22, .95); border-top: 1px solid var(--line); flex-shrink: 0; white-space: nowrap; overflow: hidden; }
+.con.th-con .con-keys { background: rgba(var(--glass), .95); border-top: 1px solid var(--line); }
+.con.th-con .ck { background: rgba(var(--slate), .1); color: var(--text); border: 1px solid var(--line2); }
+.th-status { display: flex; justify-content: flex-end; gap: 6px; padding: 3px 10px; font-size: 11.5px; color: var(--muted); background: rgba(var(--glass), .95); border-top: 1px solid var(--line); flex-shrink: 0; white-space: nowrap; overflow: hidden; }
 .th-port { color: var(--dim); }
 /* the two screens: the code fills its screen, the Shell fills the Output screen */
 .thonny.th-code .th-editor { flex: 1 1 0; }
@@ -199,14 +199,14 @@
 .th-files-path { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 8px; overflow-wrap: anywhere; }
 .th-files { display: flex; flex-direction: column; gap: 4px; }
 .th-file-row { display: flex; align-items: center; gap: 4px; }
-.th-file { flex: 1; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 11px; background: rgba(148, 163, 184, .06); text-align: left; min-width: 0; }
+.th-file { flex: 1; display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 11px; background: rgba(var(--slate), .06); text-align: left; min-width: 0; }
 .th-file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 13.5px; }
 .th-file small { color: var(--muted); font-size: 11px; }
 .th-file.dir i { color: #fbbf24; }
 .th-file i { color: var(--accent); display: grid; }
 .th-empty { padding: 8px; }
 .th-ex-list { display: flex; flex-direction: column; gap: 6px; }
-.th-ex { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: rgba(148, 163, 184, .06); border: 1px solid var(--line); text-align: left; }
+.th-ex { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: rgba(var(--slate), .06); border: 1px solid var(--line); text-align: left; }
 .th-ex b { font-size: 14px; }
 .th-ex span { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
 
@@ -312,7 +312,7 @@
 .pb-strip { overflow-x: auto; padding: 6px 2px 2px; scrollbar-width: thin; }
 .pb-strip[hidden] { display: none; }
 .ps-row { display: flex; gap: 3px; margin-bottom: 3px; width: max-content; }
-.ps-pin { width: 40px; height: 44px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 8px; background: rgba(148, 163, 184, .08); border: 1px solid var(--line); position: relative; }
+.ps-pin { width: 40px; height: 44px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 8px; background: rgba(var(--slate), .08); border: 1px solid var(--line); position: relative; }
 .ps-pin i { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: transparent; }
 .ps-pin b { font: 700 13px var(--mono); color: #fde68a; line-height: 1; }
 .ps-pin small { font-size: 9.5px; color: var(--dim); }
@@ -334,16 +334,16 @@
 /* ---------------------------------------------------------------- circuit tab (the Arduino canvas) */
 .pi-screen .pi-circuit { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .pi-screen .pi-runbtn { flex-shrink: 0; }
-.pi-filechip { position: absolute; z-index: 3; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); height: 34px; padding: 0 11px; border-radius: 12px; font-family: var(--mono); font-size: 12.5px; color: #e2e8f0; background: rgba(10, 16, 32, .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.pi-filechip { position: absolute; z-index: 3; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); height: 34px; padding: 0 11px; border-radius: 12px; font-family: var(--mono); font-size: 12.5px; color: #e2e8f0; background: rgba(var(--glass), .72); border: 1px solid var(--line2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .pi-filechip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pi-filechip .ic:first-child { color: #4ade80; }
 .pi-circuit .canvas-hint { top: 52px; }
-.pi-circuit .pi-sim-status { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); border-radius: 99px; border: 1px solid rgba(34, 197, 94, .3); background: rgba(8, 14, 26, .78); backdrop-filter: blur(10px); z-index: 4; height: 30px; white-space: nowrap; }
+.pi-circuit .pi-sim-status { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); border-radius: 99px; border: 1px solid rgba(34, 197, 94, .3); background: rgba(var(--glass), .78); backdrop-filter: blur(10px); z-index: 4; height: 30px; white-space: nowrap; }
 .pi-circuit .stale-banner { top: 50px; }
 @media (max-width: 520px) { .pi-circuit .pi-sim-status { top: 50px; } .pi-circuit .stale-banner { top: 88px; } }
 /* program output: a drawer at the bottom of the circuit */
 /* pinout tab */
-.pb-note { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(34, 211, 238, .07); border: 1px solid rgba(34, 211, 238, .25); }
+.pb-note { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(var(--acc), .07); border: 1px solid rgba(var(--acc), .25); }
 .pb-note > span { color: var(--accent); display: grid; place-items: center; }
 .pb-note > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pb-note b { font-size: 13.5px; }
@@ -375,7 +375,7 @@
 @media (min-width: 641px) { .pi-banner .lb-art { width: 46%; max-width: 420px; top: 8px; bottom: 8px; transform: none; } }
 @media (max-width: 640px) { .pi-banner .lb-art { height: 176px; margin: 6px 0 4px; } }
 .pi-intro { background: radial-gradient(110% 80% at 100% 0%, rgba(225, 29, 72, .22), transparent 60%), radial-gradient(90% 80% at 0% 100%, rgba(34, 197, 94, .16), transparent 60%), linear-gradient(160deg, #18142c, #0b1226); border-color: rgba(225, 29, 72, .3); }
-.pi-intro .lb-art { height: 190px; }
+.lab-intro.pi-intro .lb-art { height: 190px; }
 .pi-intro .hero-kicker { align-self: flex-start; margin-bottom: 4px; border-color: rgba(251, 113, 133, .45); color: #fda4af; }
 .pi-intro .li-feats .pill { display: inline-flex; align-items: center; gap: 5px; }
 .pi-intro .li-feats .pill svg { color: #4ade80; }

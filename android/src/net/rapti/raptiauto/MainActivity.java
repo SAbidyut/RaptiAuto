@@ -10,6 +10,7 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.provider.OpenableColumns;
@@ -65,19 +66,24 @@ public class MainActivity extends Activity {
     private String pendingSaveName;
     private String pendingOpenId;
     private boolean immersive = false;
+    /** the blue of the splash screen: what the window shows until the page has drawn its own colours */
+    private static final int SPLASH = Color.parseColor("#1D4BFF");
+    /** View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR (API 26): dark buttons on a bright navigation bar */
+    private static final int FLAG_LIGHT_NAVIGATION_BAR = 0x10;
+    private boolean lightBars = false;
     private int lastKeyboardPx = -1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Window w = getWindow();
-        w.setStatusBarColor(Color.parseColor("#070B16"));
-        w.setNavigationBarColor(Color.parseColor("#070B16"));
+        w.setStatusBarColor(SPLASH);
+        w.setNavigationBarColor(SPLASH);
 
         root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#070B16"));
+        root.setBackgroundColor(SPLASH);
         web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#070B16"));
+        web.setBackgroundColor(SPLASH);
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setVerticalScrollBarEnabled(false);
         web.setHorizontalScrollBarEnabled(false);
@@ -277,6 +283,23 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable() {
                 public void run() {
                     applyImmersive(on);
+                }
+            });
+        }
+
+        /** The page's colours for the status and navigation bars ("#rrggbb"); light = a bright theme, so the bar icons turn dark. */
+        @JavascriptInterface
+        public void setBars(final String status, final String nav, final boolean light) {
+            final int s, n;
+            try {
+                s = Color.parseColor(status);
+                n = Color.parseColor(nav);
+            } catch (Exception e) {
+                return;
+            }
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    applyBars(s, n, light);
                 }
             });
         }
@@ -555,6 +578,27 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Colours the system bars like the page. On a bright theme the bar icons turn dark (the navigation bar's from Android 8). */
+    private void applyBars(int status, int nav, boolean light) {
+        lightBars = light;
+        if (light && Build.VERSION.SDK_INT < 26) nav = Color.parseColor("#0B1026"); // white buttons need a dark bar
+        Window w = getWindow();
+        w.setStatusBarColor(status);
+        w.setNavigationBarColor(nav);
+        root.setBackgroundColor(status);
+        web.setBackgroundColor(status);
+        if (!immersive) w.getDecorView().setSystemUiVisibility(barFlags());
+    }
+
+    private int barFlags() {
+        int f = View.SYSTEM_UI_FLAG_VISIBLE;
+        if (lightBars) {
+            f |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) f |= FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        return f;
+    }
+
     private void applyImmersive(boolean on) {
         immersive = on;
         Window w = getWindow();
@@ -574,7 +618,7 @@ public class MainActivity extends Activity {
                     | View.SYSTEM_UI_FLAG_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         } else {
-            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+            decor.setSystemUiVisibility(barFlags());
         }
         root.postDelayed(new Runnable() {
             public void run() {
