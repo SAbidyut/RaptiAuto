@@ -994,7 +994,6 @@ export class CircuitCanvas {
     this.updateWiresFor(d.groupIds);
     if (snapped !== d.snapped) { d.snapped = snapped; if (snapped) Native.vibrate(6); }
     this.renderOverlay();
-    this.autoScrollPart = true;
   }
 
   finishPartDrag(commit) {

@@ -5,6 +5,7 @@
 // limits); in a desktop browser it is a plain fetch() (only APIs that allow CORS work there).
 // Services that need your own account (ThingSpeak, Blynk, Telegram, IFTTT, webhooks …) stay simulated,
 // so their data shows in the IoT dashboard. Headless tests never use this (no live object is set).
+import { BRIDGE_KEY } from '../bridge-key.js';
 
 let seq = 0;
 const pending = new Map();
@@ -56,7 +57,7 @@ export class LiveWeb {
       ? new Promise((resolve) => {
         const id = 'h' + (++seq);
         pending.set(id, resolve);
-        try { n.httpRequest(id, (req.method || 'GET').toUpperCase(), req.url, JSON.stringify(req.headers || {}), req.body || ''); } catch (e) { pending.delete(id); resolve({ error: String(e && e.message) }); }
+        try { n.httpRequest(BRIDGE_KEY, id, (req.method || 'GET').toUpperCase(), req.url, JSON.stringify(req.headers || {}), req.body || ''); } catch (e) { pending.delete(id); resolve({ error: String(e && e.message) }); }
       })
       : browserFetch(req).catch((e) => ({ error: (e && e.message) || 'Failed to fetch' }));
     let timer;

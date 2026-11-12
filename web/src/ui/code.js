@@ -1,7 +1,7 @@
 // Code editor: CodeMirror 6 configured for Arduino C++ on touch screens.
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, Decoration, ViewPlugin } from '@codemirror/view';
-import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state';
-import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo, cursorCharLeft, cursorCharRight, cursorLineUp, cursorLineDown, selectAll, toggleComment } from '@codemirror/commands';
+import { EditorState, Compartment } from '@codemirror/state';
+import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo, cursorCharLeft, cursorCharRight, cursorLineUp, cursorLineDown, toggleComment } from '@codemirror/commands';
 import { cpp } from '@codemirror/lang-cpp';
 import { syntaxHighlighting, HighlightStyle, indentOnInput, bracketMatching, foldGutter, indentUnit } from '@codemirror/language';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippetCompletion } from '@codemirror/autocomplete';
@@ -132,23 +132,6 @@ const arduinoHighlighter = ViewPlugin.fromClass(class {
   }
 }, { decorations: (v) => v.decorations });
 
-// highlight of the line currently executing (optional)
-const setExecLine = StateEffect.define();
-const execLineField = StateField.define({
-  create: () => Decoration.none,
-  update(deco, tr) {
-    for (const e of tr.effects) {
-      if (e.is(setExecLine)) {
-        if (!e.value || e.value < 1 || e.value > tr.state.doc.lines) return Decoration.none;
-        const line = tr.state.doc.line(e.value);
-        return Decoration.set([Decoration.line({ class: 'cm-exec-line' }).range(line.from)]);
-      }
-    }
-    return deco.map(tr.changes);
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
-
 const SYMBOLS = ['{', '}', '(', ')', ';', '[', ']', '<', '>', '=', '"', "'", '+', '-', '*', '/', '&', '|', '!', '#', ',', '.', ':', '_', '%', '\\'];
 
 export class CodeEditor {
@@ -175,7 +158,7 @@ export class CodeEditor {
           highlightSelectionMatches(), lintGutter(), indentUnit.of('  '), EditorState.tabSize.of(2),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab,
             { key: 'Mod-/', run: toggleComment }]),
-          cpp(), syntaxHighlighting(highlight), arduinoHighlighter, theme, execLineField,
+          cpp(), syntaxHighlighting(highlight), arduinoHighlighter, theme,
           EditorView.lineWrapping,
           this.readOnly.of(EditorState.readOnly.of(readOnly)),
           EditorView.updateListener.of((u) => { if (u.docChanged && this.onChange) this.onChange(u.state.doc.toString()); }),
@@ -233,7 +216,6 @@ export class CodeEditor {
   undo() { undo(this.view); }
   redo() { redo(this.view); }
   search() { openSearchPanel(this.view); }
-  selectAll() { selectAll(this.view); }
 
   setError(err) {
     const diags = [];
@@ -258,11 +240,4 @@ export class CodeEditor {
   }
 
   clearError() { this.view.dispatch(setDiagnostics(this.view.state, [])); }
-
-  setExecLine(line) { this.view.dispatch({ effects: setExecLine.of(line) }); }
-
-  insertAtCursor(text) {
-    this.view.dispatch(this.view.state.replaceSelection(text));
-    this.view.focus();
-  }
 }

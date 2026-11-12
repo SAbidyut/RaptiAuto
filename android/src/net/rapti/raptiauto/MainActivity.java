@@ -39,6 +39,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
+import java.security.SecureRandom;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -76,6 +77,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) pendingSaveName = savedInstanceState.getString("pendingSaveName");
         Window w = getWindow();
         w.setStatusBarColor(SPLASH);
         w.setNavigationBarColor(SPLASH);
@@ -230,6 +232,8 @@ public class MainActivity extends Activity {
             }
         } else if (requestCode == REQ_SAVE) {
             boolean ok = false;
+            // the system may have closed the app while the picker was open: the content waits in the cache
+            if (pendingSaveContent == null) pendingSaveContent = readPendingSave();
             if (resultCode == RESULT_OK && data != null && data.getData() != null && pendingSaveContent != null) {
                 try {
                     OutputStream out = getContentResolver().openOutputStream(data.getData(), "wt");
@@ -243,6 +247,7 @@ public class MainActivity extends Activity {
             js("RaptiApp.onNativeSaved(" + ok + "," + JSONObject.quote(pendingSaveName == null ? "" : pendingSaveName) + ")");
             pendingSaveContent = null;
             pendingSaveName = null;
+            pendingSaveFile().delete();
         } else if (requestCode == REQ_OPEN) {
             String id = pendingOpenId == null ? "" : pendingOpenId;
             pendingOpenId = null;
@@ -277,9 +282,39 @@ public class MainActivity extends Activity {
     /* JavaScript bridge                                                  */
     /* ------------------------------------------------------------------ */
 
+    /*
+     * The bridge is visible to every frame, also to the sandboxed iframe in which real web pages run
+     * (IoT tab, the Pi's Chromium). Only the app's own page knows this key: it asks for it once, as its
+     * first script, before any iframe exists; every call with an effect must send it. The page is loaded
+     * once per activity (a renderer crash recreates the activity, and so the key).
+     */
+    private final String bridgeKey = newKey();
+    private volatile boolean keyTaken = false;
+
+    private static String newKey() {
+        byte[] b = new byte[24];
+        new SecureRandom().nextBytes(b);
+        StringBuilder sb = new StringBuilder();
+        for (byte x : b) sb.append(String.format("%02x", x & 0xFF));
+        return sb.toString();
+    }
+
+    private boolean trusted(String key) {
+        return key != null && key.length() > 0 && key.equals(bridgeKey);
+    }
+
     private class Bridge {
+        /** The key for this page load; only the first caller (the app itself) gets it. */
         @JavascriptInterface
-        public void setImmersive(final boolean on) {
+        public synchronized String handshake() {
+            if (keyTaken) return "";
+            keyTaken = true;
+            return bridgeKey;
+        }
+
+        @JavascriptInterface
+        public void setImmersive(final String key, final boolean on) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     applyImmersive(on);
@@ -289,7 +324,8 @@ public class MainActivity extends Activity {
 
         /** The page's colours for the status and navigation bars ("#rrggbb"); light = a bright theme, so the bar icons turn dark. */
         @JavascriptInterface
-        public void setBars(final String status, final String nav, final boolean light) {
+        public void setBars(final String key, final String status, final String nav, final boolean light) {
+            if (!trusted(key)) return;
             final int s, n;
             try {
                 s = Color.parseColor(status);
@@ -305,7 +341,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void keepScreenOn(final boolean on) {
+        public void keepScreenOn(final String key, final boolean on) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     if (on) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -315,7 +352,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void setOrientation(final String mode) {
+        public void setOrientation(final String key, final String mode) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     if ("landscape".equals(mode)) {
@@ -330,7 +368,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void vibrate(int ms) {
+        public void vibrate(final String key, int ms) {
+            if (!trusted(key)) return;
             try {
                 Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null && v.hasVibrator()) v.vibrate(Math.max(1, Math.min(ms, 500)));
@@ -339,20 +378,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void toast(final String msg) {
-            runOnUiThread(new Runnable() {
-                public void run() {
-                    Toast.makeText(MainActivity.this, msg, Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void saveFile(final String name, final String mime, final String content) {
+        public void saveFile(final String key, final String name, final String mime, final String content) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     pendingSaveContent = content;
                     pendingSaveName = name;
+                    writePendingSave(content);
                     Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                     i.addCategory(Intent.CATEGORY_OPENABLE);
                     // a custom extension with a json / text type would be saved as "x.rapti.json" by some providers
@@ -370,7 +402,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openFile(final String id) {
+        public void openFile(final String key, final String id) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     pendingOpenId = id;
@@ -387,7 +420,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void shareText(final String title, final String text) {
+        public void shareText(final String key, final String title, final String text) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     Intent i = new Intent(Intent.ACTION_SEND);
@@ -403,7 +437,8 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void openUrl(final String url) {
+        public void openUrl(final String key, final String url) {
+            if (!trusted(key)) return;
             runOnUiThread(new Runnable() {
                 public void run() {
                     openExternal(url);
@@ -417,7 +452,8 @@ public class MainActivity extends Activity {
          * RaptiApp.onNativeHttp(id, {status, url, headers, body} | {error}).
          */
         @JavascriptInterface
-        public void httpRequest(final String id, final String method, final String url, final String headersJson, final String body) {
+        public void httpRequest(final String key, final String id, final String method, final String url, final String headersJson, final String body) {
+            if (!trusted(key)) return;
             new Thread(new Runnable() {
                 public void run() {
                     JSONObject out = new JSONObject();
@@ -516,15 +552,6 @@ public class MainActivity extends Activity {
         public boolean isNative() {
             return true;
         }
-
-        @JavascriptInterface
-        public void exitApp() {
-            runOnUiThread(new Runnable() {
-                public void run() {
-                    finish();
-                }
-            });
-        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -537,6 +564,39 @@ public class MainActivity extends Activity {
                 if (web != null) web.evaluateJavascript("try{" + code + "}catch(e){}", null);
             }
         });
+    }
+
+    private java.io.File pendingSaveFile() { return new java.io.File(getCacheDir(), "pending-save"); }
+
+    private void writePendingSave(String content) {
+        try {
+            OutputStream o = new java.io.FileOutputStream(pendingSaveFile());
+            o.write(content.getBytes("UTF-8"));
+            o.close();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String readPendingSave() {
+        try {
+            java.io.File f = pendingSaveFile();
+            if (!f.exists()) return null;
+            InputStream in = new java.io.FileInputStream(f);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            return bos.toString("UTF-8");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        if (pendingSaveName != null) out.putString("pendingSaveName", pendingSaveName);
     }
 
     /** The file name the user sees (a document Uri's last path segment is an id like "msf:1000000034"). */
