@@ -1311,6 +1311,8 @@ export class Compiler {
     else if (node.longs === 1) t = node.unsigned ? T.ulong : (fits(T.long) ? T.long : T.ulong);
     else if (node.unsigned) t = fits(T.uint) ? T.uint : T.ulong;
     else if (fits(T.int)) t = T.int;
+    // a hex / octal / binary literal too big for int but not for unsigned int is unsigned int (0xFFFF on AVR)
+    else if (node.nondec && fits(T.uint)) t = T.uint;
     else if (fits(T.long)) t = T.long;
     else if (fits(T.ulong) && (node.v > 0x7fffffff)) t = T.ulong;
     else t = T.i64;
@@ -1653,7 +1655,6 @@ export class Compiler {
       case '^': fn = w ? (a, b) => w(a ^ b) : (a, b) => a ^ b; break;
       default: throw this.err(`unsupported operator ${op}`, node);
     }
-    if (conv && (op === '+' || op === '-' || op === '*')) { /* wrap handles it */ }
     return this.lift2(ct, l, r, fn);
   }
 
@@ -1797,8 +1798,18 @@ export class Compiler {
           const f32 = T.avr;
           return this.lift2(T.String, a, b, (v, d) => new AStr(fmtFloat(v, d, f32)), { fresh: true });
         }
+        // itoa / ltoa / utoa / ultoa: lowercase digits; a negative value in another base is printed
+        // as the unsigned value of its type (AVR int: 16 bits) — the ESP cores' itoa writes '-' instead
         const uns = a.t.uns;
-        return this.lift2(T.String, a, b, (v, base) => new AStr(fmtInt(v, base, uns)), { fresh: true });
+        const bits = a.t.k === 'int' ? Math.max(a.t.bits, T.INT_BITS) : 32;
+        const esp = this.opts.arch === 'xtensa';
+        return this.lift2(T.String, a, b, (v, base) => {
+          if (base === 10 || base < 2 || base > 36 || typeof v !== 'number') return new AStr(fmtInt(v, base, uns));
+          v = Math.trunc(v);
+          if (v < 0 && esp && !uns) return new AStr('-' + (-v).toString(base));
+          if (v < 0) v = bits === 16 ? v & 0xffff : bits <= 32 ? v >>> 0 : v + 2 ** 64;
+          return new AStr(v.toString(base));
+        }, { fresh: true });
       }
       return this.convert(a, T.String, node);
     }
@@ -2161,7 +2172,7 @@ export class Compiler {
 
   // ------------------------------------------------------------ calls
   pickOverload(list, argNodes, ctx, node, name) {
-    const real = list.filter((fi) => fi.node.body || fi.run || true);
+    const real = list;
     const n = argNodes.length;
     const cands = real.filter((fi) => {
       const req = fi.params.filter((p) => !p.def).length;
@@ -2388,7 +2399,7 @@ export class Compiler {
     }
     const impl = meta.fn;
     const line = node.line;
-    const cost = (meta.cost || 0) / (meta.costFixed ? 1 : 1);
+    const cost = meta.cost || 0;
     const isGen = !!meta.gen;
     const wrapRet = retT.k === 'int' || retT.k === 'float' ? coercer(retT) : null;
     const anyArgGen = args.some((a) => a.gen) || (thisE && thisE.gen);

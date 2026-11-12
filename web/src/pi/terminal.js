@@ -112,7 +112,7 @@ export class Terminal {
       let common = cands[0];
       for (const c of cands) while (!c.startsWith(common)) common = common.slice(0, -1);
       if (common.length > word.length) this.con.input.value = v.slice(0, v.length - word.length) + common;
-      else { const pr = this.con.prefix.cloneNode(true); this.con.writeln(cands.map((c) => basename(c.replace(/\/$/, '')) + (c.endsWith('/') ? '/' : '')).join('  ')); void pr; }
+      else this.con.writeln(cands.map((c) => basename(c.replace(/\/$/, '')) + (c.endsWith('/') ? '/' : '')).join('  '));
     }
     this.con.focus();
   }
@@ -123,7 +123,14 @@ export class Terminal {
     let cur = '', q = null, has = false;
     for (let i = 0; i < line.length; i++) {
       const c = line[i];
-      if (q) { if (c === q) q = null; else if (c === '\\' && q === '"' && i + 1 < line.length) cur += line[++i]; else cur += c; continue; }
+      if (q) {
+        if (c === q) q = null;
+        // inside "...": \ escapes only $ ` " \ (as in bash) and $VAR / ${VAR} / $? expand; '...' is literal
+        else if (c === '\\' && q === '"' && i + 1 < line.length && '$`"\\'.includes(line[i + 1])) cur += line[++i];
+        else if (c === '$' && q === '"' && this.expandVar(line, i, (v, len) => { cur += v; i += len - 1; })) { /* expanded */ }
+        else cur += c;
+        continue;
+      }
       if (c === '"' || c === "'") { q = c; has = true; continue; }
       if (c === '\\' && i + 1 < line.length) { cur += line[++i]; has = true; continue; }
       if (/\s/.test(c)) { if (cur || has) out.push(cur); cur = ''; has = false; continue; }
@@ -132,15 +139,21 @@ export class Terminal {
         if ((c === '>' || c === '&' || c === '|') && line[i + 1] === c) { out.push({ op: c + c }); i++; } else out.push({ op: c });
         continue;
       }
-      if (c === '$' && !q) {
-        const m = /^\$(\?|\w+|\{\w+\})/.exec(line.slice(i));
-        if (m) { const n = m[1].replace(/[{}]/g, ''); cur += n === '?' ? String(this.status) : n === 'PWD' ? this.cwd : (this.env[n] ?? ''); i += m[0].length - 1; continue; }
-      }
+      if (c === '$' && this.expandVar(line, i, (v, len) => { cur += v; i += len - 1; })) continue;
       cur += c;
     }
     if (q) throw new Error('bash: unexpected EOF while looking for matching `' + q + "'");
     if (cur || has) out.push(cur);
     return out;
+  }
+
+  /** $VAR, ${VAR} or $? at line[i]: calls put(value, length of the reference); false if none. */
+  expandVar(line, i, put) {
+    const m = /^\$(\?|\w+|\{\w+\})/.exec(line.slice(i));
+    if (!m) return false;
+    const n = m[1].replace(/[{}]/g, '');
+    put(n === '?' ? String(this.status) : n === 'PWD' ? this.cwd : (this.env[n] ?? ''), m[0].length);
+    return true;
   }
 
   async run(line) {
@@ -182,7 +195,7 @@ export class Terminal {
       if (!redirect.file) throw new Error('bash: syntax error near unexpected token `newline\'');
       const p = normPath(redirect.file, this.cwd);
       const prev = redirect.append && this.fs.isFile(p) ? this.fs.read(p) : '';
-      this.fs.write(p, prev + (input || ''));
+      if (!this.fs.write(p, prev + (input || ''))) { this.con.writeln(`bash: ${redirect.file}: write error: No space left on device`, 'err'); this.status = 1; }
     } else if (input) this.con.write(input);
   }
 
@@ -251,8 +264,31 @@ export class Terminal {
         for (const f of files()) { try { const t = textOf(f); w(t); } catch (e) { err(e.message.startsWith('cat') ? e.message : `cat: ${f}: No such file or directory`); } }
         break;
       }
-      case 'echo': { const n = args[0] === '-n'; const a = n ? args.slice(1) : args; w(a.join(' ').replace(/\\n/g, args.includes('-e') ? '\n' : '\\n') + (n ? '' : '\n')); break; }
-      case 'touch': for (const f of files()) { const path = p(f); if (!this.fs.exists(path)) this.fs.write(path, ''); else if (this.fs.isFile(path)) this.fs.write(path, this.fs.read(path)); } break;
+      case 'echo': {
+        // leading -n (no newline), -e (backslash escapes), -E (none) in any combination, e.g. -ne
+        let n = false, e = false, k = 0;
+        while (k < args.length && /^-[neE]+$/.test(args[k])) { for (const f of args[k].slice(1)) { if (f === 'n') n = true; else e = f === 'e'; } k++; }
+        let text = args.slice(k).join(' ');
+        if (e) {
+          const esc = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', f: '\f', v: '\v', e: '\x1b', '\\': '\\' };
+          let o = '';
+          for (let j = 0; j < text.length; j++) {
+            const ch = text[j];
+            if (ch !== '\\' || j + 1 >= text.length) { o += ch; continue; }
+            const x = text[j + 1];
+            const m = x === '0' ? /^[0-7]{0,3}/.exec(text.slice(j + 2)) : x === 'x' ? /^[0-9a-fA-F]{1,2}/.exec(text.slice(j + 2)) : null;
+            if (x === 'c') { n = true; break; }   // \c: no more output
+            if (x === '0') { o += String.fromCharCode(parseInt(m[0] || '0', 8)); j += 1 + m[0].length; continue; }
+            if (x === 'x' && m) { o += String.fromCharCode(parseInt(m[0], 16)); j += 1 + m[0].length; continue; }
+            if (x in esc) { o += esc[x]; j++; continue; }
+            o += ch;
+          }
+          text = o;
+        }
+        w(text + (n ? '' : '\n'));
+        break;
+      }
+      case 'touch': for (const f of files()) { const path = p(f); if (!(this.fs.exists(path) ? !this.fs.isFile(path) || this.fs.write(path, this.fs.read(path)) : this.fs.write(path, ''))) err(`touch: cannot touch '${f}': No space left on device`); } break;
       case 'mkdir': for (const f of files()) { try { if (this.fs.exists(p(f)) && !flags().includes('p')) throw new Error(`mkdir: cannot create directory '${f}': File exists`); this.fs.mkdir(p(f), flags().includes('p')); } catch (e) { err(e.message.startsWith('mkdir') ? e.message : 'mkdir: ' + e.message); } } break;
       case 'rmdir': for (const f of files()) { try { if (this.fs.list(p(f)).length) throw new Error(`rmdir: failed to remove '${f}': Directory not empty`); this.fs.remove(p(f), true); } catch (e) { err(e.message); } } break;
       case 'rm': {
@@ -670,7 +706,7 @@ export class Terminal {
     wl(`HTTP request sent, awaiting response... ${res.status} ${res.statusText}`);
     if (res.status >= 400) { err(`${new Date().toISOString().replace('T', ' ').slice(0, 19)} ERROR ${res.status}: ${res.statusText}.`); this.status = 8; return; }
     const name = oi >= 0 ? args[oi + 1] : (u.pathname.split('/').filter(Boolean).pop() || 'index.html');
-    this.fs.write(normPath(name, this.cwd, this.env.HOME), res.body);
+    if (!this.fs.write(normPath(name, this.cwd, this.env.HOME), res.body)) { err(`wget: ${name}: No space left on device`); this.status = 3; return; }
     this.sys.emit('files');
     wl(`Length: ${res.body.length} [${res.headers['content-type'] || 'text/plain'}]\nSaving to: '${name}'\n\n${name}      100%[===================>]  ${res.body.length} B  --.-KB/s    in 0s\n\n'${name}' saved [${res.body.length}/${res.body.length}]`);
   }
@@ -748,7 +784,7 @@ export class Terminal {
       const status = h('div', { class: 'nano-status' }, path && !this.fs.isFile(path) ? '[ New File ]' : `[ Read ${text.split('\n').length - 1} lines ]`);
       let dirty = false;
       ta.addEventListener('input', () => { dirty = true; title.lastChild.textContent = 'Modified'; });
-      const save = () => { if (!path) { status.textContent = '[ No file name: open nano with a file name ]'; return false; } this.fs.write(path, ta.value); dirty = false; title.lastChild.textContent = ''; status.textContent = `[ Wrote ${ta.value.split('\n').length - (ta.value.endsWith('\n') ? 1 : 0)} lines ]`; return true; };
+      const save = () => { if (!path) { status.textContent = '[ No file name: open nano with a file name ]'; return false; } if (!this.fs.write(path, ta.value)) { status.textContent = `[ Error writing ${basename(path)}: No space left on device ]`; return false; } dirty = false; title.lastChild.textContent = ''; status.textContent = `[ Wrote ${ta.value.split('\n').length - (ta.value.endsWith('\n') ? 1 : 0)} lines ]`; return true; };
       const close = () => { ov.remove(); this.con.focus(); resolve(); };
       const exit = () => {
         if (!dirty) return close();

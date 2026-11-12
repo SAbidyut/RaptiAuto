@@ -279,20 +279,47 @@ class PWMLED(PWMOutputDevice):
 
 
 class TonalBuzzer(Device):
-    def __init__(self, pin=None, initial_value=None, mid_tone=440, octaves=1, pin_factory=None):
+    def __init__(self, pin=None, initial_value=None, mid_tone=None, octaves=1, pin_factory=None):
         super().__init__()
+        from gpiozero.tones import Tone
         self.pin = self._claim(pin)
-        self.mid_tone = mid_tone
+        self.mid_tone = Tone('A4') if mid_tone is None else (mid_tone if isinstance(mid_tone, Tone) else Tone(mid_tone))
+        self.octaves = octaves
+        self._tone = None
         J.setup(self.pin, 'out', 'none')
         if initial_value is not None:
             self.play(initial_value)
 
+    @property
+    def min_tone(self):
+        return self.mid_tone.down(12 * self.octaves)
+
+    @property
+    def max_tone(self):
+        return self.mid_tone.up(12 * self.octaves)
+
     def play(self, tone):
-        f = float(tone) if isinstance(tone, (int, float)) else 440.0
-        J.pwm(self.pin, f, 0.5)
+        # tone: a Tone, a note name ('A4', 'C#5'), a MIDI note number (< 128) or a frequency in Hz
+        from gpiozero.tones import Tone
+        self._check()
+        if tone is None:
+            self.stop()
+            return
+        t = tone if isinstance(tone, Tone) else Tone(tone)
+        self._tone = t
+        J.pwm(self.pin, t.frequency, 0.5)
 
     def stop(self):
+        self._tone = None
         J.pwm_off(self.pin)
+
+    @property
+    def tone(self):
+        return self._tone
+
+    @tone.setter
+    def tone(self, t):
+        self.play(t)
 
     @property
     def is_active(self):
@@ -862,14 +889,67 @@ class LineSensor(DigitalInputDevice):
 
 
 class LightSensor(DigitalInputDevice):
+    # value: 0 (dark) ... 1 (bright); light is detected when value > threshold. The callbacks
+    # (when_light / when_dark) watch the value, so they follow the threshold too.
     def __init__(self, pin=None, queue_len=5, charge_time_limit=0.01, threshold=0.1, partial=False, pin_factory=None):
         super().__init__(pin, False, None)
+        self.threshold = threshold
+        self._ph = None
+        self._last = None
 
     @property
     def value(self):
+        self._check()
         return J.light(self.pin)
 
-    light_detected = property(lambda self: self.value > 0.5)
+    @property
+    def is_active(self):
+        return self.value > self.threshold
+
+    light_detected = is_active
+
+    def _edge(self, level):
+        # the module's DO pin changed: check the value at once (the 50 ms poll catches the rest)
+        if self._ph:
+            self._poll()
+
+    def _poll(self):
+        a = self.is_active
+        if a == self._last:
+            return
+        self._last = a
+        self._t_act = _time.ticks_ms() if a else None
+        fn = self._when_act if a else self._when_deact
+        if fn:
+            H.call(fn, self)
+
+    def _ensure_poll(self):
+        if not self._ph and not self._closed:
+            self._last = self.is_active
+            self._t_act = _time.ticks_ms() if self._last else None
+            self._ph = H.every(50, self._poll)
+            self._handles.append(self._ph)
+
+    @property
+    def when_activated(self):
+        return self._when_act
+
+    @when_activated.setter
+    def when_activated(self, fn):
+        self._when_act = fn
+        self._ensure_poll()
+
+    @property
+    def when_deactivated(self):
+        return self._when_deact
+
+    @when_deactivated.setter
+    def when_deactivated(self, fn):
+        self._when_deact = fn
+        self._ensure_poll()
+
+    when_light = when_activated
+    when_dark = when_deactivated
 
     def wait_for_light(self, timeout=None):
         return self._wait(True, timeout)
@@ -1048,10 +1128,6 @@ class TimeOfDay(Device):
     @property
     def value(self):
         return True
-
-
-class Device_pin_factory:
-    pass
 
 
 Device.pin_factory = None

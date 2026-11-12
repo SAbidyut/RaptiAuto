@@ -17,7 +17,6 @@ export class GpioSim {
     this.wifiState = { state: 0, ssid: '' };
     this.net = null;      // the virtual network (src/net) when this board has Wi-Fi / Ethernet
     this.netDev = null;   // this board's device on it
-    this.uartLog = [];
     this.lastYield = now();
     this.quietEnd = 0;
     this.setBoard(board);
@@ -345,10 +344,11 @@ export class GpioSim {
     return Math.round((base + Math.sin(now() / 7000) * 1.6 + (this.busy ? 6 : 0)) * 10) / 10;
   }
 
-  i2cHas(addr) { return this.hw ? (this.hw.i2cHas(addr) ? 1 : 0) : 0; }
-  i2cScan() { return this.hw ? this.hw.i2cScan().join(',') : ''; }
-  i2cRead(addr, n) {
-    const bytes = this.hw ? this.hw.i2cRead(addr, n) : new Array(n).fill(255);
+  // sda / scl: the bus pins of a Pico's machine.I2C (null: the board's default bus)
+  i2cHas(addr, sda, scl) { return this.hw ? (this.hw.i2cHas(addr, sda, scl) ? 1 : 0) : 0; }
+  i2cScan(sda, scl) { return this.hw ? this.hw.i2cScan(sda, scl).join(',') : ''; }
+  i2cRead(addr, n, sda, scl) {
+    const bytes = this.hw ? this.hw.i2cRead(addr, n, sda, scl) : new Array(n).fill(255);
     return bytes.map((b) => (b & 255).toString(16).padStart(2, '0')).join('');
   }
 
@@ -372,11 +372,11 @@ export class GpioSim {
     if (i < 0) return partial ? this.hw.uartRead(port, -1) : '';
     return this.hw.uartRead(port, i + 1);
   }
-  i2cWrite(addr, hex) {
+  i2cWrite(addr, hex, sda, scl) {
     if (!this.hw) return;
     const bytes = [];
     for (let i = 0; i + 1 < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
-    this.hw.i2cWrite(addr, bytes);
+    this.hw.i2cWrite(addr, bytes, sda, scl);
   }
 
   spiXfer(sck, mosi, hex) {
@@ -406,7 +406,6 @@ export class GpioSim {
 
   // ---------------------------------------------------------------- parts
   addPart(part) { this.parts.push(part); this.inputsChanged(); this.changed(); }
-  removePart(id) { this.parts = this.parts.filter((p) => p.id !== id); this.inputsChanged(); this.changed(); }
   partChanged() { this.inputsChanged(); this.changed(); }
 
   // ---------------------------------------------------------------- UI notifications

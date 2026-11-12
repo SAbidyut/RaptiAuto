@@ -368,5 +368,79 @@ console.log('Circuit (wired on the canvas)');
     engine.stop();
   }
 }
+console.log('input(), time zone, I²C pins, gpiozero extras');
+{
+  // callbacks keep running while input() waits for Enter
+  const g = new GpioSim('pi5');
+  const btn = { id: 'b1', type: 'button', pins: { a: 2 }, props: { to: 'gnd' }, state: { pressed: false } };
+  g.addPart(btn);
+  let lit = -1;
+  setTimeout(() => { btn.state.pressed = true; g.partChanged(); }, 150);
+  setTimeout(() => { btn.state.pressed = false; g.partChanged(); }, 300);
+  let out = await py(g, 'from gpiozero import Button, LED\nled = LED(17)\nb = Button(2)\nb.when_pressed = led.on\nx = input("Press Enter ")\nprint("lit", led.is_lit, repr(x))\n',
+    { readLine: (prompt) => new Promise((r) => setTimeout(() => { lit = g.level(17); r('ok:' + prompt); }, 700)) });
+  check('button callback runs during input()', lit === 1 && out.includes("lit True 'ok:Press Enter '"), out);
+  const t = await proc('pi5', { readLine: () => new Promise(() => {}) });
+  const run = t.p.runSource('try:\n    input("? ")\nexcept KeyboardInterrupt:\n    print("interrupted")\n');
+  await sleep(150);
+  t.p.interrupt();
+  await run;
+  check('Ctrl+C stops input()', t.text.includes('interrupted'), t.text);
+  t.p.kill();
+  // local time everywhere (the phone's time zone)
+  out = await py(new GpioSim('pi5'), 'import time, datetime\nt = time.time()\nprint(time.localtime(t)[:5] == time.localtime()[:5], abs(time.mktime(time.localtime()) - t) < 2, time.ctime(t) == time.ctime())\nd = datetime.datetime.now() - datetime.datetime.fromtimestamp(t)\nprint(abs(d.total_seconds()) < 2, time.gmtime(-1)[:6], time.mktime(time.localtime(0)))\n');
+  check('localtime(secs) / mktime / ctime / datetime agree with localtime()', out.includes('True True True\nTrue (1969, 12, 31, 23, 59, 59) 0'), out);
+  out = await py(new GpioSim('picow'), 'import time, ntptime\nntptime.settime()\nprint(time.localtime()[:5] == time.gmtime()[:5], time.localtime(time.time() + 6 * 3600)[3] == (time.gmtime()[3] + 6) % 24)\n');
+  check('Pico: ntptime.settime() puts the RTC on UTC', out.includes('True True'), out);
+  // I²C: the device must be on the bus pins
+  const W = (a, ap, b, bp) => ({ id: 'w' + Math.random().toString(36).slice(2), from: { part: a, pin: ap }, to: { part: b, pin: bp }, points: [] });
+  const lcdOn = async (board, type, vcc, gnd, sda, scl, code) => {
+    const warnings = [];
+    const engine = new SimEngine({ parts: [{ id: 'b', type, x: 0, y: 0, rot: 0, props: {} }, { id: 'lcd', type: 'lcd-i2c', x: 0, y: 500, rot: 0, props: {} }],
+      wires: [W('lcd', 'VCC', 'b', vcc), W('lcd', 'GND', 'b', gnd), W('lcd', 'SDA', 'b', sda), W('lcd', 'SCL', 'b', scl)], code: '' }, { external: true, onWarning: (m) => warnings.push(m) });
+    engine.start();
+    const gg = new GpioSim(board);
+    gg.attachHw(new CircuitHw(engine));
+    engine.tick(performance.now());
+    const o = await py(gg, code);
+    const lcd = engine.parts.get('lcd').hd44780;
+    engine.stop();
+    return { out: o, text: String.fromCharCode(lcd.charAt(0, 0), lcd.charAt(1, 0)), warnings: warnings.join('\n') };
+  };
+  const PI_LCD = 'from i2c_lcd import I2cLcd\nlcd = I2cLcd(0x27, 2, 16)\nlcd.putstr("Hi")\n';
+  let r = await lcdOn('pi5', 'rpi5', '5V.2', 'GND.7', 'GPIO2', 'GPIO3', PI_LCD);
+  check('Pi: LCD on GPIO2 (SDA) / GPIO3 (SCL) works', r.text === 'Hi' && !r.warnings, JSON.stringify(r));
+  r = await lcdOn('pi5', 'rpi5', '5V.2', 'GND.7', 'GPIO3', 'GPIO2', PI_LCD);
+  check('Pi: SDA / SCL swapped → no device + warning', r.text !== 'Hi' && r.out.includes('ENODEV') && /swapped/.test(r.warnings), JSON.stringify(r));
+  r = await lcdOn('pi5', 'rpi5', '5V.2', 'GND.7', 'GPIO17', 'GPIO27', PI_LCD);
+  check('Pi: LCD on GPIO17 / GPIO27 → not on the I²C bus', r.text !== 'Hi' && /not on the Raspberry Pi's I²C bus/.test(r.warnings), JSON.stringify(r));
+  const PICO_LCD = (s, c) => `from machine import I2C, Pin\nfrom pico_i2c_lcd import I2cLcd\nlcd = I2cLcd(I2C(0, sda=Pin(${s}), scl=Pin(${c})), 0x27, 2, 16)\nlcd.putstr("Hi")\n`;
+  r = await lcdOn('pico', 'pi-pico', 'VBUS', 'GND.1', 'GP8', 'GP9', PICO_LCD(8, 9));
+  check('Pico: I2C(0, sda=Pin(8), scl=Pin(9)) reaches the LCD on GP8 / GP9', r.text === 'Hi' && !r.warnings, JSON.stringify(r));
+  r = await lcdOn('pico', 'pi-pico', 'VBUS', 'GND.1', 'GP8', 'GP9', PICO_LCD(4, 5));
+  check('Pico: LCD on other pins than the I2C object → warning', r.text !== 'Hi' && /sda=Pin\(4\), scl=Pin\(5\)/.test(r.warnings), JSON.stringify(r));
+  r = await lcdOn('pico', 'pi-pico', 'VBUS', 'GND.1', 'GP4', 'GP5', PICO_LCD(5, 4));
+  check('Pico: I2C(0) on wrong pins → ValueError like the real port', r.out.includes('ValueError: bad SCL pin'), JSON.stringify(r));
+  // LightSensor threshold + when_light / when_dark, TonalBuzzer + gpiozero.tones, RPi.GPIO initial=HIGH
+  const g2 = new GpioSim('pi5');
+  const ldr = { id: 'l1', type: 'ldr', pins: { a: 4 }, props: { light: 0.3 }, state: {} };
+  g2.addPart(ldr);
+  setTimeout(() => { ldr.props.light = 0.8; g2.partChanged(); }, 250);
+  setTimeout(() => { ldr.props.light = 0.2; g2.partChanged(); }, 500);
+  out = await py(g2, 'from gpiozero import LightSensor\nimport time\ns = LightSensor(4, threshold=0.5)\nprint("active", s.is_active, s.light_detected)\ns.when_light = lambda: print("light")\ns.when_dark = lambda: print("dark")\nprint("w", s.wait_for_light(2))\nprint("w", s.wait_for_dark(2))\ntime.sleep(0.15)\n');
+  check('LightSensor: threshold, when_light / when_dark, wait_for_light / dark', /active False False\n(light\nw True|w True\nlight)\n(dark\nw True|w True\ndark)/.test(out), out);
+  const g3 = new GpioSim('pi5');
+  const freqs = [];
+  const pwm = g3.pwm.bind(g3);
+  g3.pwm = (n, f, d, b) => { freqs.push(Math.round(f * 100) / 100); return pwm(n, f, d, b); };
+  out = await py(g3, 'from gpiozero import TonalBuzzer\nfrom gpiozero.tones import Tone\nb = TonalBuzzer(18)\nb.play("A4")\nb.play(60)\nb.play(Tone("E4"))\nprint(Tone(midi=60).note, Tone("A4").midi, Tone(frequency=440).note)\n');
+  check('TonalBuzzer.play("A4") / play(60) / Tone objects', freqs.join() === '440,261.63,329.63' && out.includes('C4 69 A4'), freqs.join() + ' ' + out);
+  const g4 = new GpioSim('pi5');
+  const levels = [];
+  const changed = g4.changed.bind(g4);
+  g4.changed = (n) => { if (n === 17) levels.push(g4.level(17)); return changed(n); };
+  await py(g4, 'import RPi.GPIO as GPIO\nGPIO.setmode(GPIO.BCM)\nGPIO.setup(17, GPIO.OUT, initial=GPIO.HIGH)\n');
+  check('RPi.GPIO setup(OUT, initial=HIGH) never goes LOW', levels.length > 0 && levels.every((v) => v === 1), levels.join());
+}
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

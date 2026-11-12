@@ -5,7 +5,8 @@ import random from './py/random.py';
 import signal from './py/signal.py';
 import rpiInit from './py/RPi/__init__.py';
 import rpiGpio from './py/RPi/GPIO.py';
-import gpiozero from './py/gpiozero.py';
+import gpiozero from './py/gpiozero/__init__.py';
+import gpiozeroTones from './py/gpiozero/tones.py';
 import board from './py/board.py';
 import adafruitDht from './py/adafruit_dht.py';
 import machine from './py/machine.py';
@@ -54,7 +55,7 @@ import lcdApi from './py/lcd_api.py';
 
 export const LIBS = {
   '_rpi_hw.py': hw, 'time.py': time, 'random.py': random, 'signal.py': signal,
-  'RPi/__init__.py': rpiInit, 'RPi/GPIO.py': rpiGpio, 'gpiozero.py': gpiozero, 'board.py': board, 'adafruit_dht.py': adafruitDht,
+  'RPi/__init__.py': rpiInit, 'RPi/GPIO.py': rpiGpio, 'gpiozero/__init__.py': gpiozero, 'gpiozero/tones.py': gpiozeroTones, 'board.py': board, 'adafruit_dht.py': adafruitDht,
   'machine.py': machine, 'rp2.py': rp2, 'network.py': network, 'neopixel.py': neopixel, 'dht.py': dht, 'i2c_lcd.py': i2cLcd,
   'smbus2.py': smbus2, 'smbus.py': smbus, 'serial.py': serial,
   '_netio.py': netio, 'requests.py': requests, 'urequests.py': urequests, 'socket.py': socket,

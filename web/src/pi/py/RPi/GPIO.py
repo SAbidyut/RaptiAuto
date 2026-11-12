@@ -89,9 +89,10 @@ def setup(channel, direction, pull_up_down=PUD_OFF, initial=-1):
         if direction == OUT:
             if pull_up_down != PUD_OFF:
                 raise ValueError('pull_up_down parameter is not valid for outputs')
-            J.setup(b, 'out', 'none')
+            # the level is latched before the pin becomes an output: initial=HIGH never glitches LOW
             if initial != -1:
                 J.write(b, 1 if initial else 0)
+            J.setup(b, 'out', 'none')
         else:
             if initial != -1:
                 raise ValueError('initial parameter is not valid for inputs')

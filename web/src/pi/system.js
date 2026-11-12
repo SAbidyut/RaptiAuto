@@ -84,21 +84,6 @@ export class PiSystem {
       : [newPart('led', { a: 17 }, { color: 'red' }), newPart('led', { a: 27 }, { color: 'green' }), newPart('button', { a: 2 }), newPart('buzzer', { a: 22 })];
   }
 
-  saveParts() {
-    const data = this.gpio.parts.map(({ id, type, pins, props }) => ({ id, type, pins, props }));
-    try { localStorage.setItem(this.partsKey(), JSON.stringify(data)); } catch (e) { /* ignore */ }
-    this.emit('parts');
-  }
-
-  /** Replace the wiring with what an example needs. */
-  wireExample(ex) {
-    if (!ex.parts || !ex.parts.length) return false;
-    this.gpio.parts = ex.parts.map((p) => newPart(p.type, p.pins, p.props || {}));
-    this.gpio.inputsChanged();
-    this.saveParts();
-    return true;
-  }
-
   /** Put the board's files back to the examples (SD card re-flash / Pico flash erase). */
   resetFs() {
     this.killProcess();
@@ -146,7 +131,13 @@ export class PiSystem {
         if (p in now || !proc.gone(p)) continue;
         if (this.fs.isFile(p) && this.fs.read(p) === base[p]) { this.fs.files.delete(p); gone = true; }
       }
-      if (!this.fs.merge(changed, root) && gone) this.fs.save();
+      const merged = this.fs.merge(changed, root);
+      if (!merged && gone) this.fs.save();
+      // the browser storage is full: say so where the program's output goes (the files stay until the app closes)
+      if ((merged || gone) && this.fs.full) {
+        const names = Object.keys(changed).map((p) => p.slice(p.lastIndexOf('/') + 1)).join(', ');
+        proc.out(`\nStorage is full: ${names ? 'the files the program wrote (' + names + ')' : 'the program\'s file changes'} could not be saved permanently.\n`, 'err');
+      }
       proc.files = now;
     } catch (e) { /* ignore */ }
   }

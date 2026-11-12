@@ -3,6 +3,7 @@
 # that JavaScript queues while Python sleeps or loops.
 import _rpi_js as J
 import _rapti
+from utime import sleep_ms as _sleep_ms
 
 _cbs = {}
 _next = [1]
@@ -59,3 +60,13 @@ def stop(handle):
     if handle:
         J.timer_stop(handle[0])
         unregister(handle[1])
+
+
+def input(prompt=''):
+    # builtins.input: the terminal / Thonny shell reads the line in the background while this
+    # loop sleeps, so callbacks (when_pressed, timers, IRQs) keep running during input();
+    # Ctrl+C raises KeyboardInterrupt in the sleep
+    J.read_start(str(prompt))
+    while not J.read_ready():
+        _sleep_ms(10)
+    return J.read_line()

@@ -252,25 +252,45 @@ class Timer:
 
 
 class I2C:
+    # The parts must be wired to the bus pins: SDA to sda, SCL to scl. I2C(0) defaults to GP4 / GP5,
+    # I2C(1) to GP6 / GP7 (as on a real Pico).
+    _DEF = {0: (4, 5), 1: (6, 7)}
+
     def __init__(self, id=0, *, scl=None, sda=None, freq=400000, timeout=50000):
         self._id = id
         self._freq = freq
+        if id not in (0, 1):
+            raise ValueError('I2C(%s) does not exist' % (id,))
+        d = self._DEF[id]
+        self._sda = d[0] if sda is None else _pid(sda)
+        self._scl = d[1] if scl is None else _pid(scl)
+        # RP2040 / RP2350: I2C0 SDA on GP0, 4, 8 ..., SCL on GP1, 5, 9 ...; I2C1 SDA on GP2, 6, 10 ..., SCL on GP3, 7, 11 ...
+        if self._scl % 4 != 2 * id + 1:
+            raise ValueError('bad SCL pin')
+        if self._sda % 4 != 2 * id:
+            raise ValueError('bad SDA pin')
 
     def scan(self):
-        s = J.i2c_scan()
+        s = J.i2c_scan(self._sda, self._scl)
         return [int(a) for a in s.split(',')] if s else []
 
+    def _w(self, addr, data):
+        J.i2c_write(addr, bytes(data).hex(), self._sda, self._scl)
+
+    def _r(self, addr, n):
+        return bytes.fromhex(J.i2c_read(addr, n, self._sda, self._scl))
+
     def writeto(self, addr, buf, stop=True):
-        J.i2c_write(addr, bytes(buf).hex())
+        self._w(addr, buf)
         return len(buf)
 
     def writevto(self, addr, vector, stop=True):
         data = b''.join(bytes(v) for v in vector)
-        J.i2c_write(addr, data.hex())
+        self._w(addr, data)
         return len(data)
 
     def readfrom(self, addr, n, stop=True):
-        return bytes.fromhex(J.i2c_read(addr, n))
+        return self._r(addr, n)
 
     def readfrom_into(self, addr, buf, stop=True):
         b = self.readfrom(addr, len(buf))
@@ -278,17 +298,31 @@ class I2C:
             buf[i] = b[i]
 
     def writeto_mem(self, addr, memaddr, buf, *, addrsize=8):
-        J.i2c_write(addr, (bytes([memaddr]) + bytes(buf)).hex())
+        self._w(addr, bytes([memaddr]) + bytes(buf))
 
     def readfrom_mem(self, addr, memaddr, n, *, addrsize=8):
-        J.i2c_write(addr, bytes([memaddr]).hex())
-        return bytes.fromhex(J.i2c_read(addr, n))
+        self._w(addr, bytes([memaddr]))
+        return self._r(addr, n)
+
+    def readfrom_mem_into(self, addr, memaddr, buf, *, addrsize=8):
+        b = self.readfrom_mem(addr, memaddr, len(buf))
+        for i in range(len(buf)):
+            buf[i] = b[i]
 
     def __repr__(self):
-        return 'I2C(%d, freq=%d)' % (self._id, self._freq)
+        return 'I2C(%d, freq=%d, scl=%d, sda=%d)' % (self._id, self._freq, self._scl, self._sda)
 
 
-SoftI2C = I2C
+class SoftI2C(I2C):
+    # bit-banged I2C: any two GPIOs
+    def __init__(self, scl, sda, *, freq=400000, timeout=50000):
+        self._id = -1
+        self._freq = freq
+        self._sda = _pid(sda)
+        self._scl = _pid(scl)
+
+    def __repr__(self):
+        return 'SoftI2C(scl=%d, sda=%d, freq=%d)' % (self._scl, self._sda, self._freq)
 
 
 class SPI:
@@ -386,9 +420,11 @@ class RTC:
         self._off = 0
 
     def datetime(self, dt=None):
-        t = _time.localtime()
         if dt is not None:
+            # (year, month, day, weekday, hours, minutes, seconds, subseconds)
+            _time._set_rtc((dt[0], dt[1], dt[2], dt[4], dt[5], dt[6]))
             return None
+        t = _time.localtime()
         return (t[0], t[1], t[2], t[6], t[3], t[4], t[5], 0)
 
 

@@ -97,7 +97,7 @@ export class Desktop {
 
   drawIcons() {
     this.icons.innerHTML = '';
-    const ico = (ic, label, fn) => h('button', { class: 'dk-dicon', ondblclick: fn, onclick: (e) => { if (e.detail <= 1) { this.icons.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel')); e.currentTarget.classList.add('sel'); clearTimeout(this.tapT); this.tapT = setTimeout(() => {}, 300); } }, onpointerup: (e) => { if (e.pointerType === 'touch') fn(); } },
+    const ico = (ic, label, fn) => h('button', { class: 'dk-dicon', ondblclick: fn, onclick: (e) => { if (e.detail <= 1) { this.icons.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel')); e.currentTarget.classList.add('sel'); } }, onpointerup: (e) => { if (e.pointerType === 'touch') fn(); } },
       h('i', { html: APP_IC[ic] }), h('span', {}, label));
     this.icons.appendChild(ico('trash', 'Wastebasket', () => toast('The wastebasket is empty')));
     this.icons.appendChild(ico('folder', 'pi', () => this.open('files', '/home/pi')));
@@ -277,7 +277,8 @@ export class Desktop {
     ta.addEventListener('input', () => { if (!dirty) { dirty = true; title(); } });
     const save = async () => {
       if (!cur) { const n = await promptDialog('Save as', '/home/pi/Documents/untitled.txt'); if (!n) return; cur = normPath(n, '/home/pi'); }
-      fs.write(cur, ta.value); dirty = false; title(); this.sys.emit('files'); toast('Saved ' + basename(cur), 'ok');
+      if (!fs.write(cur, ta.value)) { toast(`Storage is full: ${basename(cur)} could not be saved`, 'error', 6000); return; }
+      dirty = false; title(); this.sys.emit('files'); toast('Saved ' + basename(cur), 'ok');
     };
     const open = async () => { const n = await promptDialog('Open file', cur || '/home/pi/Documents/notes.txt'); if (!n) return; const p = normPath(n, '/home/pi'); if (!fs.isFile(p)) { toast('No such file', 'error'); return; } cur = p; ta.value = fs.read(p); dirty = false; title(); };
     const mb = (label, fn) => h('button', { class: 'te-mb', onclick: fn }, label);

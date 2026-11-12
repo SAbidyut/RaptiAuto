@@ -670,14 +670,35 @@ class ESPLib {
   }
 }
 
-const NVS = new Map(); // namespace → Map(key → value): survives restarts of the sketch like the flash does
+// The board's NVS flash: { namespace: { key: value } }. The engine keeps it with the board part in the
+// project (hw.nvsStore / hw.nvsCommit), so it survives ESP.restart() and reloads like EEPROM does; a
+// bare hw (tests) gets its own store.
+const LOCAL_NVS = new WeakMap();
+function nvsOf(hw) {
+  if (hw.nvsStore) return hw.nvsStore();
+  if (!LOCAL_NVS.has(hw)) LOCAL_NVS.set(hw, {});
+  return LOCAL_NVS.get(hw);
+}
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+/** One namespace of the store, seen as a Map (writes go through to the store and get saved). */
+class NvsSpace {
+  constructor(hw, ns) { this.hw = hw; this.ns = ns; }
+  get o() { const st = nvsOf(this.hw); if (!own(st, this.ns) || !st[this.ns] || typeof st[this.ns] !== 'object') st[this.ns] = {}; return st[this.ns]; }
+  get size() { return Object.keys(this.o).length; }
+  has(k) { return own(this.o, k); }
+  get(k) { return this.o[k]; }
+  set(k, v) { const o = this.o; if (own(o, k) && Object.is(o[k], v)) return; o[k] = v; this.save(); }
+  delete(k) { const o = this.o; if (!own(o, k)) return false; delete o[k]; this.save(); return true; }
+  clear() { const o = this.o; const had = Object.keys(o).length; for (const k of Object.keys(o)) delete o[k]; if (had) this.save(); }
+  save() { if (this.hw.nvsCommit) this.hw.nvsCommit(); }
+}
 class PreferencesLib {
   constructor(rt, hw) { this.rt = rt; this.hw = hw; this.ns = null; this.ro = false; }
-  begin(ns, ro) { this.ns = text(ns); this.ro = !!ro; if (!NVS.has(this.ns)) NVS.set(this.ns, new Map()); this.rt.t += 3000; return 1; }
+  begin(ns, ro) { this.ns = text(ns); this.ro = !!ro; this.space = new NvsSpace(this.hw, this.ns); this.rt.t += 3000; return 1; }
   end() { this.ns = null; }
   get m() {
     if (!this.ns) { this.hw.warn('Preferences: call prefs.begin("namespace", false) first.', null, 'pref-begin'); return new Map(); }
-    return NVS.get(this.ns);
+    return this.space;
   }
   put(k, v) { if (this.ro) { this.hw.warn('Preferences: the namespace was opened read-only (second argument of begin() is true).', null, 'pref-ro'); return 0; } this.m.set(text(k), v); this.rt.t += 2000; return 1; }
   get(k, d) { const m = this.m; return m.has(text(k)) ? m.get(text(k)) : d; }

@@ -906,7 +906,7 @@ export class Parser {
     switch (t.t) {
       case 'num':
         this.p++;
-        return { kind: 'Num', v: t.v, isFloat: t.isFloat, unsigned: t.unsigned, longs: t.longs, fsuffix: t.fsuffix, line };
+        return { kind: 'Num', v: t.v, isFloat: t.isFloat, unsigned: t.unsigned, longs: t.longs, fsuffix: t.fsuffix, nondec: !t.isFloat && /^0[0-7xXbB]/.test(t.text || ''), line };
       case 'chr':
         this.p++;
         return { kind: 'Chr', v: t.v, line };

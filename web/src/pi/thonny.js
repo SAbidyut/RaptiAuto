@@ -216,7 +216,9 @@ export class Thonny {
       path = normPath(name.endsWith('.py') || name.includes('.') ? name : name + '.py', this.sys.home);
       if (this.fs.isFile(path) && path !== t.path && !(await confirmDialog('Replace file', `${basename(path)} already exists. Replace it?`, 'Replace', true))) return false;
     }
-    try { this.fs.write(path, t.text); } catch (e) { toast(e.message, 'error'); return false; }
+    try {
+      if (!this.fs.write(path, t.text)) { toast(`Storage is full: ${basename(path)} could not be saved. Delete some files and save again.`, 'error', 6000); return false; }
+    } catch (e) { toast(e.message, 'error'); return false; }
     t.path = path; t.name = basename(path); t.dirty = false;
     this.drawTabs();
     this.saveTabs();
