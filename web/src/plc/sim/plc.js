@@ -1,6 +1,6 @@
 // Delta DVP PLC CPU: device memory, scan cycle, ladder execution, timers, counters,
 // special relays/registers and the MODRW Modbus master hooks.
-import { timerInfo, isLatched, fmtAddr } from './address.js';
+import { timerInfo, isLatched } from './address.js';
 
 const i16 = (v) => (v << 16) >> 16;
 const SCAN_MS = 5;
@@ -459,51 +459,31 @@ export class PlcCpu {
   }
 
   /**
-   * One network, in the order of its instruction list: each output in turn asks for the power in front
-   * of it, which reads the contacts it depends on that have not been read yet in this scan of the
-   * network. A branch after MPS / MRD / MPP therefore sees what the outputs before it just wrote,
-   * while the shared part on its left is read once (like the value MPS keeps).
+   * One network, in the order of its instruction list (see execNet in ladder.js): each output runs
+   * right after the contacts its power depends on that no earlier output needed. A branch after
+   * MPS / MRD / MPP therefore sees what the outputs before it just wrote, while the shared part on
+   * its left is read once (like the value MPS keeps).
    */
   execRung(r, rail = 1) {
     const live = r.live || (r.live = { cells: r.cells.map((row) => new Uint8Array(row.length)), rows: new Uint8Array(r.rows) });
-    const N = r.net;
-    N.pow.fill(-1);
-    N.done.fill(0);
-    N.pow[N.rail] = rail ? 1 : 0;
-    for (let k = 0; k < N.order.length; k++) {
-      const i = N.order[k];
-      const pw = this.nodePow(r, N.outNode[i]);
-      live.rows[i] = pw;
-      this.output(r.outs[i], pw);
+    const N = r.net, pow = N.pow, sched = N.sched, cols = r.cols;
+    pow.fill(0);
+    pow[N.rail] = rail ? 1 : 0;
+    for (let j = 0; j < sched.length; j++) {
+      const k = sched[j];
+      if (k < 0) {
+        const i = -1 - k, pw = pow[N.outNode[i]];
+        live.rows[i] = pw;
+        this.output(r.outs[i], pw);
+        continue;
+      }
+      const i = (k / cols) | 0, c = k - i * cols;
+      const pin = pow[N.u[k]];
+      const v = this.contact(r.cells[i][c], pin);
+      live.cells[i][c] = (pin ? 1 : 0) | (v ? 2 : 0);
+      if (v) pow[N.v[k]] = 1;
     }
-    // cells no output depends on (open branches) and rows without an output: for the live display
-    for (let c = 0; c < r.cols; c++) for (let i = 0; i < r.rows; i++) if (!N.done[i * r.cols + c]) this.cellOut(r, i * r.cols + c);
-    for (let i = 0; i < r.rows; i++) if (!r.outs[i]) live.rows[i] = this.nodePow(r, N.outNode[i]);
-  }
-
-  /** Power at node n of network r (each cell feeding it is read once per scan of the network). */
-  nodePow(r, n) {
-    const N = r.net;
-    let v = N.pow[n];
-    if (v >= 0) return v;
-    v = 0;
-    for (let j = N.incStart[n]; j < N.incStart[n + 1]; j++) v |= this.cellOut(r, N.inc[j]);
-    N.pow[n] = v;
-    return v;
-  }
-
-  /** Power out of cell k (row × cols + column) of network r; records it for the live display. */
-  cellOut(r, k) {
-    const N = r.net, cols = r.cols, i = (k / cols) | 0, c = k - i * cols;
-    const cells = r.live.cells[i];
-    if (N.done[k]) return cells[c] >> 1;
-    N.done[k] = 1;
-    const e = r.cells[i][c];
-    if (!e) { cells[c] = 0; return 0; }
-    const pin = this.nodePow(r, N.u[k]);
-    const v = this.contact(e, pin);
-    cells[c] = (pin ? 1 : 0) | (v ? 2 : 0);
-    return v;
+    for (let i = 0; i < r.rows; i++) if (!r.outs[i]) live.rows[i] = pow[N.outNode[i]];
   }
 
   contact(e, pw) {
@@ -1095,11 +1075,20 @@ export class PlcCpu {
       case 'GBIN': { let v = u(R(a[0])); for (let sh = v >>> 1; sh; sh >>>= 1) v ^= sh; W(a[1], v); break; }
       case 'SEGD': this.setWord(a[1], SEG7[this.getWord(a[0]) & 15]); break;
       case 'PRUN': {
-        // octal-numbered bits ↔ decimal-numbered bits: K4X0 → K4M0 copies X0–X7 → M0–M7, X10–X17 → M8–M15 …
+        // octal transfer: the octal numbers of X / Y become the same decimal numbers of M. K4X0 → K4M0:
+        // X0–X7 → M0–M7, X10–X17 → M10–M17 (M8, M9 untouched); K4M0 → K4Y0: M0–M7 → Y0–Y7,
+        // M10–M17 → Y10–Y17 (M8, M9 ignored)
         const s = this.R(a[0]), d = this.R(a[1]);
         if (!s.n || !d.n) { W(a[1], R(a[0])); break; }
-        const nb = Math.min(s.n, d.n) * 4;
-        for (let k = 0; k < nb; k++) this.setBitAt(d.bdev, d.idx + k, this.getBitAt(s.bdev, s.idx + k));
+        const nb = Math.min(s.n, d.n, e.d ? 8 : 4) * 4;
+        const oct = (b) => b === 'X' || b === 'Y';
+        const dec = (k) => +k.toString(8); // k-th octal bit → its decimal number (8 → 10)
+        const so = oct(s.bdev), dO = oct(d.bdev);
+        for (let k = 0; k < nb; k++) {
+          const sk = so && !dO ? k : !so && dO ? dec(k) : k;
+          const dk = so && !dO ? dec(k) : k;
+          this.setBitAt(d.bdev, d.idx + dk, this.getBitAt(s.bdev, s.idx + sk));
+        }
         break;
       }
       case 'ASCI': {
@@ -1400,8 +1389,6 @@ export class PlcCpu {
     const r = this.prog && this.prog.rungs.find((x) => x.index === i);
     return r && r.live ? r.live : null;
   }
-
-  describe(dev, idx) { return fmtAddr(dev, idx); }
 }
 
 /** The k-th word after a word device (BMOV, FMOV, MEAN); KnM steps by 4n bits. */

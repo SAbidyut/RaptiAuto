@@ -1,5 +1,5 @@
 // Delta PLC Lab screen: 3D panel + ladder editor + HMI + VFD + monitor, with the simulation loop.
-import { h, toast, smoothSwap, pushBack, popupMenu, promptDialog, confirmDialog, debounce, dialog } from '../../ui/widgets.js';
+import { h, toast, smoothSwap, pushBack, popupMenu, promptDialog, dialog } from '../../ui/widgets.js';
 import { icon } from '../../ui/icons.js';
 import { Native } from '../../native.js';
 import { AudioEngine } from '../../ui/audio.js';
@@ -40,7 +40,13 @@ export class LabScreen {
     this.history = [];
     this.future = [];
     this.audio = new AudioEngine();
-    this.save = debounce(() => this.saveNow(), 800);
+    // debounced save; cancelled when the lab closes, so a lab deleted right after leaving stays deleted
+    this.saveTimer = 0;
+    this.save = () => {
+      if (this.closed) return;
+      clearTimeout(this.saveTimer);
+      this.saveTimer = setTimeout(() => { this.saveTimer = 0; this.saveNow(); }, 800);
+    };
     this.hmiCanvas = document.createElement('canvas');
     this.hmiCanvas.width = 800; this.hmiCanvas.height = 480;
     this.hmiCanvas.className = 'hmi-canvas';
@@ -103,6 +109,8 @@ export class LabScreen {
 
   unmount() {
     this.stopSim(true);
+    if (this.saveTimer) this.saveNow(); // a change still waiting: write it now, not after the lab is gone
+    this.closed = true;
     cancelAnimationFrame(this.loopRaf);
     this.ro.disconnect();
     for (const v of Object.values(this.views)) if (v.destroy) v.destroy();
@@ -348,11 +356,15 @@ export class LabScreen {
     if (P.conns.length < before) toast(`${before - P.conns.length} wire(s) removed — their terminals no longer exist`, 'warn');
   }
 
+  /** Undo / redo: devices and wiring come back, but a device still there keeps its live state
+   * (breaker on / off, selector position, tank level, RUN switch …) — undo only rewinds the build. */
   restoreHw(snap) {
     const s = JSON.parse(snap);
+    const states = new Map(this.project.devices.map((d) => [d.id, d.state]));
+    for (const d of s.devices) if (states.has(d.id)) d.state = states.get(d.id);
     this.project.devices = s.devices;
     this.project.conns = s.conns;
-    this.snapshot = snap;
+    this.snapshot = this.hwSerialize();
     this.fixActivePlc();
     this.scene.syncDevices();
     if (this.sys) this.sys.sync();
@@ -370,6 +382,8 @@ export class LabScreen {
   }
 
   saveNow() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
     const sys = this.sys;
     if (sys) this.saveAllLatched();
     if (this.scene) { const v = this.scene.views(); if (v.view) this.project.view = v.view; if (v.view2d) this.project.view2d = v.view2d; }
@@ -664,7 +678,7 @@ export class LabScreen {
 
   renderLaptopScreen(force = false) {
     const sys = this.sys;
-    const plcDev = this.project.devices.find((d) => DEVICE_DEFS[d.type].category === 'plc');
+    const plcDev = this.plcDevice();
     const plcRt = sys && sys.plc;
     const online = !!(sys && sys.pcLink().ok);
     const opts = {
@@ -719,8 +733,6 @@ export class LabScreen {
     }
     return this.sys.plc;
   }
-
-  confirm(title, msg, ok = 'OK', danger = false) { return confirmDialog(title, msg, ok, danger); }
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

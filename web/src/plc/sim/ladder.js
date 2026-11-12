@@ -5,7 +5,7 @@
 // row plus one output cell at the right end of each row. Vertical links join two rows at the
 // right edge of a cell: vl[r][c] links row r and row r+1 at the boundary right of column c.
 // Power flows left → right only; links OR the rows they join (no reverse power flow).
-import { parseOperand, BIT_DEVS, fmtAddr, DEVICES } from './address.js';
+import { parseOperand, fmtAddr, DEVICES } from './address.js';
 
 export const COLS = 8;
 
@@ -680,11 +680,12 @@ function rungILPlain(rung, onStepBus) {
 
 // ------------------------------------------------------------------ compiler
 /**
- * What the CPU needs to run a network in instruction-list order: every cell is an edge u → v between
- * two nodes of the network, the cells feeding each node (inc, from incStart[n] to incStart[n + 1]),
- * the node in front of each row's output and the order the outputs run in. The CPU works out a node's
- * power only when an output (or a later cell) needs it, so a branch is read just before its own
- * output — after the outputs before it have run, like MPS / MRD / MPP.
+ * How the CPU runs a network in instruction-list order. Every cell is an edge u → v between two nodes
+ * of the network. Each output, in the order of the instruction list, first needs the cells its power
+ * depends on that no earlier output needed: `sched` lists those cells (k = row × cols + column, left
+ * to right) and then the output (−1 − row). A branch is therefore read just before its own output,
+ * after the outputs before it have run (MPS / MRD / MPP), and the shared part on its left only once.
+ * Cells no output needs (open branches) come last, for the live display.
  */
 function execNet(rung, cells, order) {
   const g = buildGraph(rung);
@@ -693,21 +694,31 @@ function execNet(rung, cells, order) {
   const nid = (n) => { if (!ids.has(n)) ids.set(n, ids.size); return ids.get(n); };
   const rail = nid(g.rail);
   const u = new Int16Array(rows * cols).fill(-1), v = new Int16Array(rows * cols).fill(-1);
+  const into = new Map(); // node → cells feeding it
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     if (!cells[r][c]) continue;
-    u[r * cols + c] = nid(g.node(r, c));
-    v[r * cols + c] = nid(g.node(r, c + 1));
+    const k = r * cols + c;
+    u[k] = nid(g.node(r, c));
+    v[k] = nid(g.node(r, c + 1));
+    if (!into.has(v[k])) into.set(v[k], []);
+    into.get(v[k]).push(k);
   }
   const outNode = Int16Array.from({ length: rows }, (_, r) => nid(g.node(r, cols)));
-  const nNodes = ids.size;
-  const incStart = new Int32Array(nNodes + 1);
-  for (let k = 0; k < v.length; k++) if (v[k] >= 0) incStart[v[k] + 1]++;
-  for (let n = 0; n < nNodes; n++) incStart[n + 1] += incStart[n];
-  const inc = new Int32Array(incStart[nNodes]);
-  const fill = incStart.slice(0, nNodes);
-  // column by column, so a node's cells are read top to bottom, left to right
-  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) { const k = r * cols + c; if (v[k] >= 0) inc[fill[v[k]]++] = k; }
-  return { rail, u, v, inc, incStart, outNode, order: Int16Array.from(order), pow: new Int8Array(nNodes), done: new Uint8Array(rows * cols) };
+  const done = new Uint8Array(rows * cols);
+  const sched = [];
+  const byColumn = (a, b) => (a % cols) - (b % cols) || a - b;
+  const need = (n, acc) => {
+    for (const k of into.get(n) || []) if (!done[k]) { done[k] = 1; need(u[k], acc); acc.push(k); }
+  };
+  for (const r of order) {
+    const acc = [];
+    need(outNode[r], acc);
+    sched.push(...acc.sort(byColumn), -1 - r);
+  }
+  const rest = [];
+  for (let k = 0; k < rows * cols; k++) if (u[k] >= 0 && !done[k]) rest.push(k);
+  sched.push(...rest.sort(byColumn));
+  return { rail, u, v, outNode, sched: Int16Array.from(sched), pow: new Uint8Array(ids.size) };
 }
 
 /** 16 / 32-bit rules of one operand: returns an error text or null. */
@@ -738,6 +749,11 @@ function checkInstr(el, ops) {
   const max = (op) => (DEVICES[op.bdev || op.dev] ? DEVICES[op.bdev || op.dev].max : 0);
   const fits = (op, n) => !op || op.idx === undefined || (op.n ? op.idx + op.n * 4 * n - 1 : op.idx + n - 1) <= max(op);
   switch (el.t) {
+    case 'PRUN':
+      if (ops[0] && !['KX', 'KM'].includes(ops[0].dev)) return 'PRUN: S must be KnX or KnM';
+      if (ops[1] && !['KY', 'KM'].includes(ops[1].dev)) return 'PRUN: D must be KnY or KnM';
+      if (ops[0] && ops[1] && ops[0].dev === 'KM' && ops[1].dev === 'KM') return 'PRUN: one side must be X or Y (KnX → KnM or KnM → KnY)';
+      break;
     case 'ZRST': if (ops[0] && ops[1] && (ops[0].dev !== ops[1].dev || ops[0].idx > ops[1].idx)) return 'ZRST: D1 and D2 must be the same device type with D1 ≤ D2'; break;
     case 'MODRW': if (ops[1] && ops[1].dev !== 'D' && ![1, 2, 3, 4, 5, 6, 15, 16].includes(ops[1].val)) return 'MODRW: function must be K1 / K2 (read bits), K3 / K4 (read words), K5 (write one bit), K6 (write one word), K15 (write bits) or K16 (write words)'; break;
     case 'BMOV': case 'FMOV': case 'MEAN': {
@@ -984,4 +1000,3 @@ export function programIL(compiled) {
   return out;
 }
 
-export { BIT_DEVS, DEVICES };

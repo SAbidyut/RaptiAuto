@@ -22,10 +22,6 @@ export const DEVICES = {
   P: { name: 'Pointer (jump / subroutine label)', max: 255, pointer: true },
 };
 
-export const BIT_DEVS = ['X', 'Y', 'M', 'S', 'T', 'C'];
-export const WORD_DEVS = ['D', 'T', 'C', 'E', 'F'];
-export const KN_DEVS = ['KX', 'KY', 'KM', 'KS'];
-
 /**
  * Parse an operand → {dev, idx} for devices, {dev:'K'|'H'|'FL', val} for constants, or null.
  *   X17 M1000 D10 T5 C200 · K50 K-3 H2000 · F1.5 F-2.5E3 (floating point) · E0…E7 F0…F7 (index)
