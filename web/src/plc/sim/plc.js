@@ -458,30 +458,52 @@ export class PlcCpu {
     }
   }
 
+  /**
+   * One network, in the order of its instruction list: each output in turn asks for the power in front
+   * of it, which reads the contacts it depends on that have not been read yet in this scan of the
+   * network. A branch after MPS / MRD / MPP therefore sees what the outputs before it just wrote,
+   * while the shared part on its left is read once (like the value MPS keeps).
+   */
   execRung(r, rail = 1) {
-    const P = this.pw && this.pw.length >= r.rows ? this.pw : (this.pw = new Uint8Array(Math.max(8, r.rows)));
-    for (let i = 0; i < r.rows; i++) P[i] = rail;
     const live = r.live || (r.live = { cells: r.cells.map((row) => new Uint8Array(row.length)), rows: new Uint8Array(r.rows) });
-    for (let c = 0; c < r.cols; c++) {
-      for (let i = 0; i < r.rows; i++) {
-        const e = r.cells[i][c];
-        const v = e ? this.contact(e, P[i]) : 0;
-        live.cells[i][c] = e ? (P[i] ? 1 : 0) | (v ? 2 : 0) : 0;
-        P[i] = v;
-      }
-      const groups = r.merges[c];
-      for (let g = 0; g < groups.length; g++) {
-        const rows = groups[g];
-        let v = 0;
-        for (let k = 0; k < rows.length; k++) v |= P[rows[k]];
-        for (let k = 0; k < rows.length; k++) P[rows[k]] = v;
-      }
+    const N = r.net;
+    N.pow.fill(-1);
+    N.done.fill(0);
+    N.pow[N.rail] = rail ? 1 : 0;
+    for (let k = 0; k < N.order.length; k++) {
+      const i = N.order[k];
+      const pw = this.nodePow(r, N.outNode[i]);
+      live.rows[i] = pw;
+      this.output(r.outs[i], pw);
     }
-    for (let i = 0; i < r.rows; i++) {
-      live.rows[i] = P[i];
-      const o = r.outs[i];
-      if (o) this.output(o, P[i]);
-    }
+    // cells no output depends on (open branches) and rows without an output: for the live display
+    for (let c = 0; c < r.cols; c++) for (let i = 0; i < r.rows; i++) if (!N.done[i * r.cols + c]) this.cellOut(r, i * r.cols + c);
+    for (let i = 0; i < r.rows; i++) if (!r.outs[i]) live.rows[i] = this.nodePow(r, N.outNode[i]);
+  }
+
+  /** Power at node n of network r (each cell feeding it is read once per scan of the network). */
+  nodePow(r, n) {
+    const N = r.net;
+    let v = N.pow[n];
+    if (v >= 0) return v;
+    v = 0;
+    for (let j = N.incStart[n]; j < N.incStart[n + 1]; j++) v |= this.cellOut(r, N.inc[j]);
+    N.pow[n] = v;
+    return v;
+  }
+
+  /** Power out of cell k (row × cols + column) of network r; records it for the live display. */
+  cellOut(r, k) {
+    const N = r.net, cols = r.cols, i = (k / cols) | 0, c = k - i * cols;
+    const cells = r.live.cells[i];
+    if (N.done[k]) return cells[c] >> 1;
+    N.done[k] = 1;
+    const e = r.cells[i][c];
+    if (!e) { cells[c] = 0; return 0; }
+    const pin = this.nodePow(r, N.u[k]);
+    const v = this.contact(e, pin);
+    cells[c] = (pin ? 1 : 0) | (v ? 2 : 0);
+    return v;
   }
 
   contact(e, pw) {

@@ -374,13 +374,24 @@ export class Parser {
   parseDeclRest(spec, topLevel) {
     const line = this.cur.line;
     // method of class defined outside: RetType Class::name(...)
-    if (topLevel && this.cur.t === 'id' && this.typeNames.has(this.cur.v) && this.isOp('::', this.peek())) {
+    // (also `T* Class::name(...)` / `T& Class::name(...)`)
+    let k = 0, rptr = 0, rref = false;
+    if (topLevel) {
+      for (;;) {
+        const tk = this.peek(k);
+        if (this.isOp('*', tk)) { rptr++; k++; } else if (this.isOp('&', tk)) { rref = true; k++; } else break;
+      }
+    }
+    const ct = this.peek(k);
+    if (topLevel && ct.t === 'id' && this.typeNames.has(ct.v) && this.isOp('::', this.peek(k + 1))) {
+      this.p += k;
       const cls = this.next().v;
       this.p++;
       const name = this.ident();
       const params = this.parseParams();
       while (this.accept('const') || this.accept('override'));
-      const fn = { kind: 'Func', name, cls, ret: spec, params, body: null, line };
+      const ret = rptr || rref ? { ...spec, ptr: (spec.ptr || 0) + rptr, ref: rref || spec.ref } : spec;
+      const fn = { kind: 'Func', name, cls, ret, params, body: null, line };
       if (this.isOp('{')) fn.body = this.parseBlock(); else this.expect(';');
       return fn;
     }
