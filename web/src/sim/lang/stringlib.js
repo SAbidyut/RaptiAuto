@@ -1,5 +1,5 @@
 // Arduino String class methods and C string (<string.h>, <stdlib.h>, <ctype.h>) helpers.
-import { AStr, Ptr, Ref, RuntimeError, cstr, strToArr, sprintf, fmtFloat, cloneValue } from './values.js';
+import { AStr, Ptr, Ref, RuntimeError, cstr, strToArr, sprintf, cloneValue } from './values.js';
 
 export function atol(s) {
   const m = /^\s*([+-]?\d+)/.exec(s);
@@ -11,6 +11,11 @@ export function atof(s) {
 }
 
 const b = (v) => (v ? 1 : 0);
+// C-locale toupper / tolower: only a–z / A–Z change (JS toUpperCase also maps µ, ß, ÿ …)
+const up = (c) => (c >= 97 && c <= 122 ? c - 32 : c);
+const low = (c) => (c >= 65 && c <= 90 ? c + 32 : c);
+const upStr = (s) => s.replace(/[a-z]+/g, (x) => x.toUpperCase());
+const lowStr = (s) => s.replace(/[A-Z]+/g, (x) => x.toLowerCase());
 
 export const STRING_METHODS = {
   length: { ret: 'uint', fn: (o) => o.s.length },
@@ -23,11 +28,13 @@ export const STRING_METHODS = {
   substring: {
     ret: 'String', min: 1,
     fn: (o, from, to) => {
+      // unsigned int arguments: a negative index is huge
       const len = o.s.length;
-      if (to === undefined) to = len;
+      from = Math.trunc(from) >>> 0;
+      to = to === undefined ? len : Math.trunc(to) >>> 0;
       if (from > to) [from, to] = [to, from];
       if (from >= len) return new AStr('');
-      return new AStr(o.s.slice(Math.max(0, from), Math.min(len, to)));
+      return new AStr(o.s.slice(from, Math.min(len, to)));
     },
   },
   indexOf: { ret: 'int', min: 1, args: ['str', 'num'], fn: (o, v, from = 0) => o.s.indexOf(v, from) },
@@ -38,7 +45,7 @@ export const STRING_METHODS = {
   startsWith: { ret: 'bool', min: 1, args: ['str', 'num'], fn: (o, v, off = 0) => b(o.s.startsWith(v, off)) },
   endsWith: { ret: 'bool', min: 1, args: ['str'], fn: (o, v) => b(o.s.endsWith(v)) },
   equals: { ret: 'bool', min: 1, args: ['str'], fn: (o, v) => b(o.s === v) },
-  equalsIgnoreCase: { ret: 'bool', min: 1, args: ['str'], fn: (o, v) => b(o.s.toLowerCase() === v.toLowerCase()) },
+  equalsIgnoreCase: { ret: 'bool', min: 1, args: ['str'], fn: (o, v) => b(lowStr(o.s) === lowStr(v)) },
   compareTo: {
     ret: 'int', min: 1, args: ['str'],
     fn: (o, v) => {
@@ -52,16 +59,20 @@ export const STRING_METHODS = {
   toInt: { ret: 'long', fn: (o) => atol(o.s) },
   toFloat: { ret: 'float', fn: (o) => Math.fround(atof(o.s)) },
   toDouble: { ret: 'double', fn: (o) => atof(o.s) },
-  toUpperCase: { ret: 'void', fn: (o) => { o.s = o.s.toUpperCase(); } },
-  toLowerCase: { ret: 'void', fn: (o) => { o.s = o.s.toLowerCase(); } },
+  toUpperCase: { ret: 'void', fn: (o) => { o.s = upStr(o.s); } },
+  toLowerCase: { ret: 'void', fn: (o) => { o.s = lowStr(o.s); } },
   trim: { ret: 'void', fn: (o) => { o.s = o.s.replace(/^[\s]+|[\s]+$/g, ''); } },
   replace: { ret: 'void', min: 2, args: ['str', 'str'], fn: (o, a, r) => { if (a.length) o.s = o.s.split(a).join(r); } },
   remove: {
     ret: 'void', min: 1,
     fn: (o, idx, count) => {
-      if (idx < 0 || idx >= o.s.length) return;
-      if (count === undefined) o.s = o.s.slice(0, idx);
-      else o.s = o.s.slice(0, idx) + o.s.slice(idx + count);
+      // remove(unsigned index, unsigned count = -1): a negative count means "to the end"
+      const len = o.s.length;
+      idx = Math.trunc(idx) >>> 0;
+      if (idx >= len) return;
+      count = count === undefined ? len : Math.trunc(count) >>> 0;
+      if (count === 0) return;
+      o.s = o.s.slice(0, idx) + o.s.slice(idx + Math.min(count, len - idx));
     },
   },
   reserve: { ret: 'bool', fn: () => 1 },
@@ -138,8 +149,8 @@ export function makeStringNatives(rt, avr) {
     strncat: { ret: 'cstr', args: ['raw', 'raw'], fn: (d, s, n) => { const cur = cstr(d); const [a, off] = bufOf(d); strToArr(cur + cstr(s).slice(0, n), a, off); return d; } },
     strcmp: { ret: 'int', args: ['raw', 'raw'], fn: (x, y) => cmp(cstr(x), cstr(y)) },
     strncmp: { ret: 'int', args: ['raw', 'raw'], fn: (x, y, n) => cmp(cstr(x).slice(0, n), cstr(y).slice(0, n)) },
-    strcasecmp: { ret: 'int', args: ['raw', 'raw'], fn: (x, y) => cmp(cstr(x).toLowerCase(), cstr(y).toLowerCase()) },
-    strncasecmp: { ret: 'int', args: ['raw', 'raw'], fn: (x, y, n) => cmp(cstr(x).toLowerCase().slice(0, n), cstr(y).toLowerCase().slice(0, n)) },
+    strcasecmp: { ret: 'int', args: ['raw', 'raw'], fn: (x, y) => cmp(lowStr(cstr(x)), lowStr(cstr(y))) },
+    strncasecmp: { ret: 'int', args: ['raw', 'raw'], fn: (x, y, n) => cmp(lowStr(cstr(x)).slice(0, n), lowStr(cstr(y)).slice(0, n)) },
     strchr: {
       ret: 'cstr', args: ['raw'],
       fn: (s, c) => {
@@ -262,8 +273,8 @@ export function makeStringNatives(rt, avr) {
     sprintf_P: { ret: 'int', printf: 2, args: ['raw', 'str'], fn: (d, fmt, ...args) => { const s = sprintf(fmt, args, avr); writeStr(d, s); return s.length; } },
     strcpy_P: { ret: 'cstr', args: ['raw', 'raw'], fn: (d, s) => writeStr(d, cstr(s)) },
     strlen_P: { ret: 'uint', args: ['raw'], fn: (s) => cstr(s).length },
-    toupper: { ret: 'int', fn: (c) => String.fromCharCode(c & 255).toUpperCase().charCodeAt(0) },
-    tolower: { ret: 'int', fn: (c) => String.fromCharCode(c & 255).toLowerCase().charCodeAt(0) },
+    toupper: { ret: 'int', fn: up },
+    tolower: { ret: 'int', fn: low },
     isdigit: { ret: 'int', fn: isCh(/[0-9]/) },
     isalpha: { ret: 'int', fn: isCh(/[A-Za-z]/) },
     isalnum: { ret: 'int', fn: isCh(/[A-Za-z0-9]/) },
@@ -287,8 +298,8 @@ export function makeStringNatives(rt, avr) {
     isGraph: { ret: 'bool', fn: (c) => b(c > 32 && c < 127) },
     isControl: { ret: 'bool', fn: (c) => b(c < 32 || c === 127) },
     isAscii: { ret: 'bool', fn: (c) => b(c >= 0 && c < 128) },
-    toUpperCase: { ret: 'int', fn: (c) => String.fromCharCode(c & 255).toUpperCase().charCodeAt(0) },
-    toLowerCase: { ret: 'int', fn: (c) => String.fromCharCode(c & 255).toLowerCase().charCodeAt(0) },
+    toUpperCase: { ret: 'int', fn: up },
+    toLowerCase: { ret: 'int', fn: low },
     toAscii: { ret: 'int', fn: (c) => c & 127 },
   };
   return f;
@@ -321,4 +332,3 @@ function zeroStruct(o) {
   }
 }
 
-export { fmtFloat };

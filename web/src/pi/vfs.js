@@ -38,11 +38,18 @@ export class VFS {
     } else this.seeded = !!data.seeded;
   }
 
+  /** Store the tree in localStorage. false: the storage is full (or blocked) — the change then
+   *  only lives in memory until the app closes, and callers should tell the user. */
   save() {
     const files = {};
     for (const [p, f] of this.files) files[p] = f;
-    try { localStorage.setItem(this.key, JSON.stringify({ files, dirs: [...this.dirs], seeded: this.seeded || false })); } catch (e) { /* quota */ }
+    let ok = true;
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem(this.key, JSON.stringify({ files, dirs: [...this.dirs], seeded: this.seeded || false })); } catch (e) { ok = false; }
+    }
+    this.full = !ok;
     for (const fn of this.listeners) fn();
+    return ok;
   }
 
   on(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -69,7 +76,7 @@ export class VFS {
     if (!this.dirs.has(dir)) this.mkdir(dir, true, false);
     const old = this.files.get(p);
     this.files.set(p, { text: String(text), mtime: Date.now(), x: old ? old.x : false });
-    if (save) this.save();
+    return save ? this.save() : true;
   }
 
   chmodX(p, on) { const f = this.files.get(p); if (f) { f.x = on; this.save(); } }

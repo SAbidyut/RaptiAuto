@@ -190,39 +190,81 @@ export class CircuitHw {
   }
 
   // ---------------------------------------------------------------- I²C (LCD backpack, or an Arduino as a slave)
-  i2cDevices() {
+  /** The bus a program uses: the pins machine.I2C(sda=, scl=) named, else the board's default
+   *  (Raspberry Pi: SDA GPIO2, SCL GPIO3 — the only I²C bus on the header; Pico: GP4 / GP5). */
+  i2cBus(sda, scl) {
+    const b = (this.engine.board && this.engine.board.i2c) || {};
+    return { sda: sda == null || sda < 0 ? b.sda : sda, scl: scl == null || scl < 0 ? b.scl : scl };
+  }
+
+  /** I²C parts whose SDA and SCL are on the bus pins (SDA to SDA, SCL to SCL). */
+  i2cDevices(sda, scl, all) {
     const e = this.engine;
-    const gpioNodes = new Set([...e.pins.values()].map((st) => st.node).filter((x) => x >= 0));
+    const bus = this.i2cBus(sda, scl);
+    const nSda = e.pinNode(bus.sda), nScl = e.pinNode(bus.scl);
     const out = [];
     for (const rt of e.parts.values()) {
       if (!rt.i2c || rt === e.boardRt) continue;
       const pa = rt.i2cPins || rt.def.i2cPins || { sda: 'SDA', scl: 'SCL' };
-      if (gpioNodes.has(e.nodeOf(rt.part.id, pa.sda)) && gpioNodes.has(e.nodeOf(rt.part.id, pa.scl))) out.push(rt);
+      const a = e.nodeOf(rt.part.id, pa.sda), c = e.nodeOf(rt.part.id, pa.scl);
+      if (a >= 0 && c >= 0 && a === nSda && c === nScl) out.push(rt);
+      else if (all) out.push(rt);
     }
     return out;
   }
 
-  i2cHas(addr) {
-    this.engine.ensureSolved();
-    return this.i2cDevices().some((rt) => rt.i2c.address === addr && (!rt.powered || rt.powered()));
+  /** Nothing answered on the bus: if the part is wired to other pins (or SDA / SCL swapped), say so. */
+  i2cMissing(addr, sda, scl) {
+    const e = this.engine;
+    const bus = this.i2cBus(sda, scl);
+    const on = new Set(this.i2cDevices(sda, scl));
+    const gpioNodes = new Set([...e.pins.values()].map((st) => st.node).filter((x) => x >= 0));
+    const name = (n) => { const st = e.pins.get(n); return st ? st.id : 'GPIO' + n; };
+    const pico = /^GP\d/.test(name(bus.sda));
+    for (const rt of this.i2cDevices(sda, scl, true)) {
+      if (on.has(rt) || (addr != null && rt.i2c.address !== addr)) continue;
+      const pa = rt.i2cPins || rt.def.i2cPins || { sda: 'SDA', scl: 'SCL' };
+      const a = e.nodeOf(rt.part.id, pa.sda), c = e.nodeOf(rt.part.id, pa.scl);
+      if (!gpioNodes.has(a) && !gpioNodes.has(c)) continue;   // not wired to the board at all
+      const what = `${rt.def.name || rt.def.type} at I²C address 0x${rt.i2c.address.toString(16).toUpperCase().padStart(2, '0')}`;
+      const swapped = a === e.pinNode(bus.scl) && c === e.pinNode(bus.sda);
+      const where = pico ? `the I2C bus of your program (sda=Pin(${bus.sda}), scl=Pin(${bus.scl}))` : 'the Raspberry Pi\'s I²C bus (SDA = GPIO2 / pin 3, SCL = GPIO3 / pin 5)';
+      this.warnOnce(`i2cpins:${rt.part.id}:${bus.sda}:${bus.scl}`, swapped
+        ? `${what}: SDA and SCL are swapped — wire ${pa.sda} → ${name(bus.sda)} and ${pa.scl} → ${name(bus.scl)}`
+        : `${what} is not on ${where}: wire ${pa.sda} → ${name(bus.sda)} and ${pa.scl} → ${name(bus.scl)}`);
+    }
   }
 
-  i2cScan() {
+  i2cOn(addr, sda, scl) {
+    const rt = this.i2cDevices(sda, scl).find((r) => r.i2c.address === addr);
+    if (!rt) this.i2cMissing(addr, sda, scl);
+    return rt;
+  }
+
+  i2cHas(addr, sda, scl) {
     this.engine.ensureSolved();
-    return this.i2cDevices().filter((rt) => !rt.powered || rt.powered()).map((rt) => rt.i2c.address).sort((a, b) => a - b);
+    const rt = this.i2cOn(addr, sda, scl);
+    return !!rt && (!rt.powered || rt.powered());
+  }
+
+  i2cScan(sda, scl) {
+    this.engine.ensureSolved();
+    const found = this.i2cDevices(sda, scl).filter((rt) => !rt.powered || rt.powered()).map((rt) => rt.i2c.address).sort((a, b) => a - b);
+    if (!found.length) this.i2cMissing(null, sda, scl);
+    return found;
   }
 
   /** Bytes the master read back from a slave (an Arduino's onRequest handler); 0xFF when none answers. */
-  i2cRead(addr, n) {
+  i2cRead(addr, n, sda, scl) {
     this.advance();
-    const rt = this.i2cDevices().find((r) => r.i2c.address === addr);
+    const rt = this.i2cOn(addr, sda, scl);
     if (rt && rt.i2cRead) { const out = rt.i2cRead(n); this.engine.dirty = true; return out; }
     return new Array(n).fill(rt ? 0 : 255);
   }
 
   /** Bytes written to a PCF8574 LCD backpack: P0 RS, P1 RW, P2 EN, P3 backlight, P4–P7 = D4–D7. */
-  i2cWrite(addr, bytes) {
-    const rt = this.i2cDevices().find((r) => r.i2c.address === addr);
+  i2cWrite(addr, bytes, sda, scl) {
+    const rt = this.i2cOn(addr, sda, scl);
     if (rt && rt.i2cWrite) { this.advance(); rt.i2cWrite(bytes); this.engine.dirty = true; return; }
     if (rt && rt.ssd1306) { this.advance(); this.ssd1306Write(rt, bytes); return; }
     if (!rt || !rt.hd44780) return;

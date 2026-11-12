@@ -1,5 +1,5 @@
 // Application shell: screen routing, settings, Android lifecycle hooks.
-import { loadSettings, saveSettings, saveProject, THEMES } from '../store.js';
+import { loadSettings, saveSettings, THEMES } from '../store.js';
 import { installNativeCallbacks, Native } from '../native.js';
 import { Shell } from './shell.js';
 import { Editor } from './editor.js';
@@ -113,11 +113,6 @@ export class App {
     if (opts.board || opts.example || opts.newProject) this.pi.start(opts);
   }
 
-  showAbout() {
-    this.showHome();
-    this.home.go('about');
-  }
-
   /** Android back button. Returns true if handled (false lets the app close). */
   handleBack() {
     try {
@@ -137,7 +132,6 @@ export class App {
   onResume() { if (this.editor) this.editor.onResume(); if (this.pi && this.pi.onResume) this.pi.onResume(); }
   onKeyboard(h) { if (this.editor) this.editor.root.classList.toggle('kb', h > 0); if (this.lab) this.lab.root.classList.toggle('kb', h > 0); if (this.pi) this.pi.root.classList.toggle('kb', h > 0); }
 
-  persist(p) { saveProject(p); }
 }
 
 const bundles = {};

@@ -204,5 +204,38 @@ run('encoder', {
   wires: [W('u', 'D2', 'e', 'CLK'), W('u', 'D3', 'e', 'DT'), W('u', '5V', 'e', '+'), W('u', 'GND.2', 'e', 'GND')],
 }, 400, { onFrame: (e, t) => { if (t === 96) e.input('e', 'rotate', 1); if (t === 160) e.input('e', 'rotate', 1); if (t === 256) e.input('e', 'rotate', -1); }, check: ({ serial }) => (serial === '1\r\n2\r\n1\r\n' ? true : serial) });
 
+run('hc-sr04 echo timed by a CHANGE interrupt (pulse shorter than a frame)', {
+  code: `volatile unsigned long t0 = 0, width = 0;\nvoid echoIsr(){ if (digitalRead(2)) t0 = micros(); else width = micros() - t0; }\nvoid setup(){ Serial.begin(115200); pinMode(9, OUTPUT); pinMode(2, INPUT); attachInterrupt(digitalPinToInterrupt(2), echoIsr, CHANGE); }\nvoid loop(){ digitalWrite(9, HIGH); delayMicroseconds(10); digitalWrite(9, LOW); delay(100); Serial.println(width); }`,
+  parts: [uno, { id: 's', type: 'hc-sr04', x: 300, y: 200 }],
+  wires: [W('u', '5V', 's', 'VCC'), W('u', 'GND.2', 's', 'GND'), W('u', 'D9', 's', 'TRIG'), W('u', 'D2', 's', 'ECHO')],
+}, 450, { check: ({ serial }) => { const v = serial.trim().split(/\r\n/).map(Number); return v.length >= 3 && v.every((x) => Math.abs(x - 5830) < 10) ? true : serial; } });
+
+run('LOW interrupt fires while the button is held', {
+  code: `volatile int n = 0;\nvoid isr(){ n++; }\nvoid setup(){ Serial.begin(9600); pinMode(2, INPUT_PULLUP); attachInterrupt(0, isr, LOW); }\nvoid loop(){ Serial.println(n); delay(200); }`,
+  parts: [uno, { id: 'b', type: 'pushbutton', x: 300, y: 200 }],
+  wires: [W('u', 'D2', 'b', '1.l'), W('u', 'GND.2', 'b', '2.l')],
+}, 800, {
+  onFrame: (e, t) => { if (t === 304) e.input('b', 'press', true); if (t === 496) e.input('b', 'press', false); },
+  check: ({ serial }) => { const v = serial.trim().split(/\r\n/).map(Number); return v[1] === 0 && v[2] > 0 && v[3] > v[2] ? true : serial; },
+});
+
+run('ESP.restart() resets the board (globals, pins, ISRs) but not Preferences', {
+  code: `#include <Preferences.h>\nPreferences p; int n; volatile int hits;\nvoid isr(){ hits++; }\nvoid setup(){ Serial.begin(115200); n++; p.begin("t", false); int b = p.getInt("b", 0) + 1; p.putInt("b", b);\n  Serial.printf("boot %d nvs %d ms %d\\n", n, b, (int)(millis() / 100));\n  if (b == 1) { pinMode(4, OUTPUT); digitalWrite(4, HIGH); attachInterrupt(5, isr, CHANGE); }\n  delay(300); if (b < 3) ESP.restart(); }\nvoid loop(){}`,
+  parts: [{ id: 'esp', type: 'esp32-devkit', x: 0, y: 0 }],
+  wires: [],
+}, 1500, { check: ({ eng, serial }) => { const st = eng.pins.get(4); const isr = eng.pins.get(5).isr; return (serial.match(/boot 1 nvs \d ms 0/g) || []).length === 3 && /nvs 3/.test(serial) && st.mode === 0 && !isr ? true : serial; } });
+
+run('NeoPixel NEO_GRBW: green is green, white LED lights', {
+  code: `#include <Adafruit_NeoPixel.h>\nAdafruit_NeoPixel s(16, 6, NEO_GRBW + NEO_KHZ800);\nvoid setup(){ s.begin(); s.setPixelColor(0, s.Color(0, 255, 0)); s.setPixelColor(1, 0, 0, 0, 200); s.show(); }\nvoid loop(){}`,
+  parts: [uno, { id: 'r', type: 'neopixel', x: 300, y: 0, props: {} }],
+  wires: [W('u', 'D6', 'r', 'DIN'), W('u', '5V', 'r', 'VCC'), W('u', 'GND.2', 'r', 'GND')],
+}, 200, { check: ({ eng }) => { const px = eng.parts.get('r').visual.px; return px[0] === 0x00ff00 && px[1] === 0xc8c8c8 ? true : px.slice(0, 2).map((c) => c.toString(16)).join(','); } });
+
+run('C++: reference returns, default ctors of array elements / members, lazy static locals', {
+  code: `struct P { int x; P() { x = 7; } };\nstruct Outer { P in; };\nP pts[3]; Outer o;\nP& at(int i) { return pts[i]; }\nint g = 5; int& r() { return g; }\nstruct V { int s = 1; V& add(int k) { s += k; return *this; } };\nint f(int x) { static int first = x; return first; }\nvoid setup(){ Serial.begin(9600); V v; v.add(2).add(3); at(0).x = 9; f(4);\n  Serial.print(r() + 1); Serial.print(' '); Serial.print(at(1).x); Serial.print(' '); Serial.print(pts[0].x); Serial.print(' '); Serial.print(o.in.x); Serial.print(' '); Serial.print(v.s); Serial.print(' '); Serial.println(f(8)); }\nvoid loop(){}`,
+  parts: [uno],
+  wires: [],
+}, 100, { check: ({ serial }) => (serial === '6 7 9 7 6 4\r\n' ? true : serial) });
+
 console.log(failures ? `\n${failures} FAILED` : '\nall device tests passed');
 process.exit(failures ? 1 : 0);

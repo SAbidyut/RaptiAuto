@@ -109,19 +109,62 @@ export class Compiler {
     switch (t.k) {
       case 'int': case 'float': case 'any': return 0;
       case 'String': return new AStr('');
-      case 'struct': return this.newStruct(t.cls);
+      case 'struct': return this.constructDefault(t.cls);
       case 'ptr': return null;
       case 'func': return null;
       default: return 0;
     }
   }
 
-  newStruct(cls) {
+  /** Raw object with default member values; `skip` = struct members a ctor init-list sets itself. */
+  newStruct(cls, skip = null) {
     const o = Object.create(cls.proto);
     for (const fd of cls.fieldList) {
-      o[fd.name] = fd.make ? fd.make() : this.defaultValue(fd.type);
+      o[fd.name] = skip && skip.has(fd.name) ? undefined : (fd.make ? fd.make() : this.defaultValue(fd.type));
     }
     return o;
+  }
+
+  /**
+   * Default-constructs a struct the way C++ does for array elements and member sub-objects:
+   * members first, then the default constructor (if any). A ctor that may block (it has a loop
+   * or calls delay) is driven to completion right here, as these objects are built synchronously.
+   */
+  constructDefault(cls) {
+    const fi = this.noCtors ? null : this.defaultCtor(cls);
+    if (!fi || !fi.run) return this.newStruct(cls);
+    const o = this.newStruct(cls, fi.initSkip);
+    const nf = new Array(fi.frameSize);
+    nf[1] = o;
+    for (const p of fi.params) if (p.def) nf[p.slot] = p.defFn ? p.defFn(nf) : 0;
+    const rt = this.rt;
+    if (++rt.depth > MAX_DEPTH) { rt.depth = 0; throw new RuntimeError(`Stack overflow (too deep recursion) in '${cls.name}::${cls.name}'`, rt.line); }
+    if (!fi.gen) fi.run(nf);
+    else {
+      const savedLimit = rt.limit;
+      rt.limit = Infinity;
+      try {
+        const g = fi.run(nf);
+        let r = g.next(), guard = 0;
+        while (!r.done && guard++ < 1e6) r = g.next();
+      } finally { rt.limit = savedLimit; }
+    }
+    rt.depth--;
+    return nf[1];
+  }
+
+  /** The constructor callable without arguments (cached), or null. */
+  defaultCtor(cls) {
+    if (cls.defCtor !== undefined) return cls.defCtor;
+    const fi = cls.ctors.find((c) => c.params.every((p) => p.def)) || null;
+    if (!fi || !fi.run) return null; // not compiled yet: don't cache
+    for (const p of fi.params) {
+      const e = this.convert(this.compileExpr(p.def, this.newCtx(null)), p.type, p.def);
+      if (e.gen) return null;
+      p.defFn = e.fn;
+    }
+    cls.defCtor = fi;
+    return fi;
   }
 
   // ------------------------------------------------------------------ entry
@@ -200,7 +243,7 @@ export class Compiler {
           const leaf = this.resolveType(fv.type, decl.ptr, fv);
           fd.make = () => this.makeArray(dims, leaf);
         } else if (t.k === 'struct') {
-          fd.make = () => this.newStruct(t.cls);
+          fd.make = () => this.constructDefault(t.cls);
         } else if (t.k === 'String') {
           fd.make = () => new AStr('');
         } else if (t.k === 'obj') {
@@ -405,7 +448,9 @@ export class Compiler {
   }
   allocGlobal(name, type, node, isRef = false) {
     const slot = this.G.length;
-    this.G.push(this.defaultValue(type));
+    // placeholder only (the real initial value comes from the init code): never run ctors here
+    this.noCtors = true;
+    try { this.G.push(this.defaultValue(type)); } finally { this.noCtors = false; }
     const sym = { kind: 'global', slot, type, isRef };
     if (name !== null) {
       if (this.globals.has(name)) throw this.err(`redefinition of '${name}'`, node);
@@ -678,7 +723,7 @@ export class Compiler {
       return this.compileStructInitList(cls, { items: argNodes }, ctx);
     }
     const fi = this.pickOverload(cls.ctors, argNodes, ctx, node, `${cls.name}::${cls.name}`);
-    const call = this.compileUserCall(fi, argNodes, ctx, node, (f) => this.newStruct(cls));
+    const call = this.compileUserCall(fi, argNodes, ctx, node, (f) => this.newStruct(cls, fi.initSkip));
     return call;
   }
 
@@ -695,6 +740,8 @@ export class Compiler {
     ctx.max = fi.frameSize;
     const stmts = [];
     if (fi.isCtor && d.inits) {
+      const skip = new Set(d.inits.map((ini) => ini.name).filter((n) => { const fd = fi.cls.fields.get(n); return fd && fd.type.k === 'struct'; }));
+      if (skip.size) fi.initSkip = skip;
       for (const ini of d.inits) {
         const fd = fi.cls.fields.get(ini.name);
         if (!fd) throw this.err(`class '${fi.cls.name}' does not have any field named '${ini.name}'`, ini);
@@ -838,16 +885,29 @@ export class Compiler {
     const out = [];
     for (const decl of node.decls) {
       if (node.type.isStatic) {
-        // static local -> hidden global initialised once at program start
-        const { type, init } = this.compileDeclInit(node, decl, this.newCtx(null), true);
+        // static local -> hidden global, zero at program start and initialised (in the function's
+        // own scope, so it may use parameters, millis()...) the first time execution reaches it
+        const { type, init } = this.compileDeclInit(node, decl, ctx, true);
         const sym = this.allocGlobal(null, type, decl);
-        ctx.scopes[ctx.scopes.length - 1].set(decl.name, sym);
+        const G = this.G, slot = sym.slot;
         if (init) {
-          const slot = sym.slot, G = this.G;
-          if (init.gen) throw this.err('static initializer cannot call blocking functions', decl);
-          const fn = init.fn;
-          this.globalInits.push({ gen: false, fn: (f) => { G[slot] = fn(f); }, line: decl.line });
+          if (node.type.isConst && init.cst !== undefined && (type.k === 'int' || type.k === 'float')) {
+            sym.cst = init.cst;
+            sym.isConst = true;
+            G[slot] = init.cst;
+          } else {
+            const flag = this.allocGlobal(null, this.T.int, decl).slot;
+            const line = decl.line;
+            if (init.gen) {
+              const g = init.fn;
+              out.push({ gen: true, fn: function* (f) { if (!G[flag]) { G[flag] = 1; rt.line = line; G[slot] = yield* g(f); } return 0; } });
+            } else {
+              const fn = init.fn;
+              out.push({ gen: false, fn: (f) => { if (!G[flag]) { G[flag] = 1; rt.line = line; G[slot] = fn(f); } return 0; } });
+            }
+          }
         }
+        ctx.scopes[ctx.scopes.length - 1].set(decl.name, sym);
         continue;
       }
       const before = this.nodeCount;
@@ -1169,8 +1229,14 @@ export class Compiler {
     }
     let e;
     if (ctx.fi && ctx.fi.retRef) {
-      const lv = this.compileLValue(node.arg, ctx);
-      e = lv.gen ? E(retT, lv.loc, true) : E(retT, lv.ref);
+      let lv;
+      try { lv = this.compileLValue(node.arg, ctx); } catch (err) { lv = null; }
+      if (lv) e = lv.gen ? E(retT, lv.loc, true) : E(retT, lv.ref);
+      else {
+        // const T& bound to a temporary
+        const v = this.convert(this.compileInitValue(node.arg, retT, ctx), retT, node);
+        e = this.mapE(v, retT, (x) => { let box = x; return new Ref(() => box, (nv) => { box = nv; }); });
+      }
     } else {
       e = this.convert(this.compileInitValue(node.arg, retT, ctx), retT, node);
     }
@@ -1245,6 +1311,8 @@ export class Compiler {
     else if (node.longs === 1) t = node.unsigned ? T.ulong : (fits(T.long) ? T.long : T.ulong);
     else if (node.unsigned) t = fits(T.uint) ? T.uint : T.ulong;
     else if (fits(T.int)) t = T.int;
+    // a hex / octal / binary literal too big for int but not for unsigned int is unsigned int (0xFFFF on AVR)
+    else if (node.nondec && fits(T.uint)) t = T.uint;
     else if (fits(T.long)) t = T.long;
     else if (fits(T.ulong) && (node.v > 0x7fffffff)) t = T.ulong;
     else t = T.i64;
@@ -1587,7 +1655,6 @@ export class Compiler {
       case '^': fn = w ? (a, b) => w(a ^ b) : (a, b) => a ^ b; break;
       default: throw this.err(`unsupported operator ${op}`, node);
     }
-    if (conv && (op === '+' || op === '-' || op === '*')) { /* wrap handles it */ }
     return this.lift2(ct, l, r, fn);
   }
 
@@ -1731,8 +1798,18 @@ export class Compiler {
           const f32 = T.avr;
           return this.lift2(T.String, a, b, (v, d) => new AStr(fmtFloat(v, d, f32)), { fresh: true });
         }
+        // itoa / ltoa / utoa / ultoa: lowercase digits; a negative value in another base is printed
+        // as the unsigned value of its type (AVR int: 16 bits) — the ESP cores' itoa writes '-' instead
         const uns = a.t.uns;
-        return this.lift2(T.String, a, b, (v, base) => new AStr(fmtInt(v, base, uns)), { fresh: true });
+        const bits = a.t.k === 'int' ? Math.max(a.t.bits, T.INT_BITS) : 32;
+        const esp = this.opts.arch === 'xtensa';
+        return this.lift2(T.String, a, b, (v, base) => {
+          if (base === 10 || base < 2 || base > 36 || typeof v !== 'number') return new AStr(fmtInt(v, base, uns));
+          v = Math.trunc(v);
+          if (v < 0 && esp && !uns) return new AStr('-' + (-v).toString(base));
+          if (v < 0) v = bits === 16 ? v & 0xffff : bits <= 32 ? v >>> 0 : v + 2 ** 64;
+          return new AStr(v.toString(base));
+        }, { fresh: true });
       }
       return this.convert(a, T.String, node);
     }
@@ -1921,11 +1998,13 @@ export class Compiler {
         // function returning reference
         const e = this.compileExpr(node, ctx);
         if (e.gen) {
-          const g = e.fn;
+          const g = e.retRef ? e.refFn : e.fn;
           return { t: e.t, gen: true, loc: function* (f) { const r = yield* g(f); return r instanceof Ref ? r : new Ref(() => r, () => {}); } };
         }
-        const fn = e.fn;
-        if (e.retRef) return this.refLV(e.t, fn);
+        if (e.retRef) {
+          const fn = e.refFn;
+          return this.refLV(e.t, (f) => { const r = fn(f); return r instanceof Ref ? r : new Ref(() => r, () => {}); });
+        }
         throw this.err('lvalue required as left operand of assignment', node);
       }
       default:
@@ -2093,7 +2172,7 @@ export class Compiler {
 
   // ------------------------------------------------------------ calls
   pickOverload(list, argNodes, ctx, node, name) {
-    const real = list.filter((fi) => fi.node.body || fi.run || true);
+    const real = list;
     const n = argNodes.length;
     const cands = real.filter((fi) => {
       const req = fi.params.filter((p) => !p.def).length;
@@ -2174,9 +2253,12 @@ export class Compiler {
     const slots = args.map((a) => a.slot);
     const line = node.line;
     const isCtor = !!fi.isCtor;
+    // A function returning T& yields a Ref (see compileReturn): the value path reads through
+    // it, the lvalue path (compileLValue 'Call') keeps it via `refFn`.
+    const retRef = !!fi.retRef;
     if (!anyGen) {
       const fns = args.map((a) => a.e.fn);
-      return E(retT, (f) => {
+      const raw = (f) => {
         const nf = new Array(fi.frameSize);
         if (thisFn) nf[1] = thisFn(f);
         for (let i = 0; i < nargs; i++) nf[slots[i]] = fns[i](f);
@@ -2184,11 +2266,13 @@ export class Compiler {
         fi.run(nf);
         rt.depth--;
         return isCtor ? nf[1] : nf[0];
-      }, false, { retRef: fi.retRef });
+      };
+      if (!retRef) return E(retT, raw);
+      return E(retT, (f) => { const r = raw(f); return r instanceof Ref ? r.get() : r; }, false, { retRef: true, refFn: raw });
     }
     const gens = args.map((a) => asGen(a.e));
     const thisG = thisFn ? (thisGen ? thisFn : function* (f) { return thisFn(f); }) : null;
-    return E(retT, function* (f) {
+    const rawG = function* (f) {
       const nf = new Array(fi.frameSize);
       if (thisG) nf[1] = yield* thisG(f);
       for (let i = 0; i < nargs; i++) nf[slots[i]] = yield* gens[i](f);
@@ -2196,7 +2280,9 @@ export class Compiler {
       if (fi.gen) yield* fi.run(nf); else fi.run(nf);
       rt.depth--;
       return isCtor ? nf[1] : nf[0];
-    }, true, { retRef: fi.retRef });
+    };
+    if (!retRef) return E(retT, rawG, true);
+    return E(retT, function* (f) { const r = yield* rawG(f); return r instanceof Ref ? r.get() : r; }, true, { retRef: true, refFn: rawG });
   }
 
   compileCall(node, ctx) {
@@ -2313,7 +2399,7 @@ export class Compiler {
     }
     const impl = meta.fn;
     const line = node.line;
-    const cost = (meta.cost || 0) / (meta.costFixed ? 1 : 1);
+    const cost = meta.cost || 0;
     const isGen = !!meta.gen;
     const wrapRet = retT.k === 'int' || retT.k === 'float' ? coercer(retT) : null;
     const anyArgGen = args.some((a) => a.gen) || (thisE && thisE.gen);

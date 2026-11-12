@@ -540,6 +540,48 @@ for (const ex of LAB_EXAMPLES) {
   check('accumulative T250 survives a power cycle', cpu2.TV[250] === tv && tv > 0, `before=${tv} after=${cpu2.TV[250]}`);
 }
 
+{
+  // a network runs in instruction-list order: LD X0; MPS; SET M0; MPP; AND M0; OUT Y0 — the branch
+  // after MPP reads M0 after SET M0 has run (a later network resets M0 every scan)
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const r1 = rung('', ['X0| - => SET M0', '. M0 => OUT Y0']);
+  check('IL of SET + branch reading M0', il(['X0| - => SET M0', '. M0 => OUT Y0']) === 'LD X0; MPS; SET M0; MPP; AND M0; OUT Y0');
+  const c = compileProgram(program([r1, rung('', ['M0 => RST M0'])]), model);
+  const cpu = new PlcCpu(model);
+  cpu.load(c); cpu.powerOn();
+  cpu.Xphys[0] = 1;
+  let seen = 0;
+  for (let i = 0; i < 20; i++) { cpu.step(5); if (cpu.Y[0]) seen++; }
+  check('branch after MPP sees the SET of the output before it (every scan)', seen === 20, `${seen} of 20`);
+  const L = cpu.rungLive(0);
+  check('live power flow of that network', L.cells[0][0] === 3 && L.cells[1][1] === 3 && L.rows[0] === 1 && L.rows[1] === 1 && L.cells[0][7] === 3, JSON.stringify([...L.cells[0], '|', ...L.cells[1], '|', ...L.rows]));
+  // and the other way round: an output above reads a coil written below only in the next scan
+  const c2 = compileProgram(program([rung('', ['X0| M1 => OUT Y1', '. - => SET M1']), rung('', ['M1 => RST M1'])]), model);
+  const cpu2 = new PlcCpu(model);
+  cpu2.load(c2); cpu2.powerOn();
+  cpu2.Xphys[0] = 1;
+  let seen2 = 0;
+  for (let i = 0; i < 20; i++) { cpu2.step(5); if (cpu2.Y[1]) seen2++; }
+  check('a branch before the SET does not see it (IL order)', seen2 === 0, `${seen2} of 20`);
+}
+{
+  // PRUN: octal X / Y numbers ↔ the same decimal M numbers
+  const model = { name: 'T', inputs: 16, outputs: 16 };
+  const cpu = new PlcCpu(model);
+  const c = compileProgram(program([rung('', ['M1000 =>| PRUN K4X0 K4M100', '=> PRUN K4M200 K4Y0'])]), model);
+  check('PRUN compiles', c.ok, JSON.stringify(c.errors));
+  cpu.load(c); cpu.powerOn();
+  cpu.Xphys[1] = 1; cpu.Xphys[8] = 1; cpu.Xphys[15] = 1; // X1, X10, X17
+  cpu.M[108] = 1; // M108 / M109 are not touched
+  cpu.M[201] = 1; cpu.M[210] = 1; cpu.M[217] = 1; cpu.M[208] = 1; cpu.M[209] = 1; // M208 / M209 ignored
+  cpu.step(5);
+  const m = [101, 108, 109, 110, 111, 117].map((i) => cpu.M[i]);
+  check('PRUN K4X0 K4M100: X10 → M110, X17 → M117, M108 / M109 untouched', cpu.M[101] && cpu.M[110] && cpu.M[117] && cpu.M[108] === 1 && !cpu.M[109] && !cpu.M[111], JSON.stringify(m));
+  check('PRUN K4M200 K4Y0: M210 → Y10, M217 → Y17, M208 / M209 ignored', cpu.Y[1] && cpu.Y[8] && cpu.Y[15] && !cpu.Y[0] && cpu.Y.slice(2, 8).every((v) => !v) && cpu.Y.slice(9, 15).every((v) => !v), [...cpu.Y.slice(0, 16)].join(''));
+  const badP = compileProgram(program([rung('', ['M1000 => PRUN D0 K4M0'])]), model);
+  check('PRUN takes KnX / KnM → KnY / KnM only', !badP.ok && badP.errors.some((e) => /PRUN/.test(e.msg)), JSON.stringify(badP.errors));
+}
+
 // ---------------------------------------------------------------- lab tasks (self-checking exercises)
 function taskRunner(id, mutate) {
   const env = sim(id, mutate);

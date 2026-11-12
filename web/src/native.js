@@ -1,5 +1,6 @@
 // Bridge to the Android host (window.RaptiNative) with browser fallbacks.
 import { onNativeHttp } from './net/live.js';
+import { BRIDGE_KEY as K } from './bridge-key.js';
 const N = () => (typeof window !== 'undefined' ? window.RaptiNative : undefined);
 
 let fileReqId = 0;
@@ -11,7 +12,7 @@ export const Native = {
 
   setImmersive(on) {
     const n = N();
-    if (n) { try { n.setImmersive(!!on); } catch (e) { /* ignore */ } return; }
+    if (n) { try { n.setImmersive(K, !!on); } catch (e) { /* ignore */ } return; }
     try {
       if (on && !document.fullscreenElement && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
       if (!on && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
@@ -19,11 +20,11 @@ export const Native = {
   },
 
   /** Colours of the Android status and navigation bars ("#rrggbb"); light = a bright page, so the bar icons turn dark. */
-  setBars(status, nav, light) { const n = N(); if (n && n.setBars) try { n.setBars(status, nav, !!light); } catch (e) { /* ignore */ } },
+  setBars(status, nav, light) { const n = N(); if (n && n.setBars) try { n.setBars(K, status, nav, !!light); } catch (e) { /* ignore */ } },
 
-  keepScreenOn(on) { const n = N(); if (n) try { n.keepScreenOn(!!on); } catch (e) { /* ignore */ } },
+  keepScreenOn(on) { const n = N(); if (n) try { n.keepScreenOn(K, !!on); } catch (e) { /* ignore */ } },
 
-  setOrientation(mode) { const n = N(); if (n) try { n.setOrientation(mode); } catch (e) { /* ignore */ } },
+  setOrientation(mode) { const n = N(); if (n) try { n.setOrientation(K, mode); } catch (e) { /* ignore */ } },
 
   /** Haptic feedback on/off (Settings → Vibration). */
   haptics: true,
@@ -31,7 +32,7 @@ export const Native = {
   vibrate(ms = 12) {
     if (!Native.haptics) return;
     const n = N();
-    if (n) { try { n.vibrate(ms); } catch (e) { /* ignore */ } return; }
+    if (n) { try { n.vibrate(K, ms); } catch (e) { /* ignore */ } return; }
     if (navigator.vibrate) try { navigator.vibrate(ms); } catch (e) { /* ignore */ }
   },
 
@@ -40,7 +41,7 @@ export const Native = {
     if (n) {
       return new Promise((resolve) => {
         pendingSave = resolve;
-        try { n.saveFile(name, mime, content); } catch (e) { pendingSave = null; resolve(false); }
+        try { n.saveFile(K, name, mime, content); } catch (e) { pendingSave = null; resolve(false); }
       });
     }
     const blob = new Blob([content], { type: mime || 'application/octet-stream' });
@@ -59,7 +60,7 @@ export const Native = {
       return new Promise((resolve) => {
         const id = 'f' + ++fileReqId;
         pendingFiles.set(id, resolve);
-        try { n.openFile(id); } catch (e) { pendingFiles.delete(id); resolve(null); }
+        try { n.openFile(K, id); } catch (e) { pendingFiles.delete(id); resolve(null); }
       });
     }
     return new Promise((resolve) => {
@@ -80,24 +81,23 @@ export const Native = {
 
   shareText(title, text) {
     const n = N();
-    if (n) { try { n.shareText(title, text); } catch (e) { /* ignore */ } return; }
+    if (n) { try { n.shareText(K, title, text); } catch (e) { /* ignore */ } return; }
     if (navigator.share) navigator.share({ title, text }).catch(() => {});
     else if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
   },
 
   openUrl(url) {
     const n = N();
-    if (n) { try { n.openUrl(url); } catch (e) { /* ignore */ } return; }
+    if (n) { try { n.openUrl(K, url); } catch (e) { /* ignore */ } return; }
     window.open(url, '_blank', 'noopener');
   },
 
   version() {
     const n = N();
     if (n) try { return n.getAppVersion(); } catch (e) { /* ignore */ }
-    return '2.33.0';
+    return '2.34.0';
   },
 
-  exit() { const n = N(); if (n) try { n.exitApp(); } catch (e) { /* ignore */ } },
 };
 
 /** Callbacks invoked by the Android host. */

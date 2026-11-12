@@ -5,7 +5,7 @@
 // row plus one output cell at the right end of each row. Vertical links join two rows at the
 // right edge of a cell: vl[r][c] links row r and row r+1 at the boundary right of column c.
 // Power flows left → right only; links OR the rows they join (no reverse power flow).
-import { parseOperand, BIT_DEVS, fmtAddr, DEVICES } from './address.js';
+import { parseOperand, fmtAddr, DEVICES } from './address.js';
 
 export const COLS = 8;
 
@@ -593,14 +593,17 @@ class ILWriter {
   }
 }
 
-/** Instruction list for one rung. Returns {lines, error}. */
+/**
+ * Instruction list for one rung. Returns {lines, error, order}: `order` lists the rows whose output
+ * instruction runs, in the order the instruction list runs them (the CPU follows it).
+ */
 export function rungIL(rung, onStepBus = false) {
   const stl = stlOf(rung);
   if (stl) {
     // STL Sn starts a new bus: what follows it starts again with LD
     const rest = { ...rung, cells: rung.cells.map((row, r) => (r === 0 ? [{ t: 'H', a: [] }, ...row.slice(1)] : row)) };
     const res = rungIL(rest, true);
-    return res.error ? res : { lines: [{ text: `STL ${stl}`, steps: 1, ref: null }, ...res.lines], error: null };
+    return res.error ? res : { lines: [{ text: `STL ${stl}`, steps: 1, ref: null }, ...res.lines], error: null, order: res.order };
   }
   return rungILPlain(rung, onStepBus);
 }
@@ -608,14 +611,15 @@ export function rungIL(rung, onStepBus = false) {
 function rungILPlain(rung, onStepBus) {
   const g = buildGraph(rung);
   const w = new ILWriter();
-  let groups = []; // [{node, outs:[el]}]
+  let groups = []; // [{node, outs:[el], rows:[r]}]
   for (let r = 0; r < g.rows; r++) {
     const o = rung.outs[r];
     if (!o) continue;
     const n = g.node(r, g.cols);
     let gr = groups.find((x) => x.node === n);
-    if (!gr) { gr = { node: n, outs: [] }; groups.push(gr); }
+    if (!gr) { gr = { node: n, outs: [], rows: [] }; groups.push(gr); }
     gr.outs.push(o);
+    gr.rows.push(r);
   }
   if (!groups.length) return { lines: [], error: 'no output instruction' };
   // FEND / SRET / MCR / RET stand on the bus bar on their own
@@ -627,6 +631,7 @@ function rungILPlain(rung, onStepBus) {
   const mixed = groups.find((gr) => gr.outs.some((o) => isRailInstr(o.t)) && !gr.outs.every((o) => isRailInstr(o.t)));
   if (mixed) return { lines: [], error: `${mixed.outs.find((o) => isRailInstr(o.t)).t} cannot share a row with other outputs` };
   const tail = railOnly.flatMap((gr) => gr.outs);
+  const tailRows = railOnly.flatMap((gr) => gr.rows);
   groups = groups.filter((gr) => !railOnly.includes(gr));
   for (const gr of groups) {
     gr.x = exprTo(g, gr.node);
@@ -636,15 +641,16 @@ function rungILPlain(rung, onStepBus) {
   }
   if (!groups.length) {
     for (const o of tail) w.output(o);
-    return { lines: w.lines, error: null };
+    return { lines: w.lines, error: null, order: tailRows };
   }
   // on the STL bus an output may follow the step directly
   const direct = groups.filter((gr) => gr.x.k === 'T');
   for (const gr of direct) for (const o of gr.outs) w.output(o);
   groups = groups.filter((gr) => gr.x.k !== 'T');
+  const order = [...direct.flatMap((gr) => gr.rows), ...groups.flatMap((gr) => gr.rows), ...tailRows];
   if (!groups.length) {
     for (const o of tail) w.output(o);
-    return w.err ? { lines: [], error: w.err } : { lines: w.lines, error: null };
+    return w.err ? { lines: [], error: w.err } : { lines: w.lines, error: null, order };
   }
   if (groups.length === 1) {
     w.start(groups[0].x);
@@ -669,10 +675,52 @@ function rungILPlain(rung, onStepBus) {
   }
   for (const o of tail) w.output(o);
   if (w.err) return { lines: [], error: w.err };
-  return { lines: w.lines, error: null };
+  return { lines: w.lines, error: null, order };
 }
 
 // ------------------------------------------------------------------ compiler
+/**
+ * How the CPU runs a network in instruction-list order. Every cell is an edge u → v between two nodes
+ * of the network. Each output, in the order of the instruction list, first needs the cells its power
+ * depends on that no earlier output needed: `sched` lists those cells (k = row × cols + column, left
+ * to right) and then the output (−1 − row). A branch is therefore read just before its own output,
+ * after the outputs before it have run (MPS / MRD / MPP), and the shared part on its left only once.
+ * Cells no output needs (open branches) come last, for the live display.
+ */
+function execNet(rung, cells, order) {
+  const g = buildGraph(rung);
+  const rows = g.rows, cols = g.cols;
+  const ids = new Map();
+  const nid = (n) => { if (!ids.has(n)) ids.set(n, ids.size); return ids.get(n); };
+  const rail = nid(g.rail);
+  const u = new Int16Array(rows * cols).fill(-1), v = new Int16Array(rows * cols).fill(-1);
+  const into = new Map(); // node → cells feeding it
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    if (!cells[r][c]) continue;
+    const k = r * cols + c;
+    u[k] = nid(g.node(r, c));
+    v[k] = nid(g.node(r, c + 1));
+    if (!into.has(v[k])) into.set(v[k], []);
+    into.get(v[k]).push(k);
+  }
+  const outNode = Int16Array.from({ length: rows }, (_, r) => nid(g.node(r, cols)));
+  const done = new Uint8Array(rows * cols);
+  const sched = [];
+  const byColumn = (a, b) => (a % cols) - (b % cols) || a - b;
+  const need = (n, acc) => {
+    for (const k of into.get(n) || []) if (!done[k]) { done[k] = 1; need(u[k], acc); acc.push(k); }
+  };
+  for (const r of order) {
+    const acc = [];
+    need(outNode[r], acc);
+    sched.push(...acc.sort(byColumn), -1 - r);
+  }
+  const rest = [];
+  for (let k = 0; k < rows * cols; k++) if (u[k] >= 0 && !done[k]) rest.push(k);
+  sched.push(...rest.sort(byColumn));
+  return { rail, u, v, outNode, sched: Int16Array.from(sched), pow: new Uint8Array(ids.size) };
+}
+
 /** 16 / 32-bit rules of one operand: returns an error text or null. */
 function widthCheck(op, cls, wide, set32 = false) {
   if (op.dev === 'FL' && cls !== 'fsrc') return 'a floating-point constant (F…) only goes into floating-point instructions';
@@ -701,6 +749,11 @@ function checkInstr(el, ops) {
   const max = (op) => (DEVICES[op.bdev || op.dev] ? DEVICES[op.bdev || op.dev].max : 0);
   const fits = (op, n) => !op || op.idx === undefined || (op.n ? op.idx + op.n * 4 * n - 1 : op.idx + n - 1) <= max(op);
   switch (el.t) {
+    case 'PRUN':
+      if (ops[0] && !['KX', 'KM'].includes(ops[0].dev)) return 'PRUN: S must be KnX or KnM';
+      if (ops[1] && !['KY', 'KM'].includes(ops[1].dev)) return 'PRUN: D must be KnY or KnM';
+      if (ops[0] && ops[1] && ops[0].dev === 'KM' && ops[1].dev === 'KM') return 'PRUN: one side must be X or Y (KnX → KnM or KnM → KnY)';
+      break;
     case 'ZRST': if (ops[0] && ops[1] && (ops[0].dev !== ops[1].dev || ops[0].idx > ops[1].idx)) return 'ZRST: D1 and D2 must be the same device type with D1 ≤ D2'; break;
     case 'MODRW': if (ops[1] && ops[1].dev !== 'D' && ![1, 2, 3, 4, 5, 6, 15, 16].includes(ops[1].val)) return 'MODRW: function must be K1 / K2 (read bits), K3 / K4 (read words), K5 (write one bit), K6 (write one word), K15 (write bits) or K16 (write words)'; break;
     case 'BMOV': case 'FMOV': case 'MEAN': {
@@ -829,7 +882,10 @@ export function compileProgram(program, model) {
     const rows = rung.cells.length, cols = rung.cells[0].length;
     if (rungIsEmpty(rung)) {
       // an empty network keeps its pointer so jumps to it still work
-      if (label) exec.push({ index: ri, rows, cols, cells: rung.cells.map((row) => row.map(() => null)), outs: rung.outs.map(() => null), merges: Array.from({ length: cols }, () => []), label: label.idx, step, stlHead: false });
+      if (label) {
+        const cells = rung.cells.map((row) => row.map(() => null));
+        exec.push({ index: ri, rows, cols, cells, outs: rung.outs.map(() => null), net: execNet(rung, cells, []), label: label.idx, step, stlHead: false });
+      }
       if (label) il.push({ rung: ri, lines: [], error: null, label: label.text });
       return;
     }
@@ -880,18 +936,6 @@ export function compileProgram(program, model) {
     }
     if (ends) step = -1;
     if (rung.outs.some((o) => o && o.t === 'FEND') && fendAt < 0) fendAt = exec.length;
-    // merge groups for every boundary b = 1..cols
-    const merges = [];
-    for (let b = 1; b <= cols; b++) {
-      const groups = [];
-      let cur = [0];
-      for (let r = 0; r < rows - 1; r++) {
-        if (rung.vl[r] && rung.vl[r][b - 1]) cur.push(r + 1);
-        else { if (cur.length > 1) groups.push(cur); cur = [r + 1]; }
-      }
-      if (cur.length > 1) groups.push(cur);
-      merges.push(groups);
-    }
     // contacts that can never pass power to an output (open branches)
     const g = buildGraph(rung);
     const outNodes = new Set();
@@ -910,7 +954,8 @@ export function compileProgram(program, model) {
     il.push({ rung: ri, lines: res.lines, error: res.error, label: label ? label.text : null });
     if (res.error) errors.push({ ...loc(0, 0), msg: `Network ${ri + 1}: ${res.error}` });
     for (const ln of res.lines) steps += ln.steps;
-    exec.push({ index: ri, rows, cols, cells, outs, merges, label: label ? label.idx : -1, step: rungStep, stlHead: !!stlOp });
+    const order = res.order || outs.map((o, r) => (o ? r : -1)).filter((r) => r >= 0);
+    exec.push({ index: ri, rows, cols, cells, outs, net: execNet(rung, cells, order), label: label ? label.idx : -1, step: rungStep, stlHead: !!stlOp });
   });
   // program flow checks
   for (const f of flowUse) {
@@ -955,4 +1000,3 @@ export function programIL(compiled) {
   return out;
 }
 
-export { BIT_DEVS, DEVICES };

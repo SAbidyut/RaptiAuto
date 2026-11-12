@@ -1,6 +1,6 @@
 // Delta DVP PLC CPU: device memory, scan cycle, ladder execution, timers, counters,
 // special relays/registers and the MODRW Modbus master hooks.
-import { timerInfo, isLatched, fmtAddr } from './address.js';
+import { timerInfo, isLatched } from './address.js';
 
 const i16 = (v) => (v << 16) >> 16;
 const SCAN_MS = 5;
@@ -458,30 +458,32 @@ export class PlcCpu {
     }
   }
 
+  /**
+   * One network, in the order of its instruction list (see execNet in ladder.js): each output runs
+   * right after the contacts its power depends on that no earlier output needed. A branch after
+   * MPS / MRD / MPP therefore sees what the outputs before it just wrote, while the shared part on
+   * its left is read once (like the value MPS keeps).
+   */
   execRung(r, rail = 1) {
-    const P = this.pw && this.pw.length >= r.rows ? this.pw : (this.pw = new Uint8Array(Math.max(8, r.rows)));
-    for (let i = 0; i < r.rows; i++) P[i] = rail;
     const live = r.live || (r.live = { cells: r.cells.map((row) => new Uint8Array(row.length)), rows: new Uint8Array(r.rows) });
-    for (let c = 0; c < r.cols; c++) {
-      for (let i = 0; i < r.rows; i++) {
-        const e = r.cells[i][c];
-        const v = e ? this.contact(e, P[i]) : 0;
-        live.cells[i][c] = e ? (P[i] ? 1 : 0) | (v ? 2 : 0) : 0;
-        P[i] = v;
+    const N = r.net, pow = N.pow, sched = N.sched, cols = r.cols;
+    pow.fill(0);
+    pow[N.rail] = rail ? 1 : 0;
+    for (let j = 0; j < sched.length; j++) {
+      const k = sched[j];
+      if (k < 0) {
+        const i = -1 - k, pw = pow[N.outNode[i]];
+        live.rows[i] = pw;
+        this.output(r.outs[i], pw);
+        continue;
       }
-      const groups = r.merges[c];
-      for (let g = 0; g < groups.length; g++) {
-        const rows = groups[g];
-        let v = 0;
-        for (let k = 0; k < rows.length; k++) v |= P[rows[k]];
-        for (let k = 0; k < rows.length; k++) P[rows[k]] = v;
-      }
+      const i = (k / cols) | 0, c = k - i * cols;
+      const pin = pow[N.u[k]];
+      const v = this.contact(r.cells[i][c], pin);
+      live.cells[i][c] = (pin ? 1 : 0) | (v ? 2 : 0);
+      if (v) pow[N.v[k]] = 1;
     }
-    for (let i = 0; i < r.rows; i++) {
-      live.rows[i] = P[i];
-      const o = r.outs[i];
-      if (o) this.output(o, P[i]);
-    }
+    for (let i = 0; i < r.rows; i++) if (!r.outs[i]) live.rows[i] = pow[N.outNode[i]];
   }
 
   contact(e, pw) {
@@ -1073,11 +1075,20 @@ export class PlcCpu {
       case 'GBIN': { let v = u(R(a[0])); for (let sh = v >>> 1; sh; sh >>>= 1) v ^= sh; W(a[1], v); break; }
       case 'SEGD': this.setWord(a[1], SEG7[this.getWord(a[0]) & 15]); break;
       case 'PRUN': {
-        // octal-numbered bits ↔ decimal-numbered bits: K4X0 → K4M0 copies X0–X7 → M0–M7, X10–X17 → M8–M15 …
+        // octal transfer: the octal numbers of X / Y become the same decimal numbers of M. K4X0 → K4M0:
+        // X0–X7 → M0–M7, X10–X17 → M10–M17 (M8, M9 untouched); K4M0 → K4Y0: M0–M7 → Y0–Y7,
+        // M10–M17 → Y10–Y17 (M8, M9 ignored)
         const s = this.R(a[0]), d = this.R(a[1]);
         if (!s.n || !d.n) { W(a[1], R(a[0])); break; }
-        const nb = Math.min(s.n, d.n) * 4;
-        for (let k = 0; k < nb; k++) this.setBitAt(d.bdev, d.idx + k, this.getBitAt(s.bdev, s.idx + k));
+        const nb = Math.min(s.n, d.n, e.d ? 8 : 4) * 4;
+        const oct = (b) => b === 'X' || b === 'Y';
+        const dec = (k) => +k.toString(8); // k-th octal bit → its decimal number (8 → 10)
+        const so = oct(s.bdev), dO = oct(d.bdev);
+        for (let k = 0; k < nb; k++) {
+          const sk = so && !dO ? k : !so && dO ? dec(k) : k;
+          const dk = so && !dO ? dec(k) : k;
+          this.setBitAt(d.bdev, d.idx + dk, this.getBitAt(s.bdev, s.idx + sk));
+        }
         break;
       }
       case 'ASCI': {
@@ -1378,8 +1389,6 @@ export class PlcCpu {
     const r = this.prog && this.prog.rungs.find((x) => x.index === i);
     return r && r.live ? r.live : null;
   }
-
-  describe(dev, idx) { return fmtAddr(dev, idx); }
 }
 
 /** The k-th word after a word device (BMOV, FMOV, MEAN); KnM steps by 4n bits. */

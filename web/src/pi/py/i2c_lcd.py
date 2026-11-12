@@ -15,13 +15,19 @@ _BL = 0x08
 class I2cLcd:
     def __init__(self, *args, **kw):
         a = list(args)
+        self._bus = (None, None)   # Raspberry Pi: the I2C bus on GPIO2 (SDA) / GPIO3 (SCL)
         if a and not isinstance(a[0], int):
-            a.pop(0)  # pico_i2c_lcd style: I2cLcd(i2c, addr, rows, cols)
+            i2c = a.pop(0)  # pico_i2c_lcd style: I2cLcd(i2c, addr, rows, cols)
+            self._bus = (getattr(i2c, '_sda', None), getattr(i2c, '_scl', None))
         self.addr = a[0] if len(a) > 0 else kw.get('addr', 0x27)
         self.rows = a[1] if len(a) > 1 else kw.get('rows', 2)
         self.cols = a[2] if len(a) > 2 else kw.get('cols', 16)
-        if not J.i2c_has(self.addr):
-            raise OSError(19, 'no I2C device at 0x%02X - wire the LCD: SDA, SCL, VCC to 5V, GND' % self.addr)
+        if not J.i2c_has(self.addr, self._bus[0], self._bus[1]):
+            if self._bus[0] is None:
+                pins = 'SDA to GPIO2, SCL to GPIO3' if J.board()[:4] != 'pico' else 'SDA, SCL'
+            else:
+                pins = 'SDA to GP%d, SCL to GP%d' % self._bus
+            raise OSError(19, 'no I2C device at 0x%02X - wire the LCD: %s, VCC to 5V, GND' % (self.addr, pins))
         self._bl = _BL
         self.col = 0
         self.row = 0
@@ -34,7 +40,7 @@ class I2cLcd:
         self.clear()
 
     def _write(self, data):
-        J.i2c_write(self.addr, bytes(data).hex())
+        J.i2c_write(self.addr, bytes(data).hex(), self._bus[0], self._bus[1])
 
     def _nibble(self, hi, rs):
         b = (hi & 0xF0) | self._bl | rs

@@ -274,6 +274,30 @@ export class SimEngine {
     return res;
   }
 
+  /**
+   * ESP.restart(): a real reset of this board. Its pins go back to floating inputs (ISRs detached),
+   * and the sketch is built afresh (globals, statics, Serial buffers, library objects), as on power-up;
+   * the virtual clock keeps running but millis() starts at 0 again. EEPROM / Preferences (flash) persist.
+   */
+  reboot() {
+    const t = this.rt.t;
+    this.runCleanups(); // (they stay registered: the device is the same and leaves the network on stop())
+    if (this.boardRt) this.boardRt.i2c = null; // an I²C slave answers again once the new sketch calls Wire.begin(address)
+    for (const st of this.pins.values()) {
+      const changed = st.mode !== 0 || st.out || st.pwm !== null || st.tone || st.pullup || st.servoUs !== null;
+      st.isr = null;
+      st.mode = 0; st.out = 0; st.pwm = null; st.tone = null; st.pullup = false; st.servoUs = null;
+      st.toneToken = (st.toneToken || 0) + 1;
+      if (changed) this.outputChanged(st);
+    }
+    const code = this.boards.indexOf(this) > 0 ? this.boardPart.code || '' : this.project.code;
+    const res = this.startSketch(code);
+    if (!res.ok) { if (this.runner) this.runner.state = 'error'; return; }
+    this.rt.t = t;
+    this.rt.t0 = t;
+    this.dirty = true;
+  }
+
   /** Library state that must go when this board's sketch stops or restarts (connections, servers). */
   addCleanup(fn) {
     if (!Object.prototype.hasOwnProperty.call(this, '_cleanups')) this._cleanups = [];
@@ -315,6 +339,7 @@ export class SimEngine {
     const frameStart = this.frameT !== undefined && this.frameT <= rt.t ? this.frameT : rt.t;
     this.changesThisFrame = 0;
     this.processEvents();
+    for (const b of this.boards) b.levelInterrupts();
     const t0 = now();
     let status = 'ok';
     if (this.runner) status = this.runner.step(target, this.boards.length > 1 ? 9 : 14);
@@ -325,7 +350,7 @@ export class SimEngine {
       if (st === 'error') { this.stop(); if (this.opts.onError) this.opts.onError({ ...sub.runner.error, boardId: sub.boardPart.id, boardLabel: sub.label }); return 'error'; }
     }
     for (const b of this.boards) {
-      if (b.restartRequested) { b.restartRequested = false; b.runCleanups(); if (b.runner && b.runner.state !== 'error') b.runner.start(); }
+      if (b.restartRequested) { b.restartRequested = false; if (b.runner && b.runner.state !== 'error') b.reboot(); }
     }
     const busy = now() - t0;
     this.processEvents();
@@ -404,10 +429,36 @@ export class SimEngine {
   processEvents() {
     const t = this.time();
     let guard = 0;
+    let isr = null;
     while (this.events.length && this.events[0].t <= t && guard++ < 1000) {
       const e = this.events.shift();
       e.fn(e.t);
       this.dirty = true;
+      // a pin with an ISR: look at the pins after every event, so a pulse shorter than a frame (an
+      // HC-SR04 echo) is seen, and run the ISR at the event's time (micros() in it is right)
+      if (isr === null) isr = this.anyIsr();
+      if (isr) this.interruptsAt(e.t);
+    }
+  }
+
+  /** Does any board have an interrupt attached? */
+  anyIsr() {
+    for (const b of this.boards || [this]) {
+      if (!b.pins) continue;
+      for (const st of b.pins.values()) if (st.isr) return true;
+    }
+    return false;
+  }
+
+  /** Solve now and run the ISRs this queues, with each board's clock at virtual time `t`. */
+  interruptsAt(t) {
+    this.ensureSolved();
+    for (const b of this.boards || [this]) {
+      const rt = b.rt, runner = b.runner;
+      if (!runner || runner.state !== 'running' || !rt || !rt.isrQueue.length || !rt.interruptsEnabled) continue;
+      const saved = rt.t;
+      if (t < saved) rt.t = t;
+      try { runner.runIsrs(); } finally { if (rt.t < saved) rt.t = saved; }
     }
   }
 
@@ -594,6 +645,15 @@ export class SimEngine {
       const level = st.mode === 1 ? st.out : null;
       for (const fn of ws) fn(level, this.time());
     }
+  }
+
+  /** Voltage on the board's AREF pin (analogReference(EXTERNAL)), or null when nothing drives it. */
+  arefVoltage() {
+    const node = this.boardPart ? this.nodeOf(this.boardPart.id, 'AREF') : -1;
+    if (node < 0) return null;
+    this.ensureSolved();
+    if (this.isFloating(node)) return null;
+    return Math.max(0, this.vAvg(node) - this.vAvg(this.gnd));
   }
 
   /** Logic level of a node: direct MCU driver if any, otherwise solved voltage. */
@@ -824,11 +884,24 @@ export class SimEngine {
       if (!st.isr) continue;
       const lv = this.readLevelQuiet(st);
       const last = st.isr.last;
-      if (lv === last) { if (st.isr.mode === 0 && lv === 0) this.rt.queueIsr(st.isr.fn); continue; }
       st.isr.last = lv;
       const m = st.isr.mode;
-      // CHANGE=1, FALLING=2, RISING=3 (ESP32 uses RISING=1, FALLING=2, CHANGE=3 but constants are shared)
-      if (m === 1 || (m === 2 && lv === 0) || (m === 3 && lv === 1) || (m === 4 && lv === 1) || (m === 5 && lv === 0)) this.rt.queueIsr(st.isr.fn);
+      // level interrupts (LOW = 0, ESP32 ONLOW = 4 / ONHIGH = 5) fire again and again while the level holds
+      if (m === 0 || m === 4 || m === 5) {
+        if (lv === (m === 5 ? 1 : 0) && !this.rt.isrQueue.includes(st.isr.fn)) this.rt.queueIsr(st.isr.fn);
+        continue;
+      }
+      if (lv === last) continue;
+      // CHANGE=1, FALLING=2, RISING=3 (the simulator's constants are the same on every board)
+      if (m === 1 || (m === 2 && lv === 0) || (m === 3 && lv === 1)) this.rt.queueIsr(st.isr.fn);
+    }
+  }
+
+  /** Re-queue level-triggered (LOW / ONLOW / ONHIGH) ISRs whose level still holds: once per frame. */
+  levelInterrupts() {
+    if (!this.pins) return;
+    for (const st of this.pins.values()) {
+      if (st.isr && (st.isr.mode === 0 || st.isr.mode === 4 || st.isr.mode === 5)) { this.ensureSolved(); this.checkInterrupts(); return; }
     }
   }
 
@@ -951,6 +1024,16 @@ export class SimEngine {
     if (this.opts.onEeprom) this.opts.onEeprom();
   }
 
+  // Preferences (NVS flash) persistence: kept with this board's part in the project (saved through
+  // onEeprom like the EEPROM), so every board of every project has its own.
+  nvsStore() {
+    const bp = this.boardPart;
+    if (!bp) return (this._nvs = this._nvs || {});
+    if (!bp.nvs || typeof bp.nvs !== 'object' || Array.isArray(bp.nvs)) bp.nvs = {};
+    return bp.nvs;
+  }
+  nvsCommit() { if (this.opts.onEeprom) this.opts.onEeprom(); }
+
   // ------------------------------------------------------------------ helpers for libraries
   pinNode(p) { const st = this.pins && this.pins.get(p); return st ? st.node : -1; }
 
@@ -1054,6 +1137,7 @@ export class SimEngine {
     return null;
   }
 }
+
 
 /** UART pins of a board: { Serial: { rx, tx }, … } (GPIO numbers). */
 export function uartPins(board) {

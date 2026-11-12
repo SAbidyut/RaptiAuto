@@ -15,6 +15,9 @@ export function colorHSV(hue, sat = 255, val = 255) {
 }
 
 const color = (r, g, b) => (((r & 255) << 16) | ((g & 255) << 8) | (b & 255)) >>> 0;
+const color4 = (r, g, b, w = 0) => (((w & 255) << 24) | ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)) >>> 0;
+// Adafruit_NeoPixel.h: type = (wOffset << 6) | (rOffset << 4) | (gOffset << 2) | bOffset; W == R → no white LED
+const neo = (w, r, g, b) => (w << 6) | (r << 4) | (g << 2) | b;
 
 class NeoPixel {
   constructor(rt, hw, n = 0, pin = -1, type = 0x52) {
@@ -27,10 +30,17 @@ class NeoPixel {
   show() {
     if (this.pin < 0) return;
     const t = this.type;
-    const ro = (t >> 4) & 3, go = (t >> 2) & 3, bo = t & 3;
+    const wo = (t >> 6) & 3, ro = (t >> 4) & 3, go = (t >> 2) & 3, bo = t & 3;
+    const rgbw = wo !== ro;
     const out = this.px.map((c) => {
       let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
       if (this.bright) { r = (r * this.bright) >> 8; g = (g * this.bright) >> 8; b = (b * this.bright) >> 8; }
+      if (rgbw) {
+        // an RGBW strip: its white LED adds to all three colours
+        let w = (c >>> 24) & 255;
+        if (this.bright) w = (w * this.bright) >> 8;
+        return color(Math.min(255, r + w), Math.min(255, g + w), Math.min(255, b + w));
+      }
       const bytes = [0, 0, 0];
       bytes[ro] = r; bytes[go] = g; bytes[bo] = b;
       // the WS2812B on the board expects G, R, B
@@ -39,9 +49,9 @@ class NeoPixel {
     this.hw.sendWs2812(this.pin, out);
     this.rt.t += 30 * this.n + 50;
   }
-  setPixelColor(i, r, g, b) {
+  setPixelColor(i, r, g, b, w = 0) {
     if (i < 0 || i >= this.n) return;
-    this.px[i] = g === undefined ? (r >>> 0) & 0xffffff : color(r, g, b);
+    this.px[i] = g === undefined ? r >>> 0 : color4(r, g, b, w);
   }
   getPixelColor(i) { return i >= 0 && i < this.n ? this.px[i] : 0; }
   setBrightness(b) { this.bright = ((b & 255) + 1) & 511; if (this.bright > 256) this.bright = 256; }
@@ -50,11 +60,11 @@ class NeoPixel {
   fill(c = 0, first = 0, count = 0) {
     if (first >= this.n) return;
     const end = count === 0 ? this.n : Math.min(this.n, first + count);
-    for (let i = first; i < end; i++) this.px[i] = c & 0xffffff;
+    for (let i = first; i < end; i++) this.px[i] = c >>> 0;
   }
-  Color(r, g, b) { return color(r, g, b); }
+  Color(r, g, b, w) { return color4(r, g, b, w); }
   ColorHSV(h, s, v) { return colorHSV(h, s, v); }
-  gamma32(c) { return color(GAMMA[(c >> 16) & 255], GAMMA[(c >> 8) & 255], GAMMA[c & 255]); }
+  gamma32(c) { return color4(GAMMA[(c >> 16) & 255], GAMMA[(c >> 8) & 255], GAMMA[c & 255], GAMMA[(c >>> 24) & 255]); }
   gamma8(x) { return GAMMA[x & 255]; }
   sine8(x) { return Math.round((Math.sin(((x & 255) / 256) * Math.PI * 2) + 1) * 127.5) & 255; }
   numPixels() { return this.n; }
@@ -85,14 +95,18 @@ addLibrary((natives, rt, hw) => {
     create: (r, args) => new NeoPixel(r, hw, ...args),
     methods,
     statics: {
-      Color: { ret: 'u32', fn: (r, g, b) => color(r, g, b) },
+      Color: { ret: 'u32', fn: (r, g, b, w) => color4(r, g, b, w) },
       ColorHSV: { ret: 'u32', fn: (h, s, v) => colorHSV(h, s, v) },
-      gamma32: { ret: 'u32', fn: (c) => color(GAMMA[(c >> 16) & 255], GAMMA[(c >> 8) & 255], GAMMA[c & 255]) },
+      gamma32: { ret: 'u32', fn: (c) => color4(GAMMA[(c >> 16) & 255], GAMMA[(c >> 8) & 255], GAMMA[c & 255], GAMMA[(c >>> 24) & 255]) },
       gamma8: { ret: 'u8', fn: (x) => GAMMA[x & 255] },
     },
   });
   Object.assign(natives.constants, {
-    NEO_RGB: 0x06, NEO_RBG: 0x09, NEO_GRB: 0x52, NEO_GBR: 0xa1, NEO_BRG: 0x58, NEO_BGR: 0xa4,
-    NEO_RGBW: 0x1b, NEO_GRBW: 0x5a, NEO_KHZ800: 0x0000, NEO_KHZ400: 0x0100,
+    NEO_RGB: neo(0, 0, 1, 2), NEO_RBG: neo(0, 0, 2, 1), NEO_GRB: neo(1, 1, 0, 2), NEO_GBR: neo(2, 2, 0, 1), NEO_BRG: neo(1, 1, 2, 0), NEO_BGR: neo(2, 2, 1, 0),
+    NEO_WRGB: neo(0, 1, 2, 3), NEO_WRBG: neo(0, 1, 3, 2), NEO_WGRB: neo(0, 2, 1, 3), NEO_WGBR: neo(0, 3, 1, 2), NEO_WBRG: neo(0, 2, 3, 1), NEO_WBGR: neo(0, 3, 2, 1),
+    NEO_RWGB: neo(1, 0, 2, 3), NEO_RWBG: neo(1, 0, 3, 2), NEO_RGWB: neo(2, 0, 1, 3), NEO_RGBW: neo(3, 0, 1, 2), NEO_RBWG: neo(2, 0, 3, 1), NEO_RBGW: neo(3, 0, 2, 1),
+    NEO_GWRB: neo(1, 2, 0, 3), NEO_GWBR: neo(1, 3, 0, 2), NEO_GRWB: neo(2, 1, 0, 3), NEO_GRBW: neo(3, 1, 0, 2), NEO_GBWR: neo(2, 3, 0, 1), NEO_GBRW: neo(3, 2, 0, 1),
+    NEO_BWRG: neo(1, 2, 3, 0), NEO_BWGR: neo(1, 3, 2, 0), NEO_BRWG: neo(2, 1, 3, 0), NEO_BGWR: neo(2, 3, 1, 0), NEO_BRGW: neo(3, 1, 2, 0), NEO_BGRW: neo(3, 2, 1, 0),
+    NEO_KHZ800: 0x0000, NEO_KHZ400: 0x0100,
   });
 });

@@ -2,13 +2,14 @@
 // frame with the virtual time it should reach; the sketch suspends at loops / delays.
 import { compileSketch } from './compiler.js';
 import { CompileError } from './lexer.js';
-import { RuntimeError, formatPrintable } from './values.js';
+import { RuntimeError } from './values.js';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 export class Runtime {
   constructor() {
     this.t = 0; // virtual time in microseconds
+    this.t0 = 0; // virtual time of the last (re)boot: millis() / micros() count from here
     this.limit = 0;
     this.deadline = Infinity;
     this.ops = 0;
@@ -18,7 +19,6 @@ export class Runtime {
     this.onWarning = null;
     this.isrQueue = [];
     this.interruptsEnabled = true;
-    this.hw = null;
   }
 
   overBudget() { return now() > this.deadline; }
@@ -219,4 +219,3 @@ export class SketchRunner {
   get time() { return this.rt.t; }
 }
 
-export { formatPrintable };

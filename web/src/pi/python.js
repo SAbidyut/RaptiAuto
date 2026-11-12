@@ -6,7 +6,7 @@ import { PICO_W_LED } from './gpio.js';
 import { netBridge } from './netbridge.js';
 import { asset } from '../site.js';
 
-const PI_ONLY = ['RPi/__init__.py', 'RPi/GPIO.py', 'gpiozero.py', 'board.py', 'adafruit_dht.py', 'signal.py', 'smbus2.py', 'smbus.py', 'serial.py', 'flask.py', 'http/__init__.py', 'http/server.py',
+const PI_ONLY = ['RPi/__init__.py', 'RPi/GPIO.py', 'gpiozero/__init__.py', 'gpiozero/tones.py', 'board.py', 'adafruit_dht.py', 'signal.py', 'smbus2.py', 'smbus.py', 'serial.py', 'flask.py', 'http/__init__.py', 'http/server.py',
   'paho/__init__.py', 'paho/mqtt/__init__.py', 'paho/mqtt/client.py', 'paho/mqtt/publish.py', 'paho/mqtt/subscribe.py', 'psutil.py', 'threading.py',
   'adafruit_ssd1306.py', 'busio.py', 'spidev.py', 'RPLCD/__init__.py', 'RPLCD/i2c.py'];
 const PICO_ONLY = ['machine.py', 'rp2.py', 'network.py', 'dht.py', 'urequests.py', 'umqtt/__init__.py', 'umqtt/simple.py', 'ntptime.py', 'pico_i2c_lcd.py', 'lcd_api.py'];
@@ -58,18 +58,20 @@ function bridge(gpio, proc) {
     neo: (n, count, hex) => gpio.neoWrite(pin(n), count, hex),
     bootsel: () => gpio.bootsel,
     cpu_temp: () => gpio.cpuTemp(),
+    // local time zone offset (seconds east of UTC) at a Unix time, daylight saving included
+    tz_offset: (secs) => -new Date(secs * 1000).getTimezoneOffset() * 60,
     wifi: (state, ssid) => { gpio.wifiState = { state, ssid }; gpio.changed(); },
     // a UART wired to an Arduino on the canvas talks to it; otherwise the text shows in the shell
     uart_write: (id, s) => { if (!gpio.uartWrite(id, s) && !gpio.uartWired(id)) proc.write(s); },
-    uart_wired: (id) => gpio.uartWired(id),
     uart_any: (id) => gpio.uartAny(id),
     uart_read: (id, n) => gpio.uartRead(id, n),
     uart_readline: (id, partial) => gpio.uartReadLine(id, partial),
     uart_has_line: (id) => (gpio.uartHasLine(id) ? 1 : 0),
-    i2c_has: (addr) => gpio.i2cHas(addr),
-    i2c_scan: () => gpio.i2cScan(),
-    i2c_write: (addr, hex) => gpio.i2cWrite(addr, hex),
-    i2c_read: (addr, n) => gpio.i2cRead(addr, n),
+    // sda / scl: a Pico's machine.I2C pins (None: the board's default bus, GPIO2 / GPIO3 on a Pi)
+    i2c_has: (addr, sda, scl) => gpio.i2cHas(addr, sda, scl),
+    i2c_scan: (sda, scl) => gpio.i2cScan(sda, scl),
+    i2c_write: (addr, hex, sda, scl) => gpio.i2cWrite(addr, hex, sda, scl),
+    i2c_read: (addr, n, sda, scl) => gpio.i2cRead(addr, n, sda, scl),
     spi_xfer: (sck, mosi, hex) => gpio.spiXfer(sck, mosi, hex),
     disp_tm1637: (clk, dio, hex, bright, on) => gpio.dispTm1637(clk, dio, hex, bright, on),
     ...netBridge(gpio),
@@ -150,6 +152,7 @@ export class PyProcess {
     this.busy = false;
     this.queue = Promise.resolve();
     this.pendingRead = null;
+    this.readDone = null;   // the line input() is waiting for, once typed
     this.outBuf = '';
     this.errBuf = '';
   }
@@ -179,14 +182,15 @@ export class PyProcess {
     this.M = M;
     M.raptiPending = () => (this.dead ? 0 : this.gpio.pending());
     M.raptiShouldYield = () => this.gpio.shouldYield();
-    M.raptiReadLine = (prompt) => {
-      this.flush();
-      return new Promise((resolve) => {
-        this.pendingRead = resolve;
-        Promise.resolve(this.readLine(prompt)).then((line) => { if (this.pendingRead === resolve) { this.pendingRead = null; resolve(line); } });
-      });
-    };
-    this.mp.registerJsModule('_rpi_js', bridge(this.gpio, this));
+    M.raptiReadLine = (prompt) => new Promise((resolve) => this.startRead(prompt, resolve));
+    this.mp.registerJsModule('_rpi_js', {
+      ...bridge(this.gpio, this),
+      // input(): the line is read in the background while Python keeps polling (and sleeping),
+      // so button callbacks and timers still run while a program waits for Enter
+      read_start: (prompt) => { this.readDone = null; this.startRead(prompt, (line, cancelled) => { if (!cancelled) this.readDone = line == null ? '' : String(line); }); },
+      read_ready: () => (this.readDone != null ? 1 : 0),
+      read_line: () => { const l = this.readDone; this.readDone = null; return l == null ? '' : l; },
+    });
     const FS = this.mp.FS;
     const pico = this.gpio.isPico;
     // the simulator's own modules live in /rlib (after the user's folders on sys.path)
@@ -201,10 +205,18 @@ export class PyProcess {
     FS.writeFile('/rlib/_rpi_boot.py', BOOT_PY);
     this.writeFiles(this.files);
     try { FS.mkdirTree(this.cwd); } catch (e) { /* exists */ }
-    await this.exec(`import sys, os, builtins, _rapti\nsys.path.append('/rlib')\nos.chdir(${JSON.stringify(this.cwd)})\nbuiltins.input = _rapti.input\nimport _rpi_hw\n`);
+    await this.exec(`import sys, os, builtins, _rapti\nsys.path.append('/rlib')\nos.chdir(${JSON.stringify(this.cwd)})\nimport _rpi_hw\nbuiltins.input = _rpi_hw.input\n`);
     // callbacks (button IRQs, timers) also run while no code is running, e.g. at the >>> prompt
     this.idleT = setInterval(() => { if (!this.dead && !this.busy && this.gpio.pending()) this.exec('_rpi_hw._dispatch(0)'); }, 15);
     return this;
+  }
+
+  /** Ask the UI for a line; done(line, cancelled) runs once (cancelled: Ctrl+C or kill()). */
+  startRead(prompt, done) {
+    this.flush();
+    const resolve = (line, cancelled) => done(line, cancelled);
+    this.pendingRead = resolve;
+    Promise.resolve(this.readLine(prompt)).then((line) => { if (this.pendingRead === resolve) { this.pendingRead = null; resolve(line); } });
   }
 
   writeFiles(files) {
@@ -307,7 +319,8 @@ export class PyProcess {
   /** Ctrl+C: KeyboardInterrupt in the running code. */
   interrupt() {
     if (this.dead) return;
-    if (this.pendingRead) { const r = this.pendingRead; this.pendingRead = null; this.M._mp_sched_keyboard_interrupt(); r(''); return; }
+    // the read is dropped: input() (polling in Python) gets the KeyboardInterrupt in its next sleep
+    if (this.pendingRead) { const r = this.pendingRead; this.pendingRead = null; this.M._mp_sched_keyboard_interrupt(); r('', true); return; }
     if (this.busy) this.M._mp_sched_keyboard_interrupt();
   }
 
@@ -327,7 +340,7 @@ export class PyProcess {
     this.dead = true;
     clearInterval(this.idleT);
     if (this.M) this.M.raptiDead = true;
-    if (this.pendingRead) { const r = this.pendingRead; this.pendingRead = null; r(''); }
+    if (this.pendingRead) { const r = this.pendingRead; this.pendingRead = null; r('', true); }
     this.mp = null;
     this.M = null;
   }

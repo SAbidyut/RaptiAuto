@@ -461,7 +461,9 @@ class SimpleTimerLib {
     const t = this.rt.t;
     for (const x of [...this.list]) {
       if (!x.on || t < x.next) continue;
-      x.next = t + x.ms * 1000;
+      // like SimpleTimer / BlynkTimer: prev += interval × (periods elapsed), so it does not drift
+      const iv = Math.max(1, x.ms * 1000);
+      x.next += iv * (Math.floor((t - x.next) / iv) + 1);
       if (x.left > 0 && --x.left === 0) this.list = this.list.filter((y) => y !== x);
       yield* this.rt.callDynamic(x.fn, []);
     }

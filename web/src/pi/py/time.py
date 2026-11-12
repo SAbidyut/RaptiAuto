@@ -34,12 +34,88 @@ def monotonic_ns():
     return _t.ticks_ms() * 1000000
 
 
+# Local time everywhere (like CPython on a Pi): time() is UTC seconds; localtime(), localtime(secs),
+# ctime(), mktime() and datetime (which calls these) all use the phone's time zone. On a Pico the
+# RTC starts at local time (as Thonny sets it); machine.RTC().datetime(...) / ntptime.settime()
+# move it, e.g. to UTC.
+_rtc = [None]   # Pico RTC offset from UTC in seconds, once a program set the RTC
+
+
+def _off(secs):
+    if _rtc[0] is not None:
+        return _rtc[0]
+    try:
+        import _rpi_js
+        return int(_rpi_js.tz_offset(secs))
+    except Exception:
+        return 0
+
+
+def _secs(secs):
+    s = _t.time() if secs is None else secs
+    return int(s // 1)
+
+
+def _days(y, m, d):
+    # days since 1970-01-01 of a proleptic Gregorian date (any year; utime stops at 1970..2106)
+    y += (m - 1) // 12
+    m = (m - 1) % 12 + 1
+    y -= m <= 2
+    era = y // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    return era * 146097 + yoe * 365 + yoe // 4 - yoe // 100 + doy - 719468
+
+
+def _gm(s):
+    z, r = divmod(s, 86400)
+    days = z
+    z += 719468
+    era = z // 146097
+    doe = z - era * 146097
+    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    mp = (5 * doy + 2) // 153
+    d = doy - (153 * mp + 2) // 5 + 1
+    m = mp + (3 if mp < 10 else -9)
+    y = yoe + era * 400 + (m <= 2)
+    return (y, m, d, r // 3600, r % 3600 // 60, r % 60, (days + 3) % 7, days - _days(y, 1, 1) + 1)
+
+
+def _mk(t):
+    return _days(t[0], t[1], t[2]) * 86400 + t[3] * 3600 + t[4] * 60 + t[5]
+
+
+def localtime(secs=None):
+    s = _secs(secs)
+    return _gm(s + _off(s))
+
+
+def gmtime(secs=None):
+    return _gm(_secs(secs))
+
+
+def mktime(t):
+    u = _mk(t)   # the tuple read as UTC
+    return u - _off(u - _off(u))
+
+
+def _set_rtc(t):
+    # machine.RTC().datetime(...): the RTC now shows this local time
+    _rtc[0] = _mk((t[0], t[1], t[2], t[3], t[4], t[5], 0, 0)) - int(_t.time())
+
+
 def _tm(t):
-    if t is None:
-        return _t.localtime()
-    if isinstance(t, (int, float)):
-        return _t.localtime(int(t))
+    if t is None or isinstance(t, (int, float)):
+        return localtime(t)
     return t
+
+
+try:
+    timezone = -_off(int(_t.time()))
+    altzone = timezone
+except Exception:
+    timezone = altzone = 0
 
 
 def strftime(fmt, t=None):

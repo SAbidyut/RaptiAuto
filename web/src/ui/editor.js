@@ -624,6 +624,7 @@ export class Editor {
       copy.x = part.x + 320;
       copy.y = part.y;
       copy.eeprom = undefined;
+      copy.nvs = undefined;
     }
     this.project.parts.push(copy);
     this.commit('Duplicate');

@@ -144,7 +144,7 @@ export class HardwareSerial {
       c = yield* this.timedPeek();
     } while ((c >= 48 && c <= 57));
     if (isNeg) value = -value;
-    return this.board.arch === 'avr' ? value | 0 : value | 0;
+    return value | 0;
   }
 
   * parseFloat() {
@@ -318,7 +318,23 @@ export function makeCore(rt, hw, board) {
   const rng = new LCG(1);
   let adcBits = board.adcBits || 10;
   let pwmBits = 8;
-  const vref = () => board.vcc || 5;
+  // analogReference() (AVR): DEFAULT = AVcc, EXTERNAL = the AREF pin, INTERNAL = 1.1 V on the ATmega328P
+  // (2.56 V on the 32U4 / ATtiny85), INTERNAL1V1 / INTERNAL2V56 on the Mega
+  let aref = 1;
+  const mac = board.macros || {};
+  const int3 = mac.__AVR_ATmega32U4__ || mac.__AVR_ATmega2560__ || mac.__AVR_ATtiny85__ ? 2.56 : 1.1;
+  const vref = () => {
+    const vcc = board.vcc || 5;
+    if (!avr || aref === 1) return vcc;
+    if (aref === 2) return 1.1;
+    if (aref === 3) return int3;
+    if (aref === 0) {
+      const v = hw.arefVoltage ? hw.arefVoltage() : null;
+      if (v === null || v === undefined) { rt.warnOnce('aref', 'analogReference(EXTERNAL) but nothing drives the AREF pin: analogRead() uses 5 V here (a real board reads garbage).'); return vcc; }
+      return Math.max(0.05, v);
+    }
+    return vcc;
+  };
   const analogPins = board.analogPins || [];
 
   const toAnalogPin = (p) => {
@@ -354,11 +370,11 @@ export function makeCore(rt, hw, board) {
         hw.analogWrite(p, v / max, v, max);
       },
     },
-    analogReference: { ret: 'void', fn: () => {} },
+    analogReference: { ret: 'void', fn: (m) => { aref = m | 0; } },
     delay: { ret: 'void', gen: true, fn: function* (ms) { yield* rt.waitUntil(rt.t + Math.max(0, ms >>> 0) * 1000); } },
     delayMicroseconds: { ret: 'void', gen: true, fn: function* (us) { yield* rt.waitUntil(rt.t + Math.max(0, us & 0xffffffff)); } },
-    millis: { ret: 'ulong', fn: () => Math.floor(rt.t / 1000) >>> 0 },
-    micros: { ret: 'ulong', fn: () => (avr ? Math.floor(rt.t / 4) * 4 : Math.floor(rt.t)) >>> 0 },
+    millis: { ret: 'ulong', fn: () => Math.floor((rt.t - rt.t0) / 1000) >>> 0 },
+    micros: { ret: 'ulong', fn: () => (avr ? Math.floor((rt.t - rt.t0) / 4) * 4 : Math.floor(rt.t - rt.t0)) >>> 0 },
     yield: { ret: 'void', gen: true, fn: function* () { if (rt.t >= rt.limit) yield 0; } },
     pulseIn: {
       ret: 'ulong', gen: true,
@@ -610,6 +626,7 @@ export function makeCore(rt, hw, board) {
   const constants = {
     HIGH: 1, LOW: 0, INPUT: 0, OUTPUT: 1, INPUT_PULLUP: 2, INPUT_PULLDOWN: 3, OUTPUT_OPEN_DRAIN: 4,
     LSBFIRST: 0, MSBFIRST: 1, CHANGE: 1, FALLING: 2, RISING: 3,
+    ...(board.family === 'esp32' ? { ONLOW: 4, ONHIGH: 5 } : {}),
     DEC: 10, HEX: 16, OCT: 8, BIN: 2,
     PI: { value: Math.PI, type: 'double' }, HALF_PI: { value: Math.PI / 2, type: 'double' }, TWO_PI: { value: Math.PI * 2, type: 'double' },
     DEG_TO_RAD: { value: Math.PI / 180, type: 'double' }, RAD_TO_DEG: { value: 180 / Math.PI, type: 'double' },

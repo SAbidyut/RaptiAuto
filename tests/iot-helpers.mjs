@@ -8,7 +8,8 @@ export const BOARDS = { esp32: 'esp32-devkit', esp8266: 'nodemcu-esp8266', r4: '
 /**
  * Run `code` on a board. `net` can be shared between runs / boards. Frames are 16 ms; between frames the
  * JS event loop turns, so promises of the network (a browser calling the board) resolve.
- * opts: { board, ms, net, between(eng, t) → called each frame, parts, wires }
+ * opts: { board, ms, net, between(eng, t) → called each frame, parts, wires,
+ *         nvs → what the board's flash (Preferences) holds from an earlier run, like a saved project }
  */
 export async function runIot(code, opts = {}) {
   const net = opts.net || new VirtualNet();
@@ -17,7 +18,7 @@ export async function runIot(code, opts = {}) {
   const errors = [];
   const project = {
     code,
-    parts: [{ id: 'b', type: BOARDS[opts.board || 'esp32'], x: 0, y: 0 }, ...(opts.parts || [])],
+    parts: [{ id: 'b', type: BOARDS[opts.board || 'esp32'], x: 0, y: 0, nvs: opts.nvs }, ...(opts.parts || [])],
     wires: opts.wires || [],
   };
   const eng = new SimEngine(project, { net, onSerial: (p, t) => { serial += t; }, onWarning: (m) => warns.push(m), onError: (e) => errors.push(e) });
@@ -34,5 +35,5 @@ export async function runIot(code, opts = {}) {
     if (errors.length) break;
   }
   const dev = net.devices.get('b');
-  return { ok: true, eng, net, dev, get serial() { return serial; }, warns, errors, stop: () => eng.stop() };
+  return { ok: true, eng, net, dev, project, get serial() { return serial; }, warns, errors, stop: () => eng.stop() };
 }
