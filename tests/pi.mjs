@@ -126,9 +126,10 @@ def ping():
     time.sleep(0.00001)
     GPIO.output(23, False)
     start = stop = time.time()
-    while GPIO.input(24) == 0:
+    t0 = start
+    while GPIO.input(24) == 0 and time.time() - t0 < 0.1:
         start = time.time()
-    while GPIO.input(24) == 1:
+    while GPIO.input(24) == 1 and time.time() - t0 < 0.2:
         stop = time.time()
     return (stop - start) * 34300 / 2
 time.sleep(0.05)
@@ -375,14 +376,18 @@ console.log('input(), time zone, I²C pins, gpiozero extras');
   const btn = { id: 'b1', type: 'button', pins: { a: 2 }, props: { to: 'gnd' }, state: { pressed: false } };
   g.addPart(btn);
   let lit = -1;
-  setTimeout(() => { btn.state.pressed = true; g.partChanged(); }, 150);
-  setTimeout(() => { btn.state.pressed = false; g.partChanged(); }, 300);
+  // the button is pressed and released while the program waits in input()
   let out = await py(g, 'from gpiozero import Button, LED\nled = LED(17)\nb = Button(2)\nb.when_pressed = led.on\nx = input("Press Enter ")\nprint("lit", led.is_lit, repr(x))\n',
-    { readLine: (prompt) => new Promise((r) => setTimeout(() => { lit = g.level(17); r('ok:' + prompt); }, 700)) });
+    { readLine: (prompt) => new Promise((r) => {
+      setTimeout(() => { btn.state.pressed = true; g.partChanged(); }, 100);
+      setTimeout(() => { btn.state.pressed = false; g.partChanged(); }, 250);
+      setTimeout(() => { lit = g.level(17); r('ok:' + prompt); }, 600);
+    }) });
   check('button callback runs during input()', lit === 1 && out.includes("lit True 'ok:Press Enter '"), out);
   const t = await proc('pi5', { readLine: () => new Promise(() => {}) });
   const run = t.p.runSource('try:\n    input("? ")\nexcept KeyboardInterrupt:\n    print("interrupted")\n');
-  await sleep(150);
+  for (let i = 0; i < 100 && !t.p.pendingRead; i++) await sleep(20);   // wait until input() asks for the line
+  await sleep(50);
   t.p.interrupt();
   await run;
   check('Ctrl+C stops input()', t.text.includes('interrupted'), t.text);
@@ -425,9 +430,13 @@ console.log('input(), time zone, I²C pins, gpiozero extras');
   const g2 = new GpioSim('pi5');
   const ldr = { id: 'l1', type: 'ldr', pins: { a: 4 }, props: { light: 0.3 }, state: {} };
   g2.addPart(ldr);
-  setTimeout(() => { ldr.props.light = 0.8; g2.partChanged(); }, 250);
-  setTimeout(() => { ldr.props.light = 0.2; g2.partChanged(); }, 500);
-  out = await py(g2, 'from gpiozero import LightSensor\nimport time\ns = LightSensor(4, threshold=0.5)\nprint("active", s.is_active, s.light_detected)\ns.when_light = lambda: print("light")\ns.when_dark = lambda: print("dark")\nprint("w", s.wait_for_light(2))\nprint("w", s.wait_for_dark(2))\ntime.sleep(0.15)\n');
+  // input() starts the light changes, so a slow interpreter start does not matter
+  const lightPlan = () => {
+    setTimeout(() => { ldr.props.light = 0.8; g2.partChanged(); }, 250);
+    setTimeout(() => { ldr.props.light = 0.2; g2.partChanged(); }, 500);
+    return Promise.resolve('');
+  };
+  out = await py(g2, 'from gpiozero import LightSensor\nimport time\ns = LightSensor(4, threshold=0.5)\nprint("active", s.is_active, s.light_detected)\ns.when_light = lambda: print("light")\ns.when_dark = lambda: print("dark")\ninput()\nprint("w", s.wait_for_light(2))\nprint("w", s.wait_for_dark(2))\ntime.sleep(0.2)\n', { readLine: lightPlan });
   check('LightSensor: threshold, when_light / when_dark, wait_for_light / dark', /active False False\n(light\nw True|w True\nlight)\n(dark\nw True|w True\ndark)/.test(out), out);
   const g3 = new GpioSim('pi5');
   const freqs = [];
