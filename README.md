@@ -4,6 +4,17 @@ An Android app for designing and simulating Arduino and microcontroller projects
 
 **Download:** [`release/RaptiAuto.apk`](release/RaptiAuto.apk) — Android 7.0+ (API 24), signed.
 
+## New in 2.34 — the rest of the bug list, and a safer in-app browser
+
+Everything the 2.27 check had found but not yet fixed:
+
+- **Safer in-app browser:** a web page opened in the IoT tab or the Pi's Chromium can no longer use the app's Android bridge (open other apps, pop save dialogs, make requests, keep the screen on). Only the app's own page holds the key.
+- **Saving a file is safe:** if Android closes the app while the "save as" picker is open, the file is still written (it used to be saved empty).
+- **PLC Lab:** a network runs in the order of its instruction list, so a branch sees what an earlier output of the same network just wrote (`X0 ─┬─ SET M0` / `└─ M0 ─ OUT Y0` now works every scan); `PRUN` renumbers octal ↔ decimal like a real DVP; undo keeps the live state of the devices (MCB, selectors, tank level); the laptop screen shows the PLC you are programming.
+- **Arduino:** functions that return a reference (`int& f()`, `v.add(2).add(3)`), constructors of array elements and member objects, `static` locals initialised on first use, `ESP.restart()` as a real reset, interrupts for pulses shorter than a frame and `LOW`-level interrupts, `Preferences` stored per board and project, `String(v, HEX)`, NeoPixel RGBW, `analogReference()`, timers that no longer drift.
+- **Raspberry Pi Lab:** button callbacks and timers run while `input()` waits; `localtime()`, `mktime()`, `ctime()` and `datetime` agree on local time; an I²C device only answers on the right pins (swapped SDA / SCL is reported instead of silently working); `LightSensor` threshold and `when_light` / `when_dark`; `from gpiozero.tones import Tone`; `$VAR` in double quotes and `echo -e` in the Terminal; a full storage is reported instead of losing the file.
+- **Cleaner code:** more unused code removed.
+
 ## New in 2.33 — a real conveyor, no pop-ups when a lab opens
 
 - **Conveyor rebuilt as a real machine:** the belt is an endless loop round a rubber-lagged head drum and a tail drum with screw take-ups, carried on a slider bed and return rollers; the 0.25 kW gear motor sits in line with the head shaft (coupling, flange bearings, nameplate with the simulation's data); one turn of the head drum moves 100 mm of belt, as the encoder (100 PPR = 1 pulse / mm) assumes. The pusher cylinder is longer than its 125 mm stroke and stands on its own post with its 5/2 valve; S3 is a diffuse photo-eye, so nothing stands in the mouth of the reject chute.
