@@ -100,12 +100,16 @@ export function cloneProject(p, name) {
   c.id = newId('prj');
   c.name = name || p.name;
   c.created = Date.now();
+  // a copy is a new device: nothing stored on the boards (EEPROM, ESP32 Preferences) comes along
   delete c.eeprom;
+  for (const x of c.parts) { delete x.eeprom; delete x.nvs; }
   return c;
 }
 
 export function exportJSON(p) {
-  return JSON.stringify({ format: 'raptiauto', version: 1, project: { ...p, eeprom: undefined } }, null, 1);
+  // without what the boards stored at run time (EEPROM, ESP32 Preferences)
+  const parts = p.parts.map((x) => ({ ...x, eeprom: undefined, nvs: undefined }));
+  return JSON.stringify({ format: 'raptiauto', version: 1, project: { ...p, parts, eeprom: undefined } }, null, 1);
 }
 
 export function importJSON(text) {

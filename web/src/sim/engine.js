@@ -1025,15 +1025,11 @@ export class SimEngine {
   }
 
   // Preferences (NVS flash) persistence: kept with this board's part in the project (saved through
-  // onEeprom like the EEPROM), so every board of every project has its own. A host that saves nothing
-  // (headless runs) keeps it for the session, per board part id.
+  // onEeprom like the EEPROM), so every board of every project has its own.
   nvsStore() {
     const bp = this.boardPart;
     if (!bp) return (this._nvs = this._nvs || {});
-    if (!bp.nvs || typeof bp.nvs !== 'object' || Array.isArray(bp.nvs)) {
-      bp.nvs = (!this.opts.onEeprom && SESSION_NVS.get(bp.id)) || {};
-    }
-    if (!this.opts.onEeprom) SESSION_NVS.set(bp.id, bp.nvs);
+    if (!bp.nvs || typeof bp.nvs !== 'object' || Array.isArray(bp.nvs)) bp.nvs = {};
     return bp.nvs;
   }
   nvsCommit() { if (this.opts.onEeprom) this.opts.onEeprom(); }
@@ -1142,7 +1138,6 @@ export class SimEngine {
   }
 }
 
-const SESSION_NVS = new Map(); // board part id → NVS store, for hosts without project persistence
 
 /** UART pins of a board: { Serial: { rx, tx }, … } (GPIO numbers). */
 export function uartPins(board) {

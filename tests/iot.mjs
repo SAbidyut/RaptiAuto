@@ -221,8 +221,13 @@ void setup(){ Serial.begin(115200); Serial.println(timeClient.getFormattedTime()
 }
 {
   const r = await runIot(`#include <Preferences.h>\nPreferences prefs;\nvoid setup(){ Serial.begin(115200); prefs.begin("app", false); int boots = prefs.getInt("boots", 0); Serial.println(boots); prefs.putInt("boots", boots + 1); prefs.putString("name", "rapti"); Serial.println(prefs.getString("name", "none")); Serial.println(prefs.isKey("boots")); prefs.end(); }\nvoid loop(){}`, { ms: 1000 });
-  const r2 = await runIot(`#include <Preferences.h>\nPreferences prefs;\nvoid setup(){ Serial.begin(115200); prefs.begin("app", true); Serial.println(prefs.getInt("boots", 0)); prefs.end(); }\nvoid loop(){}`, { ms: 1000 });
+  const second = `#include <Preferences.h>\nPreferences prefs;\nvoid setup(){ Serial.begin(115200); prefs.begin("app", true); Serial.println(prefs.getInt("boots", 0)); prefs.end(); }\nvoid loop(){}`;
+  // the flash content is saved with the board in the project: the next run of that project has it …
+  const r2 = await runIot(second, { ms: 1000, nvs: r.project.parts[0].nvs });
+  // … and another project (another board) starts empty
+  const r3 = await runIot(second, { ms: 1000 });
   check('Preferences: values survive between runs (flash)', /^0\r\nrapti\r\n1/.test(r.serial.trim()) && r2.serial.trim() === '1', r.serial + '|' + r2.serial);
+  check('Preferences: every project has its own flash', r3.serial.trim() === '0', r3.serial);
 }
 {
   const net = new VirtualNet();
